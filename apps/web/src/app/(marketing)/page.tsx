@@ -110,46 +110,74 @@ export default function HomePage() {
                   per 100 conversations after that, billed monthly.
                 </span>
               </div>
-              <ul className="mt-vm-4 space-y-vm-2 text-vm-1 text-vm-text-muted">
-                <li>· All channels, tools, and knowledge sources</li>
-                <li>· Full analytics, answer review, and audit log</li>
-                <li>· No credit card to start; add one only when you outgrow the free 50</li>
+              {/* Concise included-features list — attract buyers without overwhelming.
+                  Six high-signal items (Vision §5: don't exhaust the reader). */}
+              <p className="mt-vm-4 text-vm-0 font-label uppercase tracking-[0.08em] text-vm-text-muted">
+                Everything included
+              </p>
+              <ul className="mt-vm-2 grid grid-cols-1 gap-x-vm-4 gap-y-vm-2 text-vm-1 sm:grid-cols-2">
+                {[
+                  'Web, email, SMS & voice channels',
+                  'Books appointments & captures leads',
+                  'Answers from your own knowledge',
+                  'Escalates to you when it matters',
+                  'Analytics, answer review & audit log',
+                  'Your data stays yours — never trains AI',
+                ].map((f) => (
+                  <li key={f} className="flex items-start gap-vm-2">
+                    <span aria-hidden="true" className="mt-0.5 text-vm-accent">
+                      ✓
+                    </span>
+                    <span>{f}</span>
+                  </li>
+                ))}
               </ul>
               <div className="mt-vm-5">
                 <Button asChild variant="primary" className="w-full">
                   <Link href="/signup">Start free</Link>
                 </Button>
+                <p className="mt-vm-2 text-center text-vm-0 text-vm-text-muted">
+                  No credit card to start. Add one only when you outgrow the free 50.
+                </p>
               </div>
             </Card>
           </div>
         </Container>
       </Section>
 
-      {/* Honesty section — brand-differentiating (Customer Journey §1). */}
+      {/* Trust strip — the brand's 'honest by design' value (Vision §5), reframed
+          as a calm row of positives. The two real launch constraints are folded
+          in concisely; full detail lives in the legal pages. */}
       <Section className="border-t border-vm-border bg-vm-surface">
         <Container>
-          <Eyebrow>Honest by design</Eyebrow>
-          <h2 className="font-heading text-vm-6 tracking-tight">
-            A couple of things to know before you sign up
+          <Eyebrow>Built to be straight with you</Eyebrow>
+          <h2 className="max-w-2xl font-heading text-vm-5 tracking-tight">
+            Trust is the product. No dark patterns, no surprises.
           </h2>
-          <div className="mt-vm-5 grid gap-vm-4 md:grid-cols-2">
-            <Card>
-              <h3 className="font-heading text-vm-3">Email arrives on a VantageMind subdomain</h3>
-              <p className="mt-vm-2 text-vm-1 leading-relaxed text-vm-text-muted">
-                At launch, inbound email comes in on a VantageMind subdomain (e.g.
-                yourname@inbound.vantagemind.com), not your own domain. Outbound email is sent on
-                your behalf so replies look native. Receiving on your own domain is a planned
-                enhancement.
+          <div className="mt-vm-5 grid gap-vm-5 md:grid-cols-3">
+            <div>
+              <h3 className="font-heading text-vm-2">Your data is yours</h3>
+              <p className="mt-vm-1 text-vm-1 leading-relaxed text-vm-text-muted">
+                We never sell it and never train AI on it. Export everything, anytime.
               </p>
-            </Card>
-            <Card>
-              <h3 className="font-heading text-vm-3">One account, one login</h3>
-              <p className="mt-vm-2 text-vm-1 leading-relaxed text-vm-text-muted">
-                No team seats. An auditor or bookkeeper who needs visibility is served through a
-                full data export, not a second login. Your Luciel always identifies itself as an AI
-                to the people it talks to — that can’t be turned off.
+            </div>
+            <div>
+              <h3 className="font-heading text-vm-2">Always identified as AI</h3>
+              <p className="mt-vm-1 text-vm-1 leading-relaxed text-vm-text-muted">
+                Your Luciel tells people it’s an AI for your business — that can’t be turned off.
               </p>
-            </Card>
+            </div>
+            <div>
+              <h3 className="font-heading text-vm-2">Honest about launch limits</h3>
+              <p className="mt-vm-1 text-vm-1 leading-relaxed text-vm-text-muted">
+                At launch: email on a VantageMind subdomain (not your own), and one login per
+                account. See our{' '}
+                <Link href="/legal/terms" className="text-vm-accent underline">
+                  Terms
+                </Link>{' '}
+                for the full picture.
+              </p>
+            </div>
           </div>
         </Container>
       </Section>

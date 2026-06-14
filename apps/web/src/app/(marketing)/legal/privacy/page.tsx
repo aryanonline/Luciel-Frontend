@@ -42,7 +42,8 @@ export default function PrivacyPage() {
         {
           heading: 'Sub-processors',
           body: [
-            'We rely on a published, versioned list of sub-processors — including AWS (hosting), our AI providers (inference, under zero-retention/no-training terms), Twilio (SMS/voice), AWS SES (email), Meta (WhatsApp/Instagram/Messenger), and Stripe (billing only). We give advance notice before adding a sub-processor that would process lead personal data.',
+            'We rely on a published, versioned register of sub-processors: Amazon Web Services (hosting, storage, database, cache, secrets, logging); Anthropic (primary LLM inference, zero-retention/no-training); OpenAI (fallback LLM inference and, when Voice is enabled, Whisper speech-to-text — zero-retention/no-training); Twilio (SMS and voice transport); AWS SES (email transport); Meta (WhatsApp, Instagram, and Messenger channels); ElevenLabs (voice text-to-speech when Voice is enabled); and Stripe (billing only — we never store full card numbers).',
+            'We give at least 30 days’ advance notice before adding a sub-processor that would process your leads’ personal data, during which you may object.',
           ],
         },
         {

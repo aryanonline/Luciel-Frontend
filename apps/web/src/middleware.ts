@@ -23,6 +23,8 @@ const API_ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.vantagem
 const STRIPE = 'https://js.stripe.com';
 const STRIPE_API = 'https://api.stripe.com';
 const STRIPE_CHECKOUT = 'https://checkout.stripe.com';
+// hCaptcha (contact form) per hCaptcha's official CSP guidance.
+const HCAPTCHA = 'https://hcaptcha.com https://*.hcaptcha.com';
 
 export function middleware(request: NextRequest) {
   const nonce = crypto.randomUUID().replace(/-/g, '');
@@ -30,14 +32,15 @@ export function middleware(request: NextRequest) {
   const csp = [
     `default-src 'self'`,
     // Scripts: self + nonce + Stripe. No 'unsafe-inline'.
-    `script-src 'self' 'nonce-${nonce}' ${STRIPE}`,
-    // Styles: 'self' + nonce. (Token CSS is a static file; component styles are
-    // Tailwind classes, not inline.) 'unsafe-inline' is intentionally omitted.
-    `style-src 'self' 'nonce-${nonce}'`,
+    `script-src 'self' 'nonce-${nonce}' ${STRIPE} ${HCAPTCHA}`,
+    // Styles: 'self' + nonce + hCaptcha. hCaptcha injects styles for its widget;
+    // component styles are Tailwind classes, not inline. Script 'unsafe-inline'
+    // is still intentionally omitted.
+    `style-src 'self' 'nonce-${nonce}' ${HCAPTCHA} 'unsafe-inline'`,
     `img-src 'self' data: blob:`,
     `font-src 'self'`,
-    `connect-src 'self' ${API_ORIGIN} ${STRIPE_API}`,
-    `frame-src ${STRIPE} ${STRIPE_CHECKOUT}`,
+    `connect-src 'self' ${API_ORIGIN} ${STRIPE_API} ${HCAPTCHA}`,
+    `frame-src ${STRIPE} ${STRIPE_CHECKOUT} ${HCAPTCHA}`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,

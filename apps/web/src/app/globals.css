@@ -26,3 +26,46 @@
     outline-offset: 2px;
   }
 }
+
+/* Hero-demo animations. Gentle, on-brand (150–200ms ease-out family, §5).
+   All collapse to no motion under prefers-reduced-motion. */
+@keyframes vm-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes vm-typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+.vm-msg-in {
+  animation: vm-msg-in 220ms cubic-bezier(0, 0, 0.2, 1) both;
+}
+.vm-typing-dot {
+  animation: vm-typing-dot 1.2s infinite ease-in-out;
+}
+.vm-typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.vm-typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vm-msg-in,
+  .vm-typing-dot {
+    animation: none;
+  }
+}
