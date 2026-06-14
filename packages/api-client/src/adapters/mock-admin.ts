@@ -20,6 +20,7 @@ import * as seed from './mock-data';
 export type MockScenario =
   | 'verified'
   | 'unverified'
+  | 'fresh' // verified, but no Luciel yet → routes to first-run
   | 'expired_session'
   | 'at_cap'
   | 'payg'
@@ -56,6 +57,14 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
   if (state.scenario === 'unverified') {
     state.account.state = 'unverified';
     state.account.emailVerified = false;
+    state.account.hasCompletedFirstRun = false;
+    state.account.hasLuciel = false;
+    state.luciel = null;
+  }
+  if (state.scenario === 'fresh') {
+    state.account.hasCompletedFirstRun = false;
+    state.account.hasLuciel = false;
+    state.luciel = null;
   }
   if (state.scenario === 'at_cap') {
     state.billing.budget.atCap = true;
@@ -125,7 +134,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardSession();
         await delay();
         const next =
-          state.account.state === 'unverified' ? ('verify_wall' as const) : ('dashboard' as const);
+          state.account.state === 'unverified'
+            ? ('verify_wall' as const)
+            : state.account.hasLuciel
+              ? ('dashboard' as const)
+              : ('first_run' as const);
         return { account: clone(state.account), nextRoute: next };
       },
       async verifyEmail() {
