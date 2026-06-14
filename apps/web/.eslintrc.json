@@ -1,0 +1,20 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": [
+              "@luciel/api-client/src/adapters/*",
+              "**/adapters/mock-*",
+              "**/adapters/http-*"
+            ],
+            "message": "Import the typed client via '@luciel/api-client' (createLucielClient). UI must never import an adapter or the mock directly (Space Instructions §7)."
+          }
+        ]
+      }
+    ]
+  }
+}

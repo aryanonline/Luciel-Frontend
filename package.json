@@ -1,0 +1,25 @@
+{
+  "name": "luciel-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "description": "VantageMind (Luciel) customer-facing frontend — three artifacts (marketing, admin dashboard, embeddable widget) sharing a design system, never an auth context.",
+  "packageManager": "pnpm@9.7.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @luciel/web test:e2e",
+    "format": "prettier --check \"**/*.{ts,tsx,css,md,json}\"",
+    "format:write": "prettier --write \"**/*.{ts,tsx,css,md,json}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  }
+}
