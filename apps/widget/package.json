@@ -1,0 +1,25 @@
+{
+  "name": "@luciel/widget",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The embeddable chat widget. Vite library-mode → a single self-initializing bundle served from embed.vantagemind.com/v1/luciel.js. Shadow-DOM isolated, tiny, framework-light, ZERO admin-API code (Space Instructions §2, §6.3).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/check-bundle.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"(lint placeholder — eslint config added with first feature PR)\"",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@luciel/api-client": "workspace:*",
+    "@luciel/design-tokens": "workspace:*"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vitest": "^2.0.5"
+  }
+}
