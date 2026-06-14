@@ -24,7 +24,14 @@ describe('marketing landing page', () => {
 
   it('keeps the honest launch-constraint notes (email subdomain, one login)', () => {
     render(<HomePage />);
-    expect(screen.getByText(/inbound\.vantagemind\.com/)).toBeInTheDocument();
-    expect(screen.getByText('One account, one login')).toBeInTheDocument();
+    // The trust strip folds both real launch constraints into one concise note.
+    expect(screen.getByText(/VantageMind subdomain/)).toBeInTheDocument();
+    expect(screen.getByText(/one login per\s+account/)).toBeInTheDocument();
+  });
+
+  it('shows the concise included-features list', () => {
+    render(<HomePage />);
+    expect(screen.getByText('Everything included')).toBeInTheDocument();
+    expect(screen.getByText(/never trains AI/)).toBeInTheDocument();
   });
 });
