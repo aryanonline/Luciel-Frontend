@@ -7,9 +7,13 @@
 
 @layer base {
   html {
-    font-family: var(--vm-font-family);
+    /* Prefer the self-hosted next/font Inter (--font-inter), then the token
+       stack's Inter/system fallback (§5). */
+    font-family: var(--font-inter), var(--vm-font-family);
     color: var(--vm-text);
     background: var(--vm-bg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
   body {
     font-size: var(--vm-font-size-2);
