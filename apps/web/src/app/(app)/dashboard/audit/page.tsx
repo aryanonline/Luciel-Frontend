@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, CardTitle, CardDescription } from '@luciel/ui';
+import { Card, CardTitle, CardDescription, PageHeader } from '@luciel/ui';
 import { useAudit } from '@/lib/hooks';
 
 /**
@@ -12,7 +12,10 @@ export default function AuditPage() {
 
   return (
     <div className="space-y-vm-5">
-      <h1 className="font-heading text-vm-5">Audit log</h1>
+      <PageHeader
+        title="Audit log"
+        description="A read-only, append-only record of every meaningful change to your account."
+      />
       <Card>
         <CardTitle>Activity</CardTitle>
         <CardDescription>Read-only. Every meaningful change is recorded here.</CardDescription>

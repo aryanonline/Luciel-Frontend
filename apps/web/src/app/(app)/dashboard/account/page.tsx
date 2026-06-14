@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardTitle, CardDescription, Button, Modal, Banner } from '@luciel/ui';
+import { Card, CardTitle, CardDescription, Button, Modal, Banner, PageHeader } from '@luciel/ui';
 import { useLuciel, useLucielMutations } from '@/lib/hooks';
 import { api } from '@/lib/api';
 
@@ -31,7 +31,10 @@ export default function AccountPage() {
 
   return (
     <div className="space-y-vm-5">
-      <h1 className="font-heading text-vm-5">Manage account</h1>
+      <PageHeader
+        title="Manage account"
+        description="Pause, delete your Luciel, or close your account — three distinct actions, each reversible up to a point."
+      />
 
       {inGrace && (
         <Banner tone="warning">

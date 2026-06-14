@@ -78,7 +78,18 @@ export default function SignupPage() {
           {isSubmitting ? 'Creating…' : 'Create account'}
         </Button>
       </form>
-      <p className="mt-vm-4 text-vm-1 text-vm-text-muted">
+      <p className="mt-vm-4 text-vm-0 text-vm-text-muted">
+        By creating an account you agree to our{' '}
+        <Link href="/legal/terms" className="text-vm-accent underline">
+          Terms
+        </Link>{' '}
+        and{' '}
+        <Link href="/legal/privacy" className="text-vm-accent underline">
+          Privacy Policy
+        </Link>
+        .
+      </p>
+      <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
         Already have an account?{' '}
         <Link href="/login" className="text-vm-accent underline">
           Log in

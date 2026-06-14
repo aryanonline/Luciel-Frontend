@@ -1,21 +1,21 @@
 import Link from 'next/link';
+import { Logo } from '@luciel/ui';
 
 /**
- * Auth layout — Control Plane, the credential surfaces (signup, verify, login,
- * forgot/reset). NOT gated (these are how you get authenticated). Minimal,
- * centered. Logout/login is one identity across surfaces (Arch §3.7.1a).
+ * Auth layout — the credential surfaces (signup, verify, login, forgot/reset).
+ * NOT gated. Centered, calm, brand-marked.
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-vm-bg text-vm-text">
-      <header className="border-b border-vm-border">
-        <div className="mx-auto max-w-5xl px-vm-5 py-vm-4">
-          <Link href="/" className="font-heading text-vm-3">
-            VantageMind
-          </Link>
-        </div>
+    <div className="flex min-h-screen flex-col bg-vm-surface text-vm-text">
+      <header className="px-vm-5 py-vm-5">
+        <Link href="/" aria-label="VantageMind home">
+          <Logo />
+        </Link>
       </header>
-      <main className="mx-auto flex max-w-md flex-col px-vm-5 py-vm-8">{children}</main>
+      <main className="flex flex-1 items-center justify-center px-vm-5 pb-vm-9">
+        <div className="w-full max-w-md">{children}</div>
+      </main>
     </div>
   );
 }
