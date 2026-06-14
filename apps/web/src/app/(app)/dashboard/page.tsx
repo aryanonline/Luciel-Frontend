@@ -1,70 +1,93 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { StatusChip, chipKindFromStatus } from '@/components/connection-chip';
-import { api } from '@/lib/api';
+import Link from 'next/link';
+import { Card, CardTitle, CardDescription, Banner, ProgressBar, Button } from '@luciel/ui';
+import { useLuciel, useBilling, useConversations, useLeads } from '@/lib/hooks';
 
 /**
- * Dashboard home — scaffold. Demonstrates the api-client boundary end-to-end:
- * the page imports ONLY `api` (the typed client), never an adapter or the mock.
- * Swapping mock → http here is a one-line env change with no edits to this file
- * (Space Instructions §7).
- *
- * It renders the budget bar copy EXACTLY as specified (Arch §3.4.1b) and the
- * connection chips. Full dashboard surfaces (five-pillar config, conversations,
- * analytics, lifecycle, billing) are built in later milestones.
+ * Dashboard overview. Imports ONLY the typed client hooks (§7). Renders the
+ * budget bar copy EXACTLY as specified (Arch §3.4.1b) and honest state banners.
  */
 export default function DashboardPage() {
-  const luciel = useQuery({ queryKey: ['luciel'], queryFn: () => api.luciel.get() });
-  const billing = useQuery({ queryKey: ['billing'], queryFn: () => api.billing.get() });
-  const connections = useQuery({
-    queryKey: ['connections'],
-    queryFn: () => api.connections.list(),
-  });
+  const luciel = useLuciel();
+  const billing = useBilling();
+  const conversations = useConversations();
+  const leads = useLeads();
+
+  const b = billing.data?.budget;
+  const nearCap = b && b.billingState === 'free_cap' && b.conversationsThisPeriod >= 40 && !b.atCap;
 
   return (
-    <div className="space-y-vm-6">
-      <section>
+    <div className="space-y-vm-5">
+      <div>
         <h1 className="font-heading text-vm-5">
-          {luciel.isLoading ? 'Loading…' : (luciel.data?.name ?? 'No Luciel yet')}
+          {luciel.isLoading ? 'Loading…' : (luciel.data?.name ?? 'Your Luciel')}
         </h1>
-
-        {/* Budget bar copy — verbatim spec (Arch §3.4.1b):
-            "[Luciel name]: X conversations this month (50 free + Y billed)". */}
-        {billing.data && luciel.data && (
-          <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
-            {luciel.data.name}: {billing.data.budget.conversationsThisPeriod} conversations this
-            month ({billing.data.budget.freeAllowance} free + {billing.data.budget.billedThisPeriod}{' '}
-            billed)
+        {luciel.data && (
+          <p className="mt-vm-1 text-vm-1 text-vm-text-muted">
+            Status: {luciel.data.state.replace(/_/g, ' ')}
           </p>
         )}
+      </div>
 
-        {/* At-cap honesty (no over-claim): only shown when server says so. */}
-        {billing.data?.budget.atCap && (
-          <p className="mt-vm-2 text-vm-1 text-vm-warning">
-            You&apos;ve reached your 50 free conversations this month. Your Luciel is still
-            capturing leads and escalating them to you. Add a payment method to keep it fully
-            answering.
-          </p>
-        )}
-      </section>
+      {/* At-cap honesty (Customer Journey §6) — only when the server says so. */}
+      {b?.atCap && (
+        <Banner tone="warning">
+          You&apos;ve reached your 50 free conversations this month. Your Luciel is still capturing
+          leads and escalating them to you, but it&apos;s replying at-capacity to new visitors.{' '}
+          <Link href="/dashboard/billing" className="underline">
+            Add a payment method
+          </Link>{' '}
+          to keep it fully answering — you&apos;ll only pay for conversations above 50, at $39 per
+          100.
+        </Banner>
+      )}
+      {nearCap && (
+        <Banner tone="info">You&apos;re approaching your 50 free conversations this month.</Banner>
+      )}
 
-      <section>
-        <h2 className="font-heading text-vm-4">Connections</h2>
-        <ul className="mt-vm-3 space-y-vm-2">
-          {connections.data?.map((c) => (
-            <li key={c.connectionId} className="flex items-center gap-vm-3 text-vm-1">
-              <span className="w-40 text-vm-text-muted">
-                {c.connectionType} · {c.provider}
-              </span>
-              <StatusChip
-                kind={chipKindFromStatus(c.status)}
-                detail={c.status === 'unconfigured' ? `connect ${c.provider}` : undefined}
+      <div className="grid gap-vm-4 sm:grid-cols-2">
+        <Card>
+          <CardTitle>Conversation budget</CardTitle>
+          {b && luciel.data && (
+            <>
+              {/* Budget bar copy — verbatim (Arch §3.4.1b). */}
+              <ProgressBar
+                className="mt-vm-3"
+                value={b.conversationsThisPeriod}
+                max={Math.max(b.freeAllowance, b.conversationsThisPeriod)}
+                tone={b.atCap ? 'warning' : 'accent'}
+                label={`${luciel.data.name}: ${b.conversationsThisPeriod} conversations this month (${b.freeAllowance} free + ${b.billedThisPeriod} billed)`}
               />
-            </li>
-          ))}
-        </ul>
-      </section>
+              <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
+                {b.billingState === 'payg_enabled'
+                  ? 'Pay-as-you-go is on: above 50, usage bills at $39 / 100 conversations.'
+                  : 'Free plan: 50 conversations/month. Add a card to keep answering past 50.'}
+              </p>
+            </>
+          )}
+        </Card>
+
+        <Card>
+          <CardTitle>This month</CardTitle>
+          <CardDescription>A quick pulse — full detail in Analytics.</CardDescription>
+          <dl className="mt-vm-3 grid grid-cols-2 gap-vm-3 text-vm-1">
+            <div>
+              <dt className="text-vm-text-muted">Conversations</dt>
+              <dd className="font-heading text-vm-4">{conversations.data?.length ?? '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-vm-text-muted">Leads</dt>
+              <dd className="font-heading text-vm-4">{leads.data?.length ?? '—'}</dd>
+            </div>
+          </dl>
+          <div className="mt-vm-4">
+            <Button asChild variant="secondary">
+              <Link href="/dashboard/configure">Configure your Luciel</Link>
+            </Button>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
