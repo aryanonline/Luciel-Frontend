@@ -3,15 +3,18 @@
 import * as React from 'react';
 
 /**
- * The hero widget demo (Customer Journey §1): a short looped exchange showing
- * the widget answering and offering to book. Built with the design tokens, no
- * external assets. Respects prefers-reduced-motion: reduced-motion users get
- * the full conversation as a STATIC frame (no typing animation) — §5/Arch §5.16.
+ * The hero widget demo (Customer Journey §1): a looped exchange showing the
+ * widget answering and offering to book. Built with the design tokens, no
+ * external assets. Animation is gentle (fade-up entrance + a typing indicator
+ * before assistant replies) and on-brand (§5). prefers-reduced-motion users get
+ * the full conversation as a STATIC frame with no typing/animation (Arch §5.16).
  *
- * It mirrors the real widget chrome (AI-assistant label, opening disclosure,
+ * Mirrors the real widget chrome (AI-assistant label, opening disclosure,
  * Powered by VantageMind) so the demo is honest about what the product does.
  */
-const SCRIPT: { role: 'visitor' | 'assistant'; text: string }[] = [
+type Turn = { role: 'visitor' | 'assistant'; text: string };
+
+const SCRIPT: Turn[] = [
   { role: 'assistant', text: "Hi — I'm the AI assistant for GTA Premier. How can I help?" },
   { role: 'visitor', text: 'Are you taking on new clients this month?' },
   {
@@ -34,26 +37,76 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
+function TypingBubble() {
+  return (
+    <div className="flex justify-start">
+      <span
+        className="inline-flex items-center gap-1 rounded-vm-card rounded-bl-sm bg-vm-surface px-vm-3 py-vm-3"
+        aria-hidden="true"
+      >
+        <span className="vm-typing-dot inline-block h-1.5 w-1.5 rounded-full bg-vm-text-muted" />
+        <span className="vm-typing-dot inline-block h-1.5 w-1.5 rounded-full bg-vm-text-muted" />
+        <span className="vm-typing-dot inline-block h-1.5 w-1.5 rounded-full bg-vm-text-muted" />
+      </span>
+    </div>
+  );
+}
+
 export function HeroDemo() {
   const reduced = usePrefersReducedMotion();
-  const [count, setCount] = React.useState(reduced ? SCRIPT.length : 1);
+  // visibleCount = how many script turns are shown; typing = whether the NEXT
+  // (assistant) turn is mid-"typing".
+  const [visibleCount, setVisibleCount] = React.useState(reduced ? SCRIPT.length : 1);
+  const [typing, setTyping] = React.useState(false);
 
   React.useEffect(() => {
     if (reduced) {
-      setCount(SCRIPT.length);
+      setVisibleCount(SCRIPT.length);
+      setTyping(false);
       return;
     }
-    // Reveal messages on a gentle loop; pause at the end, then restart.
-    let i = 1;
-    const advance = () => {
-      i = i >= SCRIPT.length ? 1 : i + 1;
-      setCount(i);
+    let cancelled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    const run = (count: number) => {
+      if (cancelled) return;
+      // Loop: once the whole script is shown, pause then restart.
+      if (count >= SCRIPT.length) {
+        timers.push(
+          setTimeout(() => {
+            if (cancelled) return;
+            setTyping(false);
+            setVisibleCount(1);
+            run(1);
+          }, 2600),
+        );
+        return;
+      }
+      const next = SCRIPT[count];
+      if (!next) return;
+      const reveal = () => {
+        if (cancelled) return;
+        setTyping(false);
+        setVisibleCount(count + 1);
+        timers.push(setTimeout(() => run(count + 1), next.role === 'assistant' ? 1100 : 700));
+      };
+      if (next.role === 'assistant') {
+        // Show a typing indicator before an assistant reply.
+        setTyping(true);
+        timers.push(setTimeout(reveal, 1100));
+      } else {
+        reveal();
+      }
     };
-    const id = setInterval(advance, 1800);
-    return () => clearInterval(id);
+
+    timers.push(setTimeout(() => run(1), 1100));
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
   }, [reduced]);
 
-  const shown = SCRIPT.slice(0, count);
+  const shown = SCRIPT.slice(0, visibleCount);
 
   return (
     <div
@@ -67,9 +120,12 @@ export function HeroDemo() {
           AI assistant
         </span>
       </div>
-      <div className="flex min-h-[260px] flex-col justify-end gap-vm-2 p-vm-4" aria-hidden="true">
+      <div className="flex min-h-[280px] flex-col gap-vm-2 p-vm-4" aria-hidden="true">
         {shown.map((m, i) => (
-          <div key={i} className={m.role === 'visitor' ? 'flex justify-end' : 'flex justify-start'}>
+          <div
+            key={i}
+            className={`vm-msg-in ${m.role === 'visitor' ? 'flex justify-end' : 'flex justify-start'}`}
+          >
             <span
               className={
                 m.role === 'visitor'
@@ -81,6 +137,7 @@ export function HeroDemo() {
             </span>
           </div>
         ))}
+        {typing && <TypingBubble />}
       </div>
       <div className="border-t border-vm-border px-vm-4 py-vm-2 text-vm-0 text-vm-text-muted">
         Powered by VantageMind

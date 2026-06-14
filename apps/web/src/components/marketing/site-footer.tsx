@@ -10,6 +10,7 @@ import { Container, Logo } from '@luciel/ui';
 const productLinks = [
   { href: '/#pricing', label: 'Pricing' },
   { href: '/#how-it-works', label: 'How it works' },
+  { href: '/contact', label: 'Contact us' },
   { href: '/signup', label: 'Start free' },
   { href: '/login', label: 'Log in' },
 ];
@@ -63,7 +64,7 @@ export function SiteFooter() {
         </div>
         <div className="mt-vm-6 flex flex-wrap items-center justify-between gap-vm-2 border-t border-vm-border pt-vm-4 text-vm-0 text-vm-text-muted">
           <span>© {new Date().getFullYear()} VantageMind. All rights reserved.</span>
-          <span>Powered by VantageMind · Data resident in AWS Canada Central</span>
+          <span>Powered by VantageMind</span>
         </div>
       </Container>
     </footer>
