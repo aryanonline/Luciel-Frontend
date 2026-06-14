@@ -1,0 +1,27 @@
+{
+  "name": "@luciel/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The single typed API client. The ONLY thing UI imports for server data. Two adapters (mock | http) behind one interface (Space Instructions §7). UI never imports an adapter or the mock directly.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./widget": "./src/widget.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"(lint placeholder — eslint config added with first feature PR)\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
