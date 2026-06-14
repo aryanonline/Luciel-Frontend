@@ -33,10 +33,12 @@ export function middleware(request: NextRequest) {
     `default-src 'self'`,
     // Scripts: self + nonce + Stripe. No 'unsafe-inline'.
     `script-src 'self' 'nonce-${nonce}' ${STRIPE} ${HCAPTCHA}`,
-    // Styles: 'self' + nonce + hCaptcha. hCaptcha injects styles for its widget;
-    // component styles are Tailwind classes, not inline. Script 'unsafe-inline'
-    // is still intentionally omitted.
-    `style-src 'self' 'nonce-${nonce}' ${HCAPTCHA} 'unsafe-inline'`,
+    // Styles: 'self' + hCaptcha + 'unsafe-inline'. We deliberately do NOT put a
+    // nonce on style-src: a nonce would cause the browser to IGNORE
+    // 'unsafe-inline', which hCaptcha's injected widget styles require. Styles
+    // are a low-risk vector; the meaningful protection is on script-src, which
+    // keeps its nonce and omits 'unsafe-inline'.
+    `style-src 'self' ${HCAPTCHA} 'unsafe-inline'`,
     `img-src 'self' data: blob:`,
     `font-src 'self'`,
     `connect-src 'self' ${API_ORIGIN} ${STRIPE_API} ${HCAPTCHA}`,
@@ -51,6 +53,13 @@ export function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   // Expose the nonce to the app (read in the root layout for next/script).
   requestHeaders.set('x-nonce', nonce);
+  // CRITICAL: Next.js auto-applies this nonce to its OWN inline bootstrap/
+  // hydration scripts ONLY when it sees the CSP (containing the nonce) on the
+  // REQUEST headers it processes. Without this, Next emits un-nonced inline
+  // scripts that the response CSP then blocks — breaking hydration entirely
+  // (no interactivity, no hCaptcha, no animations). Setting it here is the
+  // documented App Router nonce pattern.
+  requestHeaders.set('Content-Security-Policy', csp);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('Content-Security-Policy', csp);
