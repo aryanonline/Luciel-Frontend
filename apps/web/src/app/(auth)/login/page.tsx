@@ -30,14 +30,8 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
-
-  const fillDemo = () => {
-    setValue('email', 'demo@vantagemind.ai');
-    setValue('password', 'demo1234');
-  };
 
   const onSubmit = handleSubmit(async (values) => {
     setServerError(null);
@@ -61,18 +55,6 @@ export default function LoginPage() {
     <Card>
       <CardTitle>Log in</CardTitle>
       <CardDescription>Welcome back.</CardDescription>
-
-      {/* Demo access (this build runs on the mock with no backend). Lets you
-          explore the full dashboard without a real account. */}
-      <Banner tone="info" className="mt-vm-4">
-        <strong>Exploring the demo?</strong> Use{' '}
-        <code className="rounded bg-vm-bg px-1">demo@vantagemind.ai</code> /{' '}
-        <code className="rounded bg-vm-bg px-1">demo1234</code>.{' '}
-        <button type="button" onClick={fillDemo} className="underline">
-          Fill it for me
-        </button>
-        .
-      </Banner>
       {serverError && (
         <Banner tone="danger" className="mt-vm-4">
           {serverError}

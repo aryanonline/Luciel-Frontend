@@ -16,6 +16,16 @@ const inter = Inter({
   weight: ['400', '500', '600'],
 });
 
+/**
+ * Force per-request (dynamic) rendering app-wide. This is REQUIRED for the
+ * nonce-based CSP to work: a per-request nonce can only be applied to Next's
+ * inline bootstrap scripts when the page is rendered per request. With static
+ * prerendering, the build-time HTML has no nonce and the CSP blocks hydration
+ * (breaking all interactivity). The cost is no static caching of these pages,
+ * which is acceptable for an authenticated app shell + a small marketing site.
+ */
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'VantageMind — Your business, answered.',
   description:
