@@ -92,6 +92,10 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   root.setAttribute('role', 'region');
   root.setAttribute('aria-label', `${boot.businessName} chat assistant`);
 
+  // Session state for the chat loop.
+  let sessionId: string | undefined;
+  let renderState: WidgetBootstrap['renderState'] = boot.renderState;
+
   // Header carries the persistent "AI assistant" label (Arch §3.4.16).
   const header = document.createElement('div');
   header.className = 'vm-header';
@@ -108,16 +112,24 @@ export async function mountWidget(options: MountOptions): Promise<void> {
 
   const body = document.createElement('div');
   body.className = 'vm-body';
+  body.setAttribute('aria-label', 'Conversation');
   // Opening message INCLUDES the AI-identity disclosure (Arch §3.4.16).
-  const opening = document.createElement('p');
-  opening.className = 'vm-msg';
-  opening.textContent = boot.openingMessage;
-  body.appendChild(opening);
+  const appendMessage = (role: 'visitor' | 'assistant', text: string) => {
+    const p = document.createElement('p');
+    p.className = 'vm-msg';
+    const who = document.createElement('strong');
+    who.textContent = role === 'visitor' ? 'You: ' : `${boot.assistantName}: `;
+    p.append(who, document.createTextNode(text));
+    body.appendChild(p);
+    body.scrollTop = body.scrollHeight;
+  };
+  appendMessage('assistant', boot.openingMessage);
 
   // Live region so incoming messages are announced to screen readers.
-  body.appendChild(a11yLiveRegion(boot.openingMessage));
+  const live = a11yLiveRegion(boot.openingMessage);
+  body.appendChild(live);
 
-  // Input row (placeholder send loop).
+  // Input row + working send loop.
   const inputRow = document.createElement('div');
   inputRow.className = 'vm-input-row';
   const input = document.createElement('input');
@@ -129,6 +141,32 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   send.type = 'button';
   send.textContent = 'Send';
   inputRow.append(input, send);
+
+  const doSend = async () => {
+    const text = input.value.trim();
+    if (!text || renderState !== 'active') return;
+    appendMessage('visitor', text);
+    input.value = '';
+    try {
+      const res = await client.send(options.embedKey, { sessionId, text });
+      sessionId = res.sessionId;
+      renderState = res.renderState;
+      appendMessage('assistant', res.reply.text);
+      live.textContent = res.reply.text; // announce incoming (Arch §5.16)
+      // At-cap is server-driven: the widget just renders the graceful reply
+      // it receives, then disables further input (Arch §3.4.1b).
+      if (renderState === 'at_cap') {
+        input.disabled = true;
+        send.disabled = true;
+      }
+    } catch {
+      appendMessage('assistant', 'Sorry — something went wrong. Please try again.');
+    }
+  };
+  send.addEventListener('click', () => void doSend());
+  input.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') void doSend();
+  });
 
   // "Powered by VantageMind" chrome — present on all accounts (Arch §3.4.17).
   const footer = document.createElement('div');
