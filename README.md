@@ -118,20 +118,56 @@ Copy `.env.example` → `.env.local`. **Never commit any `.env` file or any
 secret/embed key.** The embed key is injected at runtime by the host page's
 `data-key`, never hardcoded or stored in env.
 
+### Try the whole journey (mock)
+
+The app runs entirely on the mock adapter — no backend. Set
+`NEXT_PUBLIC_MOCK_SCENARIO` to walk different documented states:
+
+| Scenario             | What you see                                                                       |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `verified` (default) | An active Luciel with conversations, connections (one healthy, one expired), leads |
+| `fresh`              | Verified account, **no Luciel** → routed to first-run (Create my Luciel)           |
+| `unverified`         | The hard email-verification wall (resend + cooldown)                               |
+| `at_cap`             | Free 50 reached, no card → the at-cap banner + graceful widget reply               |
+| `payg`               | Payment method on file, billing above 50                                           |
+| `paused`             | Paused Luciel (the preview renders nothing, as a live widget would)                |
+| `grace`              | Deleted Luciel in its 30-day grace window → Restore available                      |
+
+```bash
+NEXT_PUBLIC_MOCK_SCENARIO=fresh pnpm --filter @luciel/web dev
+```
+
+Key routes: `/` (marketing) · `/signup` `/login` `/verify` `/forgot` `/reset`
+(auth) · `/first-run` · `/dashboard` and `/dashboard/{configure,embed,conversations,leads,billing,analytics,audit,account}` ·
+`/embed-preview` (the “test it here” widget).
+
+> Sandbox note: if `next dev` misbehaves in a constrained environment, a
+> production build (`next build` then `next start`) serves every route reliably.
+
 ---
 
-## Honesty about what's NOT built
+## Honesty about what IS and ISN'T built
 
-Per the product's defining posture (Vision §5; Space Instructions §3.7), this
-scaffold is honest about its current state:
+Per the product's defining posture (Vision §5; Space Instructions §3.7):
 
-- This is **STEP 1 — the skeleton.** Feature surfaces (auth flows, five-pillar
-  config, conversations/leads, billing, analytics, lifecycle, the full widget
-  chat loop) are **stubs**, built in later milestones.
-- **MFA does not exist** and no UI implies it. Auth gating in middleware is a
-  documented TODO, not a fake check.
-- The `httpAdapter` endpoint **paths** mirror the documented families (Arch §1.1)
-  but reconcile against the real backend when it lands — contained entirely
-  within `adapters/http-admin.ts`, with no component impact.
+- **Built (full breadth, mock-backed, runnable end-to-end):** marketing site,
+  all auth flows, first-run, the five-pillar config (with the Voice consent
+  gate, the non-interactive cognition band, inline connections, raw-knowledge
+  view), embed + launch, conversations/leads/answer-review/live-takeover,
+  billing + dunning states, analytics, audit log, lifecycle (pause/delete/close),
+  and the embeddable widget's chat loop. Every surface reads/writes through the
+  typed client; swapping the mock for a real backend is one env flag.
+- **Deliberately shallow / not real (no over-claiming):**
+  - **No backend.** All data is the in-memory mock; full reload resets state.
+  - **MFA does not exist** — no UI implies it; the honesty disclosure is shown.
+  - **Auth gating is a client-side UX redirect**, not a security control. Real
+    enforcement is server-side middleware against the session cookie (documented
+    in `middleware.ts` / `auth-guard.tsx`).
+  - **Invisible captcha, file upload, OAuth handoffs, Stripe Checkout** are
+    placeholders that describe what they do — the real providers wire in with
+    the backend.
+  - The `httpAdapter` endpoint **paths** mirror the documented families
+    (Arch §1.1) and reconcile against the real backend inside
+    `adapters/http-admin.ts`, with no component impact.
 
 See `DEFINITION_OF_DONE.md` for the non-negotiable gates every PR must clear.
