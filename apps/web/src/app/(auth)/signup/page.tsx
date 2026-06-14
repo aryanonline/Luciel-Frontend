@@ -1,17 +1,89 @@
+'use client';
+
+import * as React from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Button, Card, CardTitle, CardDescription, Field, Input, Banner } from '@luciel/ui';
+import { api } from '@/lib/api';
+
 /**
- * Signup — scaffold placeholder (Customer Journey Phase 2: email + password +
- * invisible captcha). The real form (React Hook Form + Zod, reusing the
- * `signupRequest` schema from @luciel/api-client) lands in the auth milestone.
- * Kept honest: this is a stub, not a working form.
+ * Signup (Customer Journey Phase 2): email + password + invisible captcha.
+ * Client-side validation is UX only (§3.1) — the server re-validates. On
+ * success the account is created `unverified`; the next step is the verify wall
+ * (hard gate, Arch §3.7.1a). No payment requested (Customer Journey Phase 2).
+ *
+ * The captcha is an invisible-recaptcha placeholder; the real provider is wired
+ * when the backend lands. We do NOT imply a working captcha that isn't there.
  */
+const schema = z.object({
+  email: z.string().email('Enter a valid email.'),
+  password: z.string().min(8, 'Use at least 8 characters.'),
+});
+type FormValues = z.infer<typeof schema>;
+
 export default function SignupPage() {
+  const router = useRouter();
+  const [serverError, setServerError] = React.useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<FormValues>({ resolver: zodResolver(schema) });
+
+  const onSubmit = handleSubmit(async (values) => {
+    setServerError(null);
+    try {
+      // Invisible-captcha token placeholder (real provider wired with backend).
+      await api.auth.signup({ ...values, captchaToken: 'mock-invisible-captcha' });
+      router.push('/verify');
+    } catch {
+      setServerError('Something went wrong creating your account. Please try again.');
+    }
+  });
+
   return (
-    <div className="mx-auto max-w-md py-vm-7">
-      <h1 className="font-heading text-vm-5">Create your account</h1>
-      <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
-        Three fields — email, password, and a one-click captcha. No credit card. (Form wired in the
-        auth milestone.)
+    <Card>
+      <CardTitle>Create your account</CardTitle>
+      <CardDescription>
+        Start free with 50 conversations a month. No credit card required.
+      </CardDescription>
+      {serverError && (
+        <Banner tone="danger" className="mt-vm-4">
+          {serverError}
+        </Banner>
+      )}
+      <form onSubmit={onSubmit} className="mt-vm-5" noValidate>
+        <Field id="email" label="Email" error={errors.email?.message} required>
+          {(p) => <Input type="email" autoComplete="email" {...p} {...register('email')} />}
+        </Field>
+        <Field
+          id="password"
+          label="Password"
+          error={errors.password?.message}
+          hint="Your password is the primary credential — use a strong, unique one. MFA is on the roadmap, not yet available."
+          required
+        >
+          {(p) => (
+            <Input type="password" autoComplete="new-password" {...p} {...register('password')} />
+          )}
+        </Field>
+        {/* Invisible captcha runs here (no visible challenge in the happy path). */}
+        <p className="mb-vm-4 text-vm-0 text-vm-text-muted">
+          Protected by an invisible captcha — usually one click, nothing to solve.
+        </p>
+        <Button type="submit" variant="primary" disabled={isSubmitting} className="w-full">
+          {isSubmitting ? 'Creating…' : 'Create account'}
+        </Button>
+      </form>
+      <p className="mt-vm-4 text-vm-1 text-vm-text-muted">
+        Already have an account?{' '}
+        <Link href="/login" className="text-vm-accent underline">
+          Log in
+        </Link>
       </p>
-    </div>
+    </Card>
   );
 }
