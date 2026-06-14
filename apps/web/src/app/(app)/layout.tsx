@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Logo } from '@luciel/ui';
 import { LogoutButton } from '@/components/logout-button';
 
 /**
@@ -13,10 +14,10 @@ import { LogoutButton } from '@/components/logout-button';
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-vm-bg text-vm-text">
-      <header className="border-b border-vm-border">
+      <header className="sticky top-0 z-10 border-b border-vm-border bg-vm-bg/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-vm-5 py-vm-4">
-          <Link href="/dashboard" className="font-heading text-vm-3">
-            VantageMind
+          <Link href="/dashboard" aria-label="VantageMind dashboard">
+            <Logo />
           </Link>
           <div className="flex items-center gap-vm-4">
             <span className="hidden text-vm-0 text-vm-text-muted sm:inline">

@@ -1,6 +1,14 @@
 'use client';
 
-import { Card, CardTitle, CardDescription, Button, Banner, ProgressBar } from '@luciel/ui';
+import {
+  Card,
+  CardTitle,
+  CardDescription,
+  Button,
+  Banner,
+  ProgressBar,
+  PageHeader,
+} from '@luciel/ui';
 import { useBilling, useLuciel, qk } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
@@ -30,7 +38,10 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-vm-5">
-      <h1 className="font-heading text-vm-5">Billing</h1>
+      <PageHeader
+        title="Billing"
+        description="One plan: 50 free conversations a month, then $39 per 100. Adding a card never changes your Luciel — only whether it can work past the free 50."
+      />
 
       {b?.dunningState === 'retrying' && (
         <Banner tone="warning">

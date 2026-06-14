@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -25,7 +26,7 @@ const schema = z
   });
 type FormValues = z.infer<typeof schema>;
 
-export default function ResetPage() {
+function ResetInner() {
   const router = useRouter();
   const params = useSearchParams();
   const token = params.get('token') ?? '';
@@ -94,5 +95,19 @@ export default function ResetPage() {
         </form>
       )}
     </Card>
+  );
+}
+
+export default function ResetPage() {
+  return (
+    <Suspense
+      fallback={
+        <Card>
+          <CardTitle>Loading…</CardTitle>
+        </Card>
+      }
+    >
+      <ResetInner />
+    </Suspense>
   );
 }

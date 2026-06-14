@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, CardTitle, CardDescription, Banner } from '@luciel/ui';
 import { LucielApiError } from '@luciel/api-client';
@@ -14,7 +15,7 @@ import { api } from '@/lib/api';
  * shows a cooldown message, not another send (Arch §3.7.1a). Links are 24h TTL,
  * single-use; an expired/used link routes here to resend, never a dead-end.
  */
-export default function VerifyPage() {
+function VerifyInner() {
   const router = useRouter();
   const params = useSearchParams();
   const token = params.get('token');
@@ -92,5 +93,19 @@ export default function VerifyPage() {
         Resends are limited to 3 per 15 minutes to keep inboxes safe.
       </p>
     </Card>
+  );
+}
+
+export default function VerifyPage() {
+  return (
+    <Suspense
+      fallback={
+        <Card>
+          <CardTitle>Loading…</CardTitle>
+        </Card>
+      }
+    >
+      <VerifyInner />
+    </Suspense>
   );
 }

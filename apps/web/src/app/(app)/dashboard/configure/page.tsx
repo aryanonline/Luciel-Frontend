@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Banner, Button } from '@luciel/ui';
+import { Banner, Button, PageHeader } from '@luciel/ui';
 import { useLuciel } from '@/lib/hooks';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
 import { ToolsPillar } from '@/components/config/tools-pillar';
@@ -39,13 +39,10 @@ export default function ConfigurePage() {
 
   return (
     <div className="space-y-vm-5">
-      <div>
-        <h1 className="font-heading text-vm-5">Configure {luciel.name}</h1>
-        <p className="mt-vm-1 text-vm-1 text-vm-text-muted">
-          Five things to set. You can change any of them at any time — you adjust the role, you
-          don&apos;t re-hire.
-        </p>
-      </div>
+      <PageHeader
+        title={`Configure ${luciel.name}`}
+        description="Five things to set. You can change any of them at any time — you adjust the role, you don't re-hire."
+      />
 
       <ChannelsPillar luciel={luciel} />
       <ToolsPillar luciel={luciel} />

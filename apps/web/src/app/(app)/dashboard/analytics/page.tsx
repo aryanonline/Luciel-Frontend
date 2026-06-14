@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, CardTitle, CardDescription, Button } from '@luciel/ui';
+import { Card, CardTitle, CardDescription, Button, PageHeader } from '@luciel/ui';
 import { useAnalytics } from '@/lib/hooks';
 
 /**
@@ -23,10 +23,11 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-vm-5">
-      <div className="flex items-center justify-between">
-        <h1 className="font-heading text-vm-5">Analytics</h1>
-        <Button variant="secondary">Export CSV</Button>
-      </div>
+      <PageHeader
+        title="Analytics"
+        description="Aggregates only, scoped to your account. No individual customer data is exposed here."
+        actions={<Button variant="secondary">Export CSV</Button>}
+      />
 
       {isLoading || !a ? (
         <p className="text-vm-1 text-vm-text-muted" role="status">
