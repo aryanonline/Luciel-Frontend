@@ -1,7 +1,16 @@
 'use client';
 
 import * as React from 'react';
-import { Card, CardTitle, CardDescription, Button, Modal, Banner, StatusChip } from '@luciel/ui';
+import {
+  Card,
+  CardTitle,
+  CardDescription,
+  Button,
+  Modal,
+  Banner,
+  StatusChip,
+  PageHeader,
+} from '@luciel/ui';
 import type { Lead } from '@luciel/api-client';
 import { useLeads, qk } from '@/lib/hooks';
 import { api } from '@/lib/api';
@@ -35,7 +44,10 @@ export default function LeadsPage() {
 
   return (
     <div className="space-y-vm-5">
-      <h1 className="font-heading text-vm-5">Leads</h1>
+      <PageHeader
+        title="Leads"
+        description="Everyone your Luciel has captured. Keep the list tidy with prune and archive."
+      />
 
       <Banner tone="info">
         Keeping your list tidy: <strong>Prune</strong> permanently deletes a lead (and forgets the

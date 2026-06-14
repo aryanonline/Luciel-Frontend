@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Card, CardTitle, Button, StatusChip, Banner } from '@luciel/ui';
+import { Card, CardTitle, Button, StatusChip, Banner, PageHeader } from '@luciel/ui';
 import type { Message, AnswerEvidence } from '@luciel/api-client';
 import { useConversations } from '@/lib/hooks';
 import { api } from '@/lib/api';
@@ -46,7 +46,10 @@ export default function ConversationsPage() {
 
   return (
     <div className="space-y-vm-5">
-      <h1 className="font-heading text-vm-5">Conversations</h1>
+      <PageHeader
+        title="Conversations"
+        description="Review what your Luciel said, take over live when needed, and check the evidence behind any answer."
+      />
 
       <div className="grid gap-vm-4 lg:grid-cols-2">
         <Card>
