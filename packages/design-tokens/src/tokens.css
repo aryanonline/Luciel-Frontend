@@ -1,0 +1,104 @@
+/* =============================================================================
+ * Luciel design tokens — CSS custom properties.
+ * Source of truth: Space Instructions §5 (locked). Do NOT edit values here to
+ * "fix" a screen; if a token must change, it changes here and everywhere
+ * consumes the change. Every text/background pairing below meets WCAG 2.1 AA
+ * (>=4.5:1 body, >=3:1 large) and is verified by axe in CI.
+ *
+ * The widget compiles these into its shadow-DOM scope (NOT as Tailwind
+ * utilities leaking onto host pages) — Space Instructions §2.
+ * ============================================================================= */
+
+:root {
+  /* --- Color (light theme — primary). §5 verbatim. --------------------------- */
+  --vm-bg: #ffffff; /* app background */
+  --vm-surface: #f7f8fa; /* cards, raised panels */
+  --vm-border: #e3e6eb; /* hairline borders */
+  --vm-text: #14181f; /* primary text — AA on bg & surface */
+  --vm-text-muted: #5a6473; /* secondary text — AA on bg */
+  --vm-accent: #2f5bea; /* single brand accent (trust-blue) */
+  --vm-accent-hover: #2348c4;
+  --vm-accent-weak: #eaf0ff; /* accent tint for selected/active states */
+  --vm-success: #1a7f5a; /* "Connected" chip */
+  --vm-warning: #b26a00; /* "Action needed" chip */
+  --vm-danger: #c2362f; /* "Reconnect needed", destructive actions */
+  --vm-focus-ring: #2f5bea; /* 2px visible focus ring, never removed */
+
+  /* --- Type. §5 verbatim. ---------------------------------------------------- */
+  /* Single family — no display/serif mix. */
+  --vm-font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Scale (rem): 0.75 / 0.875 / 1 / 1.125 / 1.25 / 1.5 / 2 / 2.5 / 3 */
+  --vm-font-size-0: 0.75rem;
+  --vm-font-size-1: 0.875rem;
+  --vm-font-size-2: 1rem; /* body */
+  --vm-font-size-3: 1.125rem;
+  --vm-font-size-4: 1.25rem;
+  --vm-font-size-5: 1.5rem;
+  --vm-font-size-6: 2rem;
+  --vm-font-size-7: 2.5rem;
+  --vm-font-size-8: 3rem;
+
+  --vm-line-height-body: 1.6; /* body = 1rem/1.6 */
+  --vm-line-height-tight: 1.2;
+
+  /* Weights: 400 body, 500 UI labels, 600 headings. No ultralight, no black. */
+  --vm-font-weight-body: 400;
+  --vm-font-weight-label: 500;
+  --vm-font-weight-heading: 600;
+
+  /* --- Spacing (px, 8px-based; 4 for fine adjustments). §5 verbatim. --------- */
+  --vm-space-1: 4px;
+  --vm-space-2: 8px;
+  --vm-space-3: 12px;
+  --vm-space-4: 16px;
+  --vm-space-5: 24px;
+  --vm-space-6: 32px;
+  --vm-space-7: 48px;
+  --vm-space-8: 64px;
+  --vm-space-9: 96px;
+
+  /* --- Radius. §5 verbatim. -------------------------------------------------- */
+  --vm-radius-control: 6px; /* controls */
+  --vm-radius-card: 10px; /* cards */
+  --vm-radius-pill: 9999px; /* chips/pills */
+
+  /* --- Shadow — one soft elevation only. §5 verbatim. ------------------------ */
+  --vm-shadow: 0 1px 2px rgba(20, 24, 31, 0.06), 0 4px 12px rgba(20, 24, 31, 0.05);
+
+  /* --- Motion. §5 verbatim. -------------------------------------------------- */
+  /* 150–200ms ease-out for state changes. */
+  --vm-motion-duration: 175ms;
+  --vm-motion-easing: cubic-bezier(0, 0, 0.2, 1); /* ease-out */
+  --vm-focus-ring-width: 2px;
+  --vm-min-touch-target: 44px;
+}
+
+/* -----------------------------------------------------------------------------
+ * Dark theme — "the same scale inverted" (§5). ASSUMPTION (flagged in PR /
+ * README): §5 specifies the light palette literally and states dark "uses the
+ * same scale inverted" without listing dark hex values. These are the minimal,
+ * AA-targeted inversions; treat them as provisional until brand confirms exact
+ * dark hex. The accent stays the locked trust-blue family.
+ * --------------------------------------------------------------------------- */
+:root[data-theme='dark'] {
+  --vm-bg: #14181f;
+  --vm-surface: #1c2129;
+  --vm-border: #2b313b;
+  --vm-text: #f3f5f8;
+  --vm-text-muted: #aab3c0;
+  --vm-accent: #5a82f5;
+  --vm-accent-hover: #7396f7;
+  --vm-accent-weak: #1d2740;
+  --vm-success: #3ba47d;
+  --vm-warning: #d98a2b;
+  --vm-danger: #e0655e;
+  --vm-focus-ring: #5a82f5;
+}
+
+/* Respect reduced motion EVERYWHERE (§5 / Arch §5.16). */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --vm-motion-duration: 0ms;
+  }
+}
