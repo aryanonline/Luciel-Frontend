@@ -1,0 +1,24 @@
+/* Token custom properties (the single source of truth — Space Instructions §5). */
+@import '@luciel/design-tokens/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: var(--vm-font-family);
+    color: var(--vm-text);
+    background: var(--vm-bg);
+  }
+  body {
+    font-size: var(--vm-font-size-2);
+    line-height: var(--vm-line-height-body);
+    font-weight: var(--vm-font-weight-body);
+  }
+  /* Visible focus ring everywhere — never removed (Space Instructions §5). */
+  :focus-visible {
+    outline: var(--vm-focus-ring-width) solid var(--vm-focus-ring);
+    outline-offset: 2px;
+  }
+}
