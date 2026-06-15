@@ -63,17 +63,16 @@ export default function SignupPage() {
           id="password"
           label="Password"
           error={errors.password?.message}
-          hint="Your password is the primary credential — use a strong, unique one. MFA is on the roadmap, not yet available."
+          hint="At least 8 characters. Use something strong and unique."
           required
         >
           {(p) => (
             <Input type="password" autoComplete="new-password" {...p} {...register('password')} />
           )}
         </Field>
-        {/* Invisible captcha runs here (no visible challenge in the happy path). */}
-        <p className="mb-vm-4 text-vm-0 text-vm-text-muted">
-          Protected by an invisible captcha — usually one click, nothing to solve.
-        </p>
+        {/* An invisible captcha runs silently on submit (Customer Journey Phase 2) —
+            no visible challenge and intentionally NOT narrated to the user. The
+            MFA-availability disclosure lives in the Terms, not on this form. */}
         <Button type="submit" variant="primary" disabled={isSubmitting} className="w-full">
           {isSubmitting ? 'Creating…' : 'Create account'}
         </Button>
