@@ -89,6 +89,23 @@ describe('mock models the required states', () => {
   });
 });
 
+describe('Axis10: removePaymentMethod returns BillingInfo (backend changed 204→200+body)', () => {
+  it('mock removePaymentMethod returns a BillingInfo object with budget fields', async () => {
+    const client = createLucielClient({ adapter: 'mock', mock: { scenario: 'payg' } });
+    // Confirm payg has a payment method before removal.
+    const before = await client.billing.get();
+    expect(before.paymentMethod).toBeDefined();
+
+    const result = await client.billing.removePaymentMethod();
+    // Must return a BillingInfo (not undefined / void).
+    expect(result).toBeDefined();
+    expect(result.budget).toBeDefined();
+    expect(result.budget.billingState).toBe('free_cap');
+    // Payment method must be absent after removal.
+    expect(result.paymentMethod).toBeUndefined();
+  });
+});
+
 describe('connection chip mapping (Arch §3.8.1/§3.8.4)', () => {
   it('maps status → the three customer-facing chips', () => {
     expect(chipForConnection('connected')).toBe('connected');
