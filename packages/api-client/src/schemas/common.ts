@@ -22,6 +22,9 @@ export const connectionStatus = z.enum([
   'expired', // -> "Reconnect needed"
   'revoked', // not shown to broker; lifecycle teardown
   'dormant', // downgrade grace; restored on re-upgrade
+  // SMS/Voice number provisioned but A2P 10DLC carrier registration not yet
+  // approved — NOT live; shown as "being activated with the carriers" (Arch §3.1.6).
+  'pending_carrier_registration',
 ]);
 export type ConnectionStatus = z.infer<typeof connectionStatus>;
 
