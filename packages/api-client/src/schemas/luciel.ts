@@ -74,7 +74,14 @@ export const knowledgeSourceOrigin = z.enum([
 ]);
 export type KnowledgeSourceOrigin = z.infer<typeof knowledgeSourceOrigin>;
 
-export const knowledgeSyncStatus = z.enum(['synced', 'syncing', 'needs_reconnect']);
+// Arch §3.2.3 sync_status vocabulary. paused_reconnect_needed replaces the former
+// needs_reconnect; error surfaces non-revocation sync failures (audit Axis4-F02).
+export const knowledgeSyncStatus = z.enum([
+  'synced',
+  'syncing',
+  'paused_reconnect_needed',
+  'error',
+]);
 export type KnowledgeSyncStatus = z.infer<typeof knowledgeSyncStatus>;
 
 export const knowledgeSource = z.object({

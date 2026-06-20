@@ -83,7 +83,13 @@ export function KnowledgePillar() {
             <div className="flex items-center gap-vm-2">
               {s.syncStatus && (
                 <StatusChip
-                  kind={s.syncStatus === 'needs_reconnect' ? 'reconnect_needed' : 'connected'}
+                  kind={
+                    s.syncStatus === 'paused_reconnect_needed'
+                      ? 'reconnect_needed'
+                      : s.syncStatus === 'error'
+                        ? 'action_needed'
+                        : 'connected'
+                  }
                 />
               )}
               <Button variant="ghost">View</Button>
