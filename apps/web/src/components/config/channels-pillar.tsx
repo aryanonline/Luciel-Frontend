@@ -15,9 +15,20 @@ import { channelLabel, chipKind } from './labels';
  * be accepted before Voice activates (Arch §3.1.2). The platform always plays an
  * AI-identity + recording/transcription notice the admin can reword but not
  * disable; the admin confirms they're responsible for jurisdiction consent law.
+ *
+ * Channel-→tool cascade (Arch §3.3 / Decision §43): disabling the SMS channel
+ * force-disables send_sms; disabling the Email channel force-disables send_email.
+ * The tools-pillar UI also shows the tool toggle as blocked (see tools-pillar.tsx).
  */
+
+/** Channel IDs whose disable cascades to a dependent send tool. */
+const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], string>> = {
+  sms: 'send_sms',
+  email: 'send_email',
+};
+
 export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
-  const { updateChannels, acknowledgeVoiceConsent } = useLucielMutations();
+  const { updateChannels, acknowledgeVoiceConsent, updateTools } = useLucielMutations();
   const [voiceModalOpen, setVoiceModalOpen] = React.useState(false);
   const [consentChecked, setConsentChecked] = React.useState(false);
 
@@ -30,8 +41,19 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         return;
       }
     }
-    const next = luciel.channels.map((c) => (c.id === id ? { ...c, enabled } : c));
-    updateChannels.mutate(next);
+    const nextChannels = luciel.channels.map((c) => (c.id === id ? { ...c, enabled } : c));
+    updateChannels.mutate(nextChannels);
+
+    // Cascade: disabling a channel force-disables its dependent send tool (Arch §3.3).
+    if (!enabled) {
+      const dependentToolId = CHANNEL_TOOL_CASCADE[id];
+      if (dependentToolId) {
+        const nextTools = luciel.tools.map((t) =>
+          t.id === dependentToolId ? { ...t, enabled: false } : t,
+        );
+        updateTools.mutate(nextTools);
+      }
+    }
   };
 
   const confirmVoiceConsent = async () => {
