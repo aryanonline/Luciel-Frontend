@@ -1,4 +1,5 @@
 import type { LucielApiClient } from '../client';
+import type { BillingInfo } from '../schemas';
 import { createTransport, type TransportOptions } from './transport';
 
 /**
@@ -73,7 +74,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     billing: {
       get: () => t.get('/api/v1/billing'),
       startCheckout: () => t.post('/api/v1/billing/checkout'),
-      removePaymentMethod: () => t.del('/api/v1/billing/payment-method'),
+      removePaymentMethod: () => t.del<BillingInfo>('/api/v1/billing/payment-method'),
     },
     analytics: {
       overview: () => t.get('/api/v1/admin/usage/overview'),
