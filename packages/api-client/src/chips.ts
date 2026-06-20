@@ -17,6 +17,9 @@ export function chipForConnection(status: ConnectionStatus): ConnectionChip {
     case 'error':
     case 'revoked':
     case 'dormant':
+    // Carrier registration pending: the channel is not yet live, so it shows the
+    // "action needed / being activated" chip — never "connected" (Arch §3.1.6).
+    case 'pending_carrier_registration':
     default:
       return 'action_needed';
   }
