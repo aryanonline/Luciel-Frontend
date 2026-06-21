@@ -32,3 +32,4 @@ pnpm-debug.log*
 # Turbo / caches
 .turbo/
 .cache/
+.vercel

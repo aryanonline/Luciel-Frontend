@@ -15,7 +15,7 @@ export default function EmbedPage() {
   const [copied, setCopied] = React.useState(false);
 
   const embedKey = luciel?.embedKeyPublicId ?? 'vm_live_…';
-  const snippet = `<script src="https://embed.vantagemind.com/v1/luciel.js" data-key="${embedKey}"></script>`;
+  const snippet = `<script src="https://embed.vantagemind.ai/v1/luciel.js" data-key="${embedKey}"></script>`;
 
   const copy = async () => {
     try {

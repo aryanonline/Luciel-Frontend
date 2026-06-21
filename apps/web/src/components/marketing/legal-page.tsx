@@ -21,20 +21,26 @@ export function LegalPage({
   intro,
   lastUpdated,
   sections,
+  draft = false,
 }: {
   title: string;
   intro: string;
   lastUpdated: string;
   sections: LegalSection[];
+  /** When true, render the not-in-force draft banner. Published pages set false. */
+  draft?: boolean;
 }) {
   return (
     <Section className="pt-vm-8">
       <Container size="md">
-        <Banner tone="warning" className="mb-vm-5">
-          <strong>Draft — not yet in force.</strong> This page is a plain-language summary of terms
-          we intend to publish. It is not legal advice and is pending review and approval by
-          qualified counsel. The binding, counsel-approved version will replace this before launch.
-        </Banner>
+        {draft && (
+          <Banner tone="warning" className="mb-vm-5">
+            <strong>Draft — not yet in force.</strong> This page is a plain-language summary of
+            terms we intend to publish. It is not legal advice and is pending review and approval
+            by qualified counsel. The binding, counsel-approved version will replace this before
+            launch.
+          </Banner>
+        )}
 
         <h1 className="font-heading text-vm-7 tracking-tight">{title}</h1>
         <p className="mt-vm-2 text-vm-0 text-vm-text-muted">Last updated: {lastUpdated}</p>
@@ -56,8 +62,8 @@ export function LegalPage({
         </div>
 
         <p className="mt-vm-8 border-t border-vm-border pt-vm-4 text-vm-1 text-vm-text-muted">
-          Questions about this document? Contact privacy@vantagemind.com. Security disclosures:
-          security@vantagemind.com.
+          Questions about this document? Contact privacy@vantagemind.ai. Security disclosures:
+          security@vantagemind.ai.
         </p>
       </Container>
     </Section>

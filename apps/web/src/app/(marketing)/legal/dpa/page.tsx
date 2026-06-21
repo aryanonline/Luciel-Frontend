@@ -8,7 +8,7 @@ export default function DpaPage() {
   return (
     <LegalPage
       title="Data Processing Addendum"
-      lastUpdated="Draft — pending counsel"
+      lastUpdated="June 21, 2026"
       intro="This addendum governs how VantageMind processes your end customers’ (leads’) personal data on your behalf. You are the controller; VantageMind is the processor, acting on your documented instructions. It forms part of the Terms of Service."
       sections={[
         {

@@ -12,7 +12,7 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Service"
-      lastUpdated="Draft — pending counsel"
+      lastUpdated="June 21, 2026"
       intro="These terms describe the commercial relationship between you (the account owner) and VantageMind. The summary below mirrors the product as documented; the binding version is finalized with counsel before launch."
       sections={[
         {

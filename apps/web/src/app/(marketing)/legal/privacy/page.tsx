@@ -3,13 +3,13 @@ import { LegalPage } from '@/components/marketing/legal-page';
 
 export const metadata: Metadata = { title: 'Privacy Policy — VantageMind' };
 
-/** Privacy Policy — plain-language summary, DRAFT/not-in-force (Legal Part B). */
+/** Privacy Policy — published copy (mirrors Legal Part B + the four canonical docs). */
 export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      lastUpdated="Draft — pending counsel"
-      intro="This summary explains how VantageMind handles personal information. For your end customers’ (leads’) data you are the controller and we are the processor, acting on your instructions; the processing terms are in our Data Processing Addendum."
+      lastUpdated="June 21, 2026"
+      intro="This Privacy Policy explains how VantageMind handles personal information. For your end customers’ (leads’) data you are the controller and we are the processor, acting on your instructions; the processing terms are in our Data Processing Addendum."
       sections={[
         {
           heading: 'What we collect',
@@ -57,6 +57,15 @@ export default function PrivacyPage() {
           heading: 'Your rights and your leads’ rights',
           body: [
             'You may access, correct, export, or delete your admin data, subject to legitimate retention such as billing records. Your leads have data-subject rights (access and erasure); because you are the controller of their data, the platform gives you a per-lead erasure action and export to honor those requests.',
+          ],
+        },
+        {
+          heading: 'SMS and messaging terms',
+          body: [
+            'When an Admin enables the SMS channel, VantageMind (via our messaging carrier, Twilio) sends and receives text messages with that Admin’s leads on the Admin’s behalf. Leads opt in to messaging by initiating or continuing a conversation with the Admin’s business; messages are conversational and may recur as the conversation continues.',
+            'Message frequency varies by conversation. Msg & data rates may apply. Reply STOP to any message to opt out and stop further messages; reply HELP for help. Opting out is honored at the carrier level.',
+            'We do not sell or share mobile information or SMS opt-in data with third parties for their own marketing. SMS sender registration (A2P 10DLC) is completed per business before live sending; until a business’s registration is carrier-approved, its SMS channel shows as pending and cannot send.',
+            'SMS carrier-network transport is not end-to-end encrypted — this is the nature of the SMS protocol, and we state it plainly rather than overclaim. The VantageMind-to-carrier API leg is TLS-protected.',
           ],
         },
       ]}
