@@ -9,10 +9,23 @@
  * in the CSP in middleware. X-Frame-Options is set as a legacy backstop.
  */
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Emit a self-contained server bundle (.next/standalone) so Next.js SSR runs on
+  // AWS Amplify's compute hosting (and any container host). Without this, Amplify
+  // treats the build as static files and dynamic/SSR routes 404. Interim host
+  // setting for the temporary marketing site; harmless for the permanent edge.
+  output: 'standalone',
+  // In a pnpm monorepo the standalone tracer must root at the workspace, or the
+  // hoisted node_modules are omitted from the server bundle. '../../' = repo root.
+  outputFileTracingRoot: path.join(__dirname, '../../'),
   transpilePackages: ['@luciel/ui', '@luciel/design-tokens', '@luciel/api-client'],
   async headers() {
     return [
