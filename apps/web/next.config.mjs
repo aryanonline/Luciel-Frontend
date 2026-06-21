@@ -25,7 +25,10 @@ const nextConfig = {
   output: 'standalone',
   // In a pnpm monorepo the standalone tracer must root at the workspace, or the
   // hoisted node_modules are omitted from the server bundle. '../../' = repo root.
-  outputFileTracingRoot: path.join(__dirname, '../../'),
+  // On Next 14 this option lives under `experimental`.
+  experimental: {
+    outputFileTracingRoot: path.join(__dirname, '../../'),
+  },
   transpilePackages: ['@luciel/ui', '@luciel/design-tokens', '@luciel/api-client'],
   async headers() {
     return [
