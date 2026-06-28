@@ -2,7 +2,7 @@
   "name": "@luciel/widget",
   "version": "0.0.0",
   "private": true,
-  "description": "The embeddable chat widget. Vite library-mode → a single self-initializing bundle served from embed.vantagemind.com/v1/luciel.js. Shadow-DOM isolated, tiny, framework-light, ZERO admin-API code (Space Instructions §2, §6.3).",
+  "description": "The embeddable chat widget. Vite library-mode → a single self-initializing bundle served from embed.vantagemind.ai/v1/luciel.js. Shadow-DOM isolated, tiny, framework-light, ZERO admin-API code (Space Instructions §2, §6.3).",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -56,8 +56,8 @@ export function LegalPage({
         </div>
 
         <p className="mt-vm-8 border-t border-vm-border pt-vm-4 text-vm-1 text-vm-text-muted">
-          Questions about this document? Contact privacy@vantagemind.com. Security disclosures:
-          security@vantagemind.com.
+          Questions about this document? Contact privacy@vantagemind.ai. Security disclosures:
+          security@vantagemind.ai.
         </p>
       </Container>
     </Section>

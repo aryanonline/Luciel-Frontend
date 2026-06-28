@@ -59,7 +59,7 @@ packages/
 - **Next.js App Router + TypeScript** (marketing + dashboard). Route groups give
   the two planes separate layouts/middleware/bundle boundaries in one repo.
 - **Widget is NOT Next.js** — Vite library-mode → a single self-initializing
-  bundle for `embed.vantagemind.com/v1/luciel.js`, mounted into a shadow DOM,
+  bundle for `embed.vantagemind.ai/v1/luciel.js`, mounted into a shadow DOM,
   framework-light (does not assume React on the host page).
 - **Tailwind + CSS-variable tokens** · **Radix UI** (accessible primitives) ·
   **TanStack Query** (server state) · **React Hook Form + Zod** (forms; Zod

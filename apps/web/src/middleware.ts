@@ -27,7 +27,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  *      me()→state routing handle unverified users (Space Instructions §7).
  */
 
-const API_ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.vantagemind.com';
+const API_ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://api.vantagemind.ai';
 const STRIPE = 'https://js.stripe.com';
 const STRIPE_API = 'https://api.stripe.com';
 const STRIPE_CHECKOUT = 'https://checkout.stripe.com';

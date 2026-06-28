@@ -4,7 +4,7 @@ import { mountWidget } from './mount';
  * Self-initializing entry (Customer Journey §5, Space Instructions §6.3).
  * The host page embeds exactly one line:
  *
- *   <script src="https://embed.vantagemind.com/v1/luciel.js" data-key="vm_live_..."></script>
+ *   <script src="https://embed.vantagemind.ai/v1/luciel.js" data-key="vm_live_..."></script>
  *
  * On load this script finds its own tag, reads the embed key from data-key
  * (runtime injection — never hardcoded, §3.4), and mounts the widget into a
