@@ -4,7 +4,9 @@ name: deploy
 # luciel-<env>-web ECR repo (owned by the backend CDK app); build the widget
 # bundle -> sync to the widget S3 bucket + invalidate CloudFront; then roll the
 # web ECS service. Promotion: dev auto on push to main -> staging auto -> prod
-# behind a GitHub Environment manual-approval gate. prod is NEVER auto-deployed.
+# behind a WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
+# prod is NEVER auto-deployed on push. (GitHub Environment required-reviewer rules
+# need a paid plan on private repos, so the gate is enforced in YAML instead.)
 
 on:
   push:
@@ -161,8 +163,11 @@ jobs:
   deploy-prod:
     needs: deploy-staging
     runs-on: ubuntu-latest
-    # The `prod` GitHub Environment MUST have a required-reviewer protection rule.
-    # This job waits for human approval before it runs — the founder gate.
+    # PROD GATE (workflow-level): this job only runs on a deliberate manual
+    # workflow_dispatch with environment=prod. A push to main can NEVER reach prod
+    # (inputs.environment is empty on push, so the condition is false). This is the
+    # §5.8 founder approval gate, enforced in YAML because required-reviewer rules
+    # need a paid GitHub plan on private repos.
     environment: prod
     if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
     env: { ENVIRONMENT: prod }
