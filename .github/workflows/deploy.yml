@@ -1,0 +1,190 @@
+name: deploy
+
+# Frontend CD (mirrors Luciel-Backend §5.8). Build the web image -> push to the
+# luciel-<env>-web ECR repo (owned by the backend CDK app); build the widget
+# bundle -> sync to the widget S3 bucket + invalidate CloudFront; then roll the
+# web ECS service. Promotion: dev auto on push to main -> staging auto -> prod
+# behind a GitHub Environment manual-approval gate. prod is NEVER auto-deployed.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: fe-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ca-central-1
+  ACCOUNT: '729005488042'
+
+jobs:
+  # ---- Build + push artifacts once, reused by every environment --------------
+  build:
+    runs-on: ubuntu-latest
+    # dev creds are enough to PUSH to ECR/S3 (resources are per-env; we push the
+    # dev artifacts here and re-tag per env in deploy). Build does not deploy.
+    environment: dev
+    outputs:
+      image_tag: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS via OIDC (frontend deploy role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::729005488042:role/luciel-dev-frontend-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.7.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+
+      - name: Install + build (web .next is baked into the image; widget dist here)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @luciel/widget build   # -> apps/widget/dist
+
+      - name: Build + push web image (context = repo root, Dockerfile apps/web)
+        env:
+          ECR: ${{ steps.ecr.outputs.registry }}
+          REPO: luciel-dev-web
+          TAG: ${{ github.sha }}
+        run: |
+          docker build -f apps/web/Dockerfile \
+            --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.vantagemind.ai \
+            --build-arg NEXT_PUBLIC_API_ADAPTER=http \
+            -t "$ECR/$REPO:$TAG" -t "$ECR/$REPO:latest" .
+          docker push "$ECR/$REPO:$TAG"
+          docker push "$ECR/$REPO:latest"
+          # block on CRITICAL CVEs (scan-on-push is enabled on the repo)
+          aws ecr wait image-scan-complete --repository-name "$REPO" --image-id imageTag="$TAG" || true
+          CRIT=$(aws ecr describe-image-scan-findings --repository-name "$REPO" \
+            --image-id imageTag="$TAG" \
+            --query 'imageScanFindings.findingSeverityCounts.CRITICAL' --output text 2>/dev/null || echo None)
+          if [ "$CRIT" != "None" ] && [ "$CRIT" != "0" ]; then
+            echo "::error::$CRIT CRITICAL CVEs in web image - blocking"; exit 1
+          fi
+
+      - name: Stash widget dist for deploy jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: widget-dist
+          path: apps/widget/dist
+
+  # ---- Reusable deploy steps per environment --------------------------------
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: dev
+    env: { ENVIRONMENT: dev }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: widget-dist, path: dist }
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Promote web image tag for this env + roll the service
+        env:
+          TAG: ${{ needs.build.outputs.image_tag }}
+        run: |
+          aws ecr login >/dev/null 2>&1 || true
+          REG=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com
+          REPO=luciel-${ENVIRONMENT}-web
+          # re-tag the built image into this env's repo path as :latest
+          MANIFEST=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag="$TAG" \
+            --query 'images[0].imageManifest' --output text 2>/dev/null || echo "")
+          if [ -n "$MANIFEST" ] && [ "$MANIFEST" != "None" ]; then
+            aws ecr put-image --repository-name "$REPO" --image-tag latest --image-manifest "$MANIFEST" || true
+          fi
+          CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@,'Luciel-${ENVIRONMENT}-Web')]" --output text)
+          for SVC in $(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text); do
+            aws ecs update-service --cluster "$CLUSTER" --service "$SVC" --force-new-deployment
+          done
+      - name: Sync widget bundle + invalidate CloudFront
+        env: { ENVIRONMENT: dev }
+        run: |
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET=luciel-${ENVIRONMENT}-widget-${ACCT}
+          aws s3 sync dist "s3://${BUCKET}/v1/" --delete --cache-control "public,max-age=31536000,immutable"
+          DIST=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
+          [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
+
+  deploy-staging:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment: staging
+    env: { ENVIRONMENT: staging }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: widget-dist, path: dist }
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Roll web service + sync widget (see deploy-dev for details)
+        env:
+          TAG: ${{ needs.build.outputs.image_tag }}
+        run: |
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@,'Luciel-${ENVIRONMENT}-Web')]" --output text)
+          for SVC in $(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text); do
+            aws ecs update-service --cluster "$CLUSTER" --service "$SVC" --force-new-deployment
+          done
+          BUCKET=luciel-${ENVIRONMENT}-widget-${ACCT}
+          aws s3 sync dist "s3://${BUCKET}/v1/" --delete --cache-control "public,max-age=31536000,immutable"
+          DIST=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
+          [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
+
+  # ---- prod: MANUAL approval gate. Never auto-deployed. ----------------------
+  deploy-prod:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    # The `prod` GitHub Environment MUST have a required-reviewer protection rule.
+    # This job waits for human approval before it runs — the founder gate.
+    environment: prod
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
+    env: { ENVIRONMENT: prod }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: widget-dist, path: dist }
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Roll web service + sync widget
+        env:
+          TAG: ${{ needs.build.outputs.image_tag }}
+        run: |
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@,'Luciel-${ENVIRONMENT}-Web')]" --output text)
+          for SVC in $(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text); do
+            aws ecs update-service --cluster "$CLUSTER" --service "$SVC" --force-new-deployment
+          done
+          BUCKET=luciel-${ENVIRONMENT}-widget-${ACCT}
+          aws s3 sync dist "s3://${BUCKET}/v1/" --delete --cache-control "public,max-age=31536000,immutable"
+          DIST=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
+          [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
