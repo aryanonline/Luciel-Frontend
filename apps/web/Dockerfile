@@ -7,7 +7,14 @@
 # values via --build-arg if you need to override the in-code defaults.
 
 # ---- Base -------------------------------------------------------------------
-FROM node:20.18-bookworm-slim AS base
+# Node 22 LTS on bookworm-slim. We apply OS security upgrades at build time so the
+# image doesn't ship stale base CVEs (ECR scan-on-push blocks CRITICAL per §5.14;
+# the prior node:20.18 base failed on perl + gnutls28 criticals). Node 20 is also
+# being deprecated, so 22 LTS is the forward-looking base.
+FROM node:22-bookworm-slim AS base
+RUN apt-get update \
+  && apt-get upgrade -y --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/*
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable && corepack prepare pnpm@9.7.0 --activate
