@@ -3,10 +3,13 @@ name: deploy
 # Frontend CD (mirrors Luciel-Backend §5.8). Build the web image -> push to the
 # luciel-<env>-web ECR repo (owned by the backend CDK app); build the widget
 # bundle -> sync to the widget S3 bucket + invalidate CloudFront; then roll the
-# web ECS service. Promotion: dev auto on push to main -> staging auto -> prod
-# behind a WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
+# web ECS service. Promotion: dev auto on push to main -> prod behind a
+# WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
 # prod is NEVER auto-deployed on push. (GitHub Environment required-reviewer rules
 # need a paid plan on private repos, so the gate is enforced in YAML instead.)
+# NOTE: the authoritative pre-prod §10 verification HARD gate lives in the BACKEND
+# pipeline (ephemeral prod-shaped preprod). This frontend prod deploy is the
+# manual, gated frontend rollout that follows a passed backend release.
 
 on:
   push:
@@ -16,7 +19,7 @@ on:
       environment:
         description: Target environment
         type: choice
-        options: [dev, staging, prod]
+        options: [dev, prod]
         default: dev
 
 permissions:
@@ -131,37 +134,9 @@ jobs:
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
           [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
 
-  deploy-staging:
-    needs: deploy-dev
-    runs-on: ubuntu-latest
-    environment: staging
-    env: { ENVIRONMENT: staging }
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: widget-dist, path: dist }
-      - name: Configure AWS via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Roll web service + sync widget (see deploy-dev for details)
-        env:
-          TAG: ${{ needs.build.outputs.image_tag }}
-        run: |
-          ACCT=$(aws sts get-caller-identity --query Account --output text)
-          CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@,'Luciel-${ENVIRONMENT}-Web')]" --output text)
-          for SVC in $(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text); do
-            aws ecs update-service --cluster "$CLUSTER" --service "$SVC" --force-new-deployment
-          done
-          BUCKET=luciel-${ENVIRONMENT}-widget-${ACCT}
-          aws s3 sync dist "s3://${BUCKET}/v1/" --delete --cache-control "public,max-age=31536000,immutable"
-          DIST=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
-          [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
-
   # ---- prod: MANUAL approval gate. Never auto-deployed. ----------------------
   deploy-prod:
-    needs: deploy-staging
+    needs: deploy-dev
     runs-on: ubuntu-latest
     # PROD GATE (workflow-level): this job only runs on a deliberate manual
     # workflow_dispatch with environment=prod. A push to main can NEVER reach prod
