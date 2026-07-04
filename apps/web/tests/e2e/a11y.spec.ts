@@ -28,3 +28,10 @@ test('dashboard configure page has no WCAG 2.1 AA violations', async ({ page }) 
   const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test('embed page (email provisioning) has no WCAG 2.1 AA violations', async ({ page }) => {
+  await page.goto('/dashboard/embed');
+  await page.waitForLoadState('networkidle');
+  const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+  expect(results.violations).toEqual([]);
+});

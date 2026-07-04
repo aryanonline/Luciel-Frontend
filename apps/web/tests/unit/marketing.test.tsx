@@ -22,11 +22,13 @@ describe('marketing landing page', () => {
     expect(screen.getByText(/Every feature is included on every account/)).toBeInTheDocument();
   });
 
-  it('keeps the honest launch-constraint notes (email subdomain, one login)', () => {
+  it('states the honest launch limit (own-domain email supported; one login)', () => {
     render(<HomePage />);
-    // The trust strip folds both real launch constraints into one concise note.
-    expect(screen.getByText(/VantageMind subdomain/)).toBeInTheDocument();
+    // Own-domain email is a launch capability now (Arch §3.1.6a, Decision #49) —
+    // no longer listed as a limit. The one remaining launch limit is one login.
+    expect(screen.getByText(/Email works on your own domain from day one/)).toBeInTheDocument();
     expect(screen.getByText(/one login per\s+account/)).toBeInTheDocument();
+    expect(screen.queryByText(/VantageMind subdomain/)).not.toBeInTheDocument();
   });
 
   it('shows the concise included-features list', () => {

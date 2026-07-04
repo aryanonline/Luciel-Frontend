@@ -3,6 +3,7 @@ import type {
   Luciel,
   BillingInfo,
   Connection,
+  EmailProvisioning,
   KnowledgeSource,
   ConversationSummary,
   Lead,
@@ -102,6 +103,11 @@ export const seedConnections: Connection[] = [
     lastHealthCheckAt: '2026-06-14T16:00:00Z',
   },
 ];
+
+// Email address not provisioned yet → the embed page shows the own-domain vs
+// VM-subdomain choice (Arch §3.1.6a, Decision #49). provisionEmail() flips this
+// to `pending_email_routing` (own-domain) or `connected` (VM-subdomain).
+export const seedEmailProvisioning: EmailProvisioning | null = null;
 
 export const seedKnowledge: KnowledgeSource[] = [
   {

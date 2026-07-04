@@ -20,6 +20,8 @@ import type {
   CheckoutSession,
   Connection,
   StartConnectionResult,
+  EmailProvisioning,
+  ProvisionEmailRequest,
   ConversationSummary,
   Message,
   AnswerEvidence,
@@ -91,6 +93,13 @@ export interface LucielApiClient {
     /** Re-auth path for expired/error connections (Arch §3.8.7 B). */
     reconnect(connectionId: string): Promise<StartConnectionResult>;
     disconnect(connectionId: string): Promise<void>;
+    /**
+     * Email-address provisioning (Arch §3.1.6a, Decision #49). Returns the current
+     * provisioning, or null if the admin has not provisioned an address yet.
+     */
+    getEmailProvisioning(): Promise<EmailProvisioning | null>;
+    /** Provision the send+receive address: own-domain (DNS/MX) or VM-subdomain. */
+    provisionEmail(req: ProvisionEmailRequest): Promise<EmailProvisioning>;
   };
 
   conversations: {

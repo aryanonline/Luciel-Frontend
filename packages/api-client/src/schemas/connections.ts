@@ -42,3 +42,41 @@ export const startConnectionResult = z.object({
   requiresClientForm: z.boolean().optional(),
 });
 export type StartConnectionResult = z.infer<typeof startConnectionResult>;
+
+/**
+ * Email-address provisioning (Arch §3.1.6a, Decision #49). The admin provisions
+ * the address Luciel SENDS AND RECEIVES on. Two modes, both LAUNCH capabilities:
+ *   own_domain   — the business's own address; requires an inbound DNS/MX routing
+ *                  step, so it sits at `pending_email_routing` until verified.
+ *   vm_subdomain — a zero-DNS VantageMind-subdomain fallback; live immediately.
+ * Own-domain inbound is NOT a deferred limitation.
+ */
+export const emailProvisioningMode = z.enum(['own_domain', 'vm_subdomain']);
+export type EmailProvisioningMode = z.infer<typeof emailProvisioningMode>;
+
+/** A single non-secret DNS record the admin adds for own-domain inbound routing. */
+export const dnsRecord = z.object({
+  type: z.string(), // 'MX' | 'TXT' | 'CNAME'
+  host: z.string(),
+  value: z.string(),
+  priority: z.number().int().optional(),
+});
+export type DnsRecord = z.infer<typeof dnsRecord>;
+
+export const provisionEmailRequest = z.object({
+  mode: emailProvisioningMode,
+  /** Required for own_domain: the address Luciel should send + receive on. */
+  emailAddress: z.string().optional(),
+});
+export type ProvisionEmailRequest = z.infer<typeof provisionEmailRequest>;
+
+export const emailProvisioning = z.object({
+  mode: emailProvisioningMode,
+  /** The provisioned send+receive address (own-domain or the VM-subdomain one). */
+  emailAddress: z.string(),
+  /** `connected` once live; `pending_email_routing` while own-domain DNS/MX verifies. */
+  status: connectionStatus,
+  /** own_domain only: the records the admin must add to complete inbound routing. */
+  dnsRecords: z.array(dnsRecord).optional(),
+});
+export type EmailProvisioning = z.infer<typeof emailProvisioning>;
