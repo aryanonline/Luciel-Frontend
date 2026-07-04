@@ -275,8 +275,22 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         return ok(state.connections);
       },
-      async start() {
+      async start(connectionType, _provider, opts) {
         guardVerified();
+        // BYO SMS/Voice number (Arch §3.1.4/§3.1.6, Decision #48): the tenant supplies
+        // their OWN E.164 number — no OAuth redirect. A supplied number enters carrier
+        // registration (pending_carrier_registration); with no number the sender stays
+        // 'unconfigured' → "Action needed: add your number". SMS + Voice share one number.
+        if (connectionType === 'sms_sender') {
+          if (opts?.phoneNumber && state.luciel) {
+            for (const ch of state.luciel.channels) {
+              if (ch.id === 'sms' || ch.id === 'voice') {
+                ch.connectionStatus = 'pending_carrier_registration';
+              }
+            }
+          }
+          return ok({});
+        }
         return ok({ authorizeUrl: 'https://accounts.example.com/oauth/authorize?mock=1' });
       },
       async reconnect(connectionId) {
