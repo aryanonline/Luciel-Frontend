@@ -291,6 +291,14 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (c) c.status = 'revoked';
         await delay();
       },
+      async swap(connectionId, _provider) {
+        guardVerified();
+        // Proven-before-cutover (Arch §3.8.7 B, Decision #39): the current
+        // connection stays LIVE (status unchanged) until the replacement
+        // health-checks. We only kick off the new connect flow here.
+        void state.connections.find((x) => x.connectionId === connectionId);
+        return ok({ authorizeUrl: 'https://accounts.example.com/oauth/authorize?mock=1' });
+      },
     },
 
     conversations: {
