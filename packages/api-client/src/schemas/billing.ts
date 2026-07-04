@@ -37,6 +37,12 @@ export const budget = z.object({
    * server-driven and never rendered by admin UI (Arch §3.4.1b).
    */
   atCap: z.boolean(),
+  /**
+   * Server-driven heads-up: a payg_enabled account is ~80%+ through its current
+   * billed 100-block and about to roll into the next $39 block (Arch §3.4.1b,
+   * Vision §7). Additive/optional — this is an honest usage nudge, NOT a cap.
+   */
+  nearNextBlock: z.boolean().optional(),
 });
 export type Budget = z.infer<typeof budget>;
 

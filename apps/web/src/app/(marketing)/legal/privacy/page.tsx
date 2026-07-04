@@ -29,7 +29,7 @@ export default function PrivacyPage() {
         {
           heading: 'Data residency',
           body: [
-            'Your data is resident in a disclosed region and is never silently relocated. For the current offering that region is AWS Canada Central (ca-central-1), with no cross-region replication of customer data. AI inference calls transit to our model providers under zero-retention, no-training terms — that step stores nothing.',
+            'VantageMind is Canada-resident. All customer data is stored in AWS Canada Central (ca-central-1), with no cross-region replication. AI inference calls transit to our model providers under zero-retention, no-training terms — that step stores nothing.',
           ],
         },
         {
