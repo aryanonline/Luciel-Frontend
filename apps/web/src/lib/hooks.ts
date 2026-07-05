@@ -8,6 +8,7 @@ import type {
   EscalationContact,
   PersonalityConfig,
   CreateLucielRequest,
+  ConnectionType,
 } from '@luciel/api-client';
 
 /**
@@ -81,6 +82,18 @@ export function useLucielMutations() {
     acknowledgeVoiceConsent: useMutation({
       mutationFn: () => api.luciel.acknowledgeVoiceConsent(),
       onSuccess: invalidate,
+    }),
+    // BYO SMS/Voice number connect (Arch §3.1.4/§3.1.6, Decision #48). Additive
+    // phoneNumber; invalidates both Luciel (channel status) and connections.
+    startConnection: useMutation({
+      mutationFn: (args: { connectionType: ConnectionType; provider: string; phoneNumber?: string }) =>
+        api.connections.start(args.connectionType, args.provider, {
+          phoneNumber: args.phoneNumber,
+        }),
+      onSuccess: () => {
+        invalidate();
+        qc.invalidateQueries({ queryKey: qk.connections });
+      },
     }),
     pause: useMutation({ mutationFn: () => api.luciel.pause(), onSuccess: invalidate }),
     resume: useMutation({ mutationFn: () => api.luciel.resume(), onSuccess: invalidate }),

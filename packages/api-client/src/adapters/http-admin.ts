@@ -49,8 +49,13 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     },
     connections: {
       list: () => t.get('/api/v1/admin/connections'),
-      start: (connectionType, provider) =>
-        t.post('/api/v1/admin/connections', { connectionType, provider }),
+      start: (connectionType, provider, opts) =>
+        t.post('/api/v1/admin/connections', {
+          connectionType,
+          provider,
+          // Additive: only sent for BYO SMS/Voice; omitted for OAuth flows (backend PR #32).
+          ...(opts?.phoneNumber ? { phoneNumber: opts.phoneNumber } : {}),
+        }),
       reconnect: (connectionId) => t.post(`/api/v1/admin/connections/${connectionId}/reconnect`),
       disconnect: (connectionId) => t.del(`/api/v1/admin/connections/${connectionId}`),
     },

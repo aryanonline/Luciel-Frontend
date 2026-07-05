@@ -84,9 +84,15 @@ export interface LucielApiClient {
 
   connections: {
     list(): Promise<Connection[]>;
+    /**
+     * Start a connect flow. `opts.phoneNumber` carries the tenant's OWN E.164
+     * number for the BYO SMS/Voice sender (Arch §3.1.4/§3.1.6, Decision #48) —
+     * ADDITIVE and optional, so existing OAuth/credential callers are unchanged.
+     */
     start(
       connectionType: Connection['connectionType'],
       provider: string,
+      opts?: { phoneNumber?: string },
     ): Promise<StartConnectionResult>;
     /** Re-auth path for expired/error connections (Arch §3.8.7 B). */
     reconnect(connectionId: string): Promise<StartConnectionResult>;
