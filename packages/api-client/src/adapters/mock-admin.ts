@@ -1,6 +1,6 @@
 import type { LucielApiClient } from '../client';
 import { LucielApiError } from '../schemas';
-import type { Account, Luciel, BillingInfo, Connection } from '../schemas';
+import type { Account, Luciel, BillingInfo, Connection, EmailProvisioning } from '../schemas';
 import * as seed from './mock-data';
 
 /**
@@ -45,6 +45,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     luciel: clone(seed.seedLuciel) as Luciel | null,
     billing: clone(seed.seedBilling),
     connections: clone(seed.seedConnections),
+    emailProvisioning: clone(seed.seedEmailProvisioning) as EmailProvisioning | null,
     knowledge: clone(seed.seedKnowledge),
     conversations: clone(seed.seedConversations),
     leads: clone(seed.seedLeads),
@@ -277,8 +278,22 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         return ok(state.connections);
       },
-      async start() {
+      async start(connectionType, _provider, opts) {
         guardVerified();
+        // BYO SMS/Voice number (Arch §3.1.4/§3.1.6, Decision #48): the tenant supplies
+        // their OWN E.164 number — no OAuth redirect. A supplied number enters carrier
+        // registration (pending_carrier_registration); with no number the sender stays
+        // 'unconfigured' → "Action needed: add your number". SMS + Voice share one number.
+        if (connectionType === 'sms_sender') {
+          if (opts?.phoneNumber && state.luciel) {
+            for (const ch of state.luciel.channels) {
+              if (ch.id === 'sms' || ch.id === 'voice') {
+                ch.connectionStatus = 'pending_carrier_registration';
+              }
+            }
+          }
+          return ok({});
+        }
         return ok({ authorizeUrl: 'https://accounts.example.com/oauth/authorize?mock=1' });
       },
       async reconnect(connectionId) {
@@ -292,6 +307,48 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const c = state.connections.find((x: Connection) => x.connectionId === connectionId);
         if (c) c.status = 'revoked';
         await delay();
+      },
+      async getEmailProvisioning() {
+        guardVerified();
+        return ok(state.emailProvisioning);
+      },
+      async provisionEmail(req) {
+        guardVerified();
+        if (req.mode === 'own_domain') {
+          // Own-domain inbound needs DNS/MX verification → not live yet.
+          const emailAddress = req.emailAddress ?? 'hello@yourdomain.com';
+          const domain = emailAddress.split('@')[1] ?? 'yourdomain.com';
+          state.emailProvisioning = {
+            mode: 'own_domain',
+            emailAddress,
+            status: 'pending_email_routing',
+            dnsRecords: [
+              { type: 'MX', host: domain, value: 'inbound.vantagemind.ai', priority: 10 },
+              {
+                type: 'TXT',
+                host: domain,
+                value: 'v=spf1 include:mail.vantagemind.ai ~all',
+              },
+              { type: 'CNAME', host: `vm._domainkey.${domain}`, value: 'dkim.vantagemind.ai' },
+            ],
+          };
+        } else {
+          // VM-subdomain fallback: zero DNS, live immediately.
+          state.emailProvisioning = {
+            mode: 'vm_subdomain',
+            emailAddress: 'sarahchen.reply.vantagemind.ai',
+            status: 'connected',
+          };
+        }
+        return ok(state.emailProvisioning);
+      },
+      async swap(connectionId, _provider) {
+        guardVerified();
+        // Proven-before-cutover (Arch §3.8.7 B, Decision #39): the current
+        // connection stays LIVE (status unchanged) until the replacement
+        // health-checks. We only kick off the new connect flow here.
+        void state.connections.find((x) => x.connectionId === connectionId);
+        return ok({ authorizeUrl: 'https://accounts.example.com/oauth/authorize?mock=1' });
       },
     },
 

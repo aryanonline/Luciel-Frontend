@@ -25,6 +25,9 @@ export const connectionStatus = z.enum([
   // SMS/Voice number provisioned but A2P 10DLC carrier registration not yet
   // approved — NOT live; shown as "being activated with the carriers" (Arch §3.1.6).
   'pending_carrier_registration',
+  // Own-domain email address chosen but inbound DNS/MX routing not yet verified —
+  // NOT live; shown as "Action needed: complete email routing" (Arch §3.1.6a).
+  'pending_email_routing',
 ]);
 export type ConnectionStatus = z.infer<typeof connectionStatus>;
 

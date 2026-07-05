@@ -12,7 +12,14 @@ import {
   StatusChip,
 } from '@luciel/ui';
 import { chipForConnection } from '@luciel/api-client';
-import { useLuciel, useBilling, useConversations, useLeads, useConnections } from '@/lib/hooks';
+import {
+  useLuciel,
+  useBilling,
+  useConversations,
+  useLeads,
+  useConnections,
+  useSwapConnection,
+} from '@/lib/hooks';
 
 /**
  * Dashboard overview. Imports ONLY the typed client hooks (§7). Renders the
@@ -32,10 +39,12 @@ export default function DashboardPage() {
   const leads = useLeads();
   const connections = useConnections();
 
+  const swap = useSwapConnection();
   const b = billing.data?.budget;
   const nearCap = b && b.billingState === 'free_cap' && b.conversationsThisPeriod >= 40 && !b.atCap;
   const nearNextBlock = b && b.billingState === 'payg_enabled' && b.nearNextBlock;
   const needsAttention = connections.data?.filter((c) => c.status !== 'connected') ?? [];
+  const hasConnected = (connections.data ?? []).some((c) => c.status === 'connected');
 
   return (
     <div className="space-y-vm-5">
@@ -116,19 +125,36 @@ export default function DashboardPage() {
               ? 'All connected and healthy.'
               : `${needsAttention.length} need${needsAttention.length === 1 ? 's' : ''} attention.`}
           </CardDescription>
-          <ul className="mt-vm-3 space-y-vm-2">
+          <ul className="mt-vm-3 space-y-vm-3">
             {connections.data?.map((c) => (
-              <li
-                key={c.connectionId}
-                className="flex items-center justify-between gap-vm-2 text-vm-1"
-              >
-                <span className="min-w-0 truncate capitalize text-vm-text-muted">
-                  {c.connectionType} · {c.provider}
-                </span>
-                <StatusChip kind={chipForConnection(c.status)} />
+              <li key={c.connectionId} className="text-vm-1">
+                <div className="flex items-center justify-between gap-vm-2">
+                  <span className="min-w-0 truncate capitalize text-vm-text-muted">
+                    {c.connectionType} · {c.provider}
+                  </span>
+                  <StatusChip kind={chipForConnection(c.status)} />
+                </div>
+                {/* Swap a connected account, proven-before-cutover (Arch §3.8.7 B,
+                    Decision #39) — distinct from Reconnect (same account re-auth). */}
+                {c.status === 'connected' && (
+                  <div className="mt-vm-1">
+                    <Button
+                      variant="ghost"
+                      onClick={() => swap.mutate({ connectionId: c.connectionId, provider: c.provider })}
+                      disabled={swap.isPending}
+                    >
+                      Change connected account
+                    </Button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
+          {hasConnected && (
+            <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
+              Your current connection stays live until the new one is verified.
+            </p>
+          )}
           <div className="mt-vm-4">
             <Button asChild variant="ghost">
               <Link href="/dashboard/configure">Manage connections</Link>

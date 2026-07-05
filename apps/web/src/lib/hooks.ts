@@ -8,6 +8,8 @@ import type {
   EscalationContact,
   PersonalityConfig,
   CreateLucielRequest,
+  ProvisionEmailRequest,
+  ConnectionType,
 } from '@luciel/api-client';
 
 /**
@@ -20,6 +22,7 @@ export const qk = {
   luciel: ['luciel'] as const,
   billing: ['billing'] as const,
   connections: ['connections'] as const,
+  emailProvisioning: ['emailProvisioning'] as const,
   knowledge: ['knowledge'] as const,
   quota: ['quota'] as const,
   conversations: ['conversations'] as const,
@@ -36,6 +39,11 @@ export const useBilling = () =>
   useQuery({ queryKey: qk.billing, queryFn: () => api.billing.get() });
 export const useConnections = () =>
   useQuery({ queryKey: qk.connections, queryFn: () => api.connections.list() });
+export const useEmailProvisioning = () =>
+  useQuery({
+    queryKey: qk.emailProvisioning,
+    queryFn: () => api.connections.getEmailProvisioning(),
+  });
 export const useKnowledge = () =>
   useQuery({ queryKey: qk.knowledge, queryFn: () => api.knowledge.listSources() });
 export const useQuota = () =>
@@ -49,6 +57,28 @@ export const useAnalytics = () =>
   useQuery({ queryKey: qk.analytics, queryFn: () => api.analytics.overview() });
 export const useAudit = () =>
   useQuery({ queryKey: qk.audit, queryFn: () => api.analytics.auditLog() });
+
+/** Email-address provisioning (Arch §3.1.6a, Decision #49): own-domain / VM-subdomain. */
+export function useProvisionEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: ProvisionEmailRequest) => api.connections.provisionEmail(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.emailProvisioning }),
+  });
+}
+
+/**
+ * Swap a connected account, proven-before-cutover (Arch §3.8.7 B, Decision #39):
+ * the current connection stays live until the replacement health-checks.
+ */
+export function useSwapConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { connectionId: string; provider: string }) =>
+      api.connections.swap(args.connectionId, args.provider),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.connections }),
+  });
+}
 
 /** Mutations that invalidate the Luciel after writing a pillar. */
 export function useLucielMutations() {
@@ -81,6 +111,18 @@ export function useLucielMutations() {
     acknowledgeVoiceConsent: useMutation({
       mutationFn: () => api.luciel.acknowledgeVoiceConsent(),
       onSuccess: invalidate,
+    }),
+    // BYO SMS/Voice number connect (Arch §3.1.4/§3.1.6, Decision #48). Additive
+    // phoneNumber; invalidates both Luciel (channel status) and connections.
+    startConnection: useMutation({
+      mutationFn: (args: { connectionType: ConnectionType; provider: string; phoneNumber?: string }) =>
+        api.connections.start(args.connectionType, args.provider, {
+          phoneNumber: args.phoneNumber,
+        }),
+      onSuccess: () => {
+        invalidate();
+        qc.invalidateQueries({ queryKey: qk.connections });
+      },
     }),
     pause: useMutation({ mutationFn: () => api.luciel.pause(), onSuccess: invalidate }),
     resume: useMutation({ mutationFn: () => api.luciel.resume(), onSuccess: invalidate }),

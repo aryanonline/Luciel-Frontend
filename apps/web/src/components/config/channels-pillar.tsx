@@ -1,15 +1,29 @@
 'use client';
 
 import * as React from 'react';
-import { Card, CardTitle, CardDescription, Toggle, Modal, StatusChip } from '@luciel/ui';
+import {
+  Card,
+  CardTitle,
+  CardDescription,
+  Toggle,
+  Modal,
+  StatusChip,
+  Field,
+  Input,
+  Button,
+} from '@luciel/ui';
 import type { Luciel, ChannelConfig } from '@luciel/api-client';
 import { useLucielMutations } from '@/lib/hooks';
 import { channelLabel, chipKind } from './labels';
 
 /**
  * Channels pillar (Vision §3.1, Customer Journey §4.1). Multi-select of channels.
- * The widget is on by default. SMS/Voice share one provisioned number — no
- * separate number per channel (Vision §3.1).
+ * The widget is on by default. SMS/Voice run on the BUSINESS'S OWN phone number —
+ * the tenant brings their number (BYO); the platform never provisions one
+ * (Arch §3.1.4/§3.1.6, Decision #48). One number backs both SMS and Voice.
+ * Until a number is supplied, SMS/Voice are "Action needed: add your number" and
+ * are not live; a supplied number shows "being activated with carriers" while it
+ * completes carrier registration (connectionStatus pending_carrier_registration).
  *
  * Voice enablement is a HARD GATE: a one-time consent-acknowledgment modal must
  * be accepted before Voice activates (Arch §3.1.2). The platform always plays an
@@ -27,10 +41,37 @@ const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], string>> = {
   email: 'send_email',
 };
 
+/** UX-only E.164 shape check (client validation is never a security control). */
+const E164 = /^\+[1-9]\d{7,14}$/;
+
 export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
-  const { updateChannels, acknowledgeVoiceConsent, updateTools } = useLucielMutations();
+  const { updateChannels, acknowledgeVoiceConsent, updateTools, startConnection } =
+    useLucielMutations();
   const [voiceModalOpen, setVoiceModalOpen] = React.useState(false);
   const [consentChecked, setConsentChecked] = React.useState(false);
+  const [phoneNumber, setPhoneNumber] = React.useState('');
+
+  // One BYO number backs both SMS and Voice (Arch §3.1.4/§3.1.6). Derive the shared
+  // number status from whichever of the two carries a connectionStatus.
+  const smsChannel = luciel.channels.find((c) => c.id === 'sms');
+  const voiceChannel = luciel.channels.find((c) => c.id === 'voice');
+  const phoneEnabled = Boolean(smsChannel?.enabled || voiceChannel?.enabled);
+  const numberStatus = smsChannel?.connectionStatus ?? voiceChannel?.connectionStatus;
+  const numberConfigured =
+    numberStatus === 'connected' || numberStatus === 'pending_carrier_registration';
+  const needsNumber = phoneEnabled && !numberConfigured;
+  const phonePending = phoneEnabled && numberStatus === 'pending_carrier_registration';
+  const phoneValid = E164.test(phoneNumber.trim());
+
+  const submitNumber = () => {
+    if (!phoneValid) return;
+    startConnection.mutate({
+      connectionType: 'sms_sender',
+      provider: 'twilio',
+      phoneNumber: phoneNumber.trim(),
+    });
+    setPhoneNumber('');
+  };
 
   const setEnabled = (id: ChannelConfig['id'], enabled: boolean) => {
     // Voice requires the consent ack before it can be switched on (Arch §3.1.2).
@@ -68,12 +109,16 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     <Card>
       <CardTitle>Channels your Luciel uses</CardTitle>
       <CardDescription>
-        Pick how customers reach your Luciel. The website widget is on by default. Enabling SMS or
-        Voice provisions one shared phone number — phone is opt-in.
+        Pick how customers reach your Luciel. The website widget is on by default. For SMS and Voice,
+        your business brings its own phone number — one number backs both. Add your number below to
+        turn them on.
       </CardDescription>
       <ul className="mt-vm-4 divide-y divide-vm-border">
         {luciel.channels.map((c) => {
-          const chip = chipKind(c.connectionStatus);
+          // SMS/Voice share the BYO number; their status is surfaced in the number
+          // block below, so we don't render a duplicate per-row chip for them.
+          const isPhoneChannel = c.id === 'sms' || c.id === 'voice';
+          const chip = isPhoneChannel ? null : chipKind(c.connectionStatus);
           return (
             <li key={c.id} className="flex items-center justify-between py-vm-3">
               <div className="flex items-center gap-vm-3">
@@ -89,6 +134,68 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
           );
         })}
       </ul>
+
+      {phoneEnabled && (
+        <div className="mt-vm-4 rounded-vm-card border border-vm-border p-vm-4">
+          <div className="flex items-center justify-between gap-vm-3">
+            <span className="text-vm-2 font-label">Your business phone number (SMS &amp; Voice)</span>
+            {phonePending ? (
+              <StatusChip kind="action_needed" detail="being activated with carriers" />
+            ) : needsNumber ? (
+              <StatusChip kind="action_needed" detail="add your number" />
+            ) : (
+              <StatusChip kind="connected" />
+            )}
+          </div>
+          {phonePending ? (
+            <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
+              Your number is being activated with the carriers. SMS and Voice go live once carrier
+              registration completes — no shared or platform number is used (Arch §3.1.4/§3.1.6).
+            </p>
+          ) : (
+            <div className="mt-vm-3">
+              <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
+                Enter the number your business already owns, in E.164 format (e.g. +14155551234).
+                Your Luciel sends and receives on this number; the platform never provisions one for
+                you.
+              </p>
+              <div className="flex items-end gap-vm-2">
+                <div className="flex-1">
+                  <Field
+                    id="byo-phone-number"
+                    label="Business phone number"
+                    hint="Start with + and country code, e.g. +14155551234."
+                    error={
+                      phoneNumber.length > 0 && !phoneValid
+                        ? 'Enter a valid international number starting with + and country code.'
+                        : undefined
+                    }
+                  >
+                    {(fieldProps) => (
+                      <Input
+                        {...fieldProps}
+                        type="tel"
+                        inputMode="tel"
+                        value={phoneNumber}
+                        onChange={(e) => setPhoneNumber(e.target.value)}
+                        placeholder="+14155551234"
+                      />
+                    )}
+                  </Field>
+                </div>
+                <Button
+                  variant="primary"
+                  onClick={submitNumber}
+                  disabled={!phoneValid || startConnection.isPending}
+                  className="mb-vm-4"
+                >
+                  Add number
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <Modal
         open={voiceModalOpen}

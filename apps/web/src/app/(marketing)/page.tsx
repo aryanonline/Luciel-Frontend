@@ -170,7 +170,7 @@ export default function HomePage() {
             <div>
               <h3 className="font-heading text-vm-2">Honest about launch limits</h3>
               <p className="mt-vm-1 text-vm-1 leading-relaxed text-vm-text-muted">
-                At launch: email on a VantageMind subdomain (not your own), and one login per
+                Email works on your own domain from day one. The one launch limit: one login per
                 account. See our{' '}
                 <Link href="/legal/terms" className="text-vm-accent underline">
                   Terms
