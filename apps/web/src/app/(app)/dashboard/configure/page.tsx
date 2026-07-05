@@ -44,6 +44,14 @@ export default function ConfigurePage() {
         description="Five things to set. You can change any of them at any time — you adjust the role, you don't re-hire."
       />
 
+      {/* When a change takes effect (Arch §3.8.7 rule E, Decision #39): additive/
+          neutral edits snapshot-defer to NEW conversations; turning something off,
+          revoking, or any safety change takes effect immediately. Banner pairs
+          color + icon + text (AA). */}
+      <Banner tone="info">
+        Changes apply to new conversations. Turning something off takes effect immediately.
+      </Banner>
+
       <ChannelsPillar luciel={luciel} />
       <ToolsPillar luciel={luciel} />
       <KnowledgePillar />

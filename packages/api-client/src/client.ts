@@ -97,6 +97,13 @@ export interface LucielApiClient {
     /** Re-auth path for expired/error connections (Arch §3.8.7 B). */
     reconnect(connectionId: string): Promise<StartConnectionResult>;
     disconnect(connectionId: string): Promise<void>;
+    /**
+     * Swap a CONNECTED account for a new one, proven-before-cutover (Arch
+     * §3.8.7 B, Decision #39): the current connection stays live until the new
+     * one health-checks, then cuts over. Distinct from reconnect (same account,
+     * re-auth). Returns the connect flow for the replacement.
+     */
+    swap(connectionId: string, provider: string): Promise<StartConnectionResult>;
   };
 
   conversations: {
