@@ -86,9 +86,15 @@ export interface LucielApiClient {
 
   connections: {
     list(): Promise<Connection[]>;
+    /**
+     * Start a connect flow. `opts.phoneNumber` carries the tenant's OWN E.164
+     * number for the BYO SMS/Voice sender (Arch §3.1.4/§3.1.6, Decision #48) —
+     * ADDITIVE and optional, so existing OAuth/credential callers are unchanged.
+     */
     start(
       connectionType: Connection['connectionType'],
       provider: string,
+      opts?: { phoneNumber?: string },
     ): Promise<StartConnectionResult>;
     /** Re-auth path for expired/error connections (Arch §3.8.7 B). */
     reconnect(connectionId: string): Promise<StartConnectionResult>;
@@ -100,6 +106,13 @@ export interface LucielApiClient {
     getEmailProvisioning(): Promise<EmailProvisioning | null>;
     /** Provision the send+receive address: own-domain (DNS/MX) or VM-subdomain. */
     provisionEmail(req: ProvisionEmailRequest): Promise<EmailProvisioning>;
+    /**
+     * Swap a CONNECTED account for a new one, proven-before-cutover (Arch
+     * §3.8.7 B, Decision #39): the current connection stays live until the new
+     * one health-checks, then cuts over. Distinct from reconnect (same account,
+     * re-auth). Returns the connect flow for the replacement.
+     */
+    swap(connectionId: string, provider: string): Promise<StartConnectionResult>;
   };
 
   conversations: {

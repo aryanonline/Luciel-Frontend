@@ -32,7 +32,7 @@ export const toolMeta: Record<AddonToolId, { label: string; desc: string; connec
     },
     send_sms: {
       label: 'Send SMS',
-      desc: 'Send outbound SMS from your dedicated number.',
+      desc: 'Send outbound SMS from your business number.',
     },
     lookup_record: {
       label: 'Look up a record',
