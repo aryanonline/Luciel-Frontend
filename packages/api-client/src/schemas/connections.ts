@@ -35,6 +35,21 @@ export const connection = z.object({
 });
 export type Connection = z.infer<typeof connection>;
 
+/**
+ * Start a connect flow (Arch §3.8). ADDITIVE, backward-compatible request shape:
+ * `phoneNumber` is the tenant's OWN E.164 number for the BYO SMS/Voice sender
+ * (Arch §3.1.4/§3.1.6, Decision #48 — the platform never provisions a number).
+ * Mirrors backend PR #32's additive optional `phoneNumber` on StartConnectionRequest.
+ * Omitted for every existing (OAuth/credential) connect flow, so no caller breaks.
+ */
+export const startConnectionRequest = z.object({
+  connectionType,
+  provider: z.string(),
+  /** Tenant-supplied E.164 number for sms_sender/voice (BYO). Non-secret. */
+  phoneNumber: z.string().optional(),
+});
+export type StartConnectionRequest = z.infer<typeof startConnectionRequest>;
+
 /** Start an OAuth/credential connect flow; UI redirects to authorizeUrl. */
 export const startConnectionResult = z.object({
   authorizeUrl: z.string().url().optional(),
