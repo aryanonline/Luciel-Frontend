@@ -41,7 +41,7 @@ export default function DpaPage() {
           heading: 'Data-subject requests, deletion, and transfers',
           body: [
             'We provide you the tools — per-lead erasure and export — to fulfill your leads’ access and erasure requests, and we assist you in responding to data-subject and regulator requests we receive.',
-            'On termination, we delete or return lead personal data per the retention schedule and the deletion cascade, except where retention is required by law. Lead data is resident in the offering’s disclosed region and is not relocated without notice.',
+            'On termination, we delete or return lead personal data per the retention schedule and the deletion cascade, except where retention is required by law. VantageMind is Canada-resident. All customer data is stored in AWS Canada Central (ca-central-1), with no cross-region replication.',
           ],
         },
       ]}
