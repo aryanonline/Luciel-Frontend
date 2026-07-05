@@ -20,7 +20,7 @@
   --vm-accent-hover: #2348c4;
   --vm-accent-weak: #eaf0ff; /* accent tint for selected/active states */
   --vm-success: #1a7f5a; /* "Connected" chip */
-  --vm-warning: #b26a00; /* "Action needed" chip */
+  --vm-warning: #9c6000; /* "Action needed" chip — AA (≥4.5:1) on bg & surface */
   --vm-danger: #c2362f; /* "Reconnect needed", destructive actions */
   --vm-focus-ring: #2f5bea; /* 2px visible focus ring, never removed */
 

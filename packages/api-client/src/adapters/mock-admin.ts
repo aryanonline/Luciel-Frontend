@@ -75,6 +75,8 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     state.billing.budget.billingState = 'payg_enabled';
     state.billing.budget.conversationsThisPeriod = 240;
     state.billing.budget.billedThisPeriod = 190;
+    // 190 billed = 90 into the 100–200 block → ~90% of the way to the next block.
+    state.billing.budget.nearNextBlock = true;
     state.billing.paymentMethod = { brand: 'visa', last4: '4242', expMonth: 12, expYear: 2028 };
   }
   if (state.scenario === 'paused' && state.luciel) state.luciel.state = 'paused';

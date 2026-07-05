@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const swap = useSwapConnection();
   const b = billing.data?.budget;
   const nearCap = b && b.billingState === 'free_cap' && b.conversationsThisPeriod >= 40 && !b.atCap;
+  const nearNextBlock = b && b.billingState === 'payg_enabled' && b.nearNextBlock;
   const needsAttention = connections.data?.filter((c) => c.status !== 'connected') ?? [];
   const hasConnected = (connections.data ?? []).some((c) => c.status === 'connected');
 
@@ -83,6 +84,12 @@ export default function DashboardPage() {
       )}
       {nearCap && (
         <Banner tone="info">You&apos;re approaching your 50 free conversations this month.</Banner>
+      )}
+      {nearNextBlock && (
+        <Banner tone="info">
+          You&apos;re about 80% through your current billed block. Once you pass it, usage rolls into
+          the next $39 / 100 block — this is just a heads-up, not a cap; your Luciel keeps answering.
+        </Banner>
       )}
 
       <div className="grid gap-vm-4 lg:grid-cols-3">

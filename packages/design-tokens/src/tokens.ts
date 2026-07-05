@@ -18,7 +18,7 @@ export const color = {
   accentHover: '#2348C4',
   accentWeak: '#EAF0FF',
   success: '#1A7F5A',
-  warning: '#B26A00',
+  warning: '#9C6000',
   danger: '#C2362F',
   focusRing: '#2F5BEA',
 } as const;
