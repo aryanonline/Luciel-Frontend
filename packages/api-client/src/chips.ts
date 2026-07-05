@@ -20,6 +20,9 @@ export function chipForConnection(status: ConnectionStatus): ConnectionChip {
     // Carrier registration pending: the channel is not yet live, so it shows the
     // "action needed / being activated" chip — never "connected" (Arch §3.1.6).
     case 'pending_carrier_registration':
+    // Own-domain email routing not yet verified: not live, so "action needed"
+    // until DNS/MX checks pass — never "connected" (Arch §3.1.6a).
+    case 'pending_email_routing':
     default:
       return 'action_needed';
   }

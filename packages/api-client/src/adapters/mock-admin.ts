@@ -1,6 +1,6 @@
 import type { LucielApiClient } from '../client';
 import { LucielApiError } from '../schemas';
-import type { Account, Luciel, BillingInfo, Connection } from '../schemas';
+import type { Account, Luciel, BillingInfo, Connection, EmailProvisioning } from '../schemas';
 import * as seed from './mock-data';
 
 /**
@@ -45,6 +45,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     luciel: clone(seed.seedLuciel) as Luciel | null,
     billing: clone(seed.seedBilling),
     connections: clone(seed.seedConnections),
+    emailProvisioning: clone(seed.seedEmailProvisioning) as EmailProvisioning | null,
     knowledge: clone(seed.seedKnowledge),
     conversations: clone(seed.seedConversations),
     leads: clone(seed.seedLeads),
@@ -304,6 +305,40 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const c = state.connections.find((x: Connection) => x.connectionId === connectionId);
         if (c) c.status = 'revoked';
         await delay();
+      },
+      async getEmailProvisioning() {
+        guardVerified();
+        return ok(state.emailProvisioning);
+      },
+      async provisionEmail(req) {
+        guardVerified();
+        if (req.mode === 'own_domain') {
+          // Own-domain inbound needs DNS/MX verification → not live yet.
+          const emailAddress = req.emailAddress ?? 'hello@yourdomain.com';
+          const domain = emailAddress.split('@')[1] ?? 'yourdomain.com';
+          state.emailProvisioning = {
+            mode: 'own_domain',
+            emailAddress,
+            status: 'pending_email_routing',
+            dnsRecords: [
+              { type: 'MX', host: domain, value: 'inbound.vantagemind.ai', priority: 10 },
+              {
+                type: 'TXT',
+                host: domain,
+                value: 'v=spf1 include:mail.vantagemind.ai ~all',
+              },
+              { type: 'CNAME', host: `vm._domainkey.${domain}`, value: 'dkim.vantagemind.ai' },
+            ],
+          };
+        } else {
+          // VM-subdomain fallback: zero DNS, live immediately.
+          state.emailProvisioning = {
+            mode: 'vm_subdomain',
+            emailAddress: 'sarahchen.reply.vantagemind.ai',
+            status: 'connected',
+          };
+        }
+        return ok(state.emailProvisioning);
       },
       async swap(connectionId, _provider) {
         guardVerified();
