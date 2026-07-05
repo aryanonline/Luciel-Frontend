@@ -51,6 +51,19 @@ export const useAnalytics = () =>
 export const useAudit = () =>
   useQuery({ queryKey: qk.audit, queryFn: () => api.analytics.auditLog() });
 
+/**
+ * Swap a connected account, proven-before-cutover (Arch §3.8.7 B, Decision #39):
+ * the current connection stays live until the replacement health-checks.
+ */
+export function useSwapConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { connectionId: string; provider: string }) =>
+      api.connections.swap(args.connectionId, args.provider),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.connections }),
+  });
+}
+
 /** Mutations that invalidate the Luciel after writing a pillar. */
 export function useLucielMutations() {
   const qc = useQueryClient();

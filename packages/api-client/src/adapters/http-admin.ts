@@ -58,6 +58,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         }),
       reconnect: (connectionId) => t.post(`/api/v1/admin/connections/${connectionId}/reconnect`),
       disconnect: (connectionId) => t.del(`/api/v1/admin/connections/${connectionId}`),
+      swap: (connectionId, provider) =>
+        t.post(`/api/v1/admin/connections/${connectionId}/swap`, { provider }),
     },
     conversations: {
       list: () => t.get('/api/v1/dashboard/conversations'),
