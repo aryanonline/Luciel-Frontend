@@ -302,6 +302,13 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (c) c.status = 'connected';
         return ok({ authorizeUrl: 'https://accounts.example.com/oauth/authorize?mock=1' });
       },
+      async completeOauth(connectionId, _code) {
+        guardVerified();
+        const c = state.connections.find((x) => x.connectionId === connectionId);
+        if (c) c.status = 'connected';
+        await delay();
+        return ok({ status: 'connected' });
+      },
       async disconnect(connectionId) {
         guardVerified();
         const c = state.connections.find((x: Connection) => x.connectionId === connectionId);
