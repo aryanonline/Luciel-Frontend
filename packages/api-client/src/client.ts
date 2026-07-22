@@ -98,6 +98,12 @@ export interface LucielApiClient {
     ): Promise<StartConnectionResult>;
     /** Re-auth path for expired/error connections (Arch §3.8.7 B). */
     reconnect(connectionId: string): Promise<StartConnectionResult>;
+    /**
+     * Complete an OAuth flow: exchange the provider's `code` for a token, which the
+     * backend stores as a tenant-scoped secret_ref (Arch §3.2.3/§3.8.3). Called by
+     * the OAuth callback landing page after the provider redirects back with `?code`.
+     */
+    completeOauth(connectionId: string, code: string): Promise<{ status: string }>;
     disconnect(connectionId: string): Promise<void>;
     /**
      * Email-address provisioning (Arch §3.1.6a, Decision #49). Returns the current
