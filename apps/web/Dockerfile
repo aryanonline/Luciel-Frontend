@@ -37,6 +37,16 @@ COPY apps/web ./apps/web
 # Re-link workspace bins for apps/web (node_modules already populated by deps).
 RUN pnpm install --frozen-lockfile --offline || pnpm install --frozen-lockfile
 ENV NEXT_TELEMETRY_DISABLED=1
+# NEXT_PUBLIC_* must be present as ENV during `next build` to be inlined into the
+# client bundle. Declare the build args and promote them to ENV before building,
+# otherwise the --build-arg values passed by CI are silently ignored (public,
+# non-secret values only).
+ARG NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_API_ADAPTER
+ARG NEXT_PUBLIC_HCAPTCHA_SITE_KEY
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_ADAPTER=$NEXT_PUBLIC_API_ADAPTER
+ENV NEXT_PUBLIC_HCAPTCHA_SITE_KEY=$NEXT_PUBLIC_HCAPTCHA_SITE_KEY
 RUN pnpm --filter @luciel/web build
 
 # ---- Runtime ----------------------------------------------------------------
