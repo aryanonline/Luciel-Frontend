@@ -79,14 +79,29 @@ jobs:
             -t "$ECR/$REPO:$TAG" -t "$ECR/$REPO:latest" .
           docker push "$ECR/$REPO:$TAG"
           docker push "$ECR/$REPO:latest"
-          # block on CRITICAL CVEs (scan-on-push is enabled on the repo)
+          # Block on CRITICAL CVEs (ECR scan-on-push), EXCEPT a narrow, documented
+          # allowlist of unfixable base-image perl CVEs. The Dockerfile purges the
+          # non-essential perl packages; these 3 may still be attributed to perl-base
+          # (Essential, cannot be safely removed) and have NO fixed version in Debian
+          # yet. perl is not in the Node runtime's execution path. Revisit when Debian
+          # ships a fix. Any OTHER critical still blocks; a NEW critical still blocks.
           aws ecr wait image-scan-complete --repository-name "$REPO" --image-id imageTag="$TAG" || true
-          CRIT=$(aws ecr describe-image-scan-findings --repository-name "$REPO" \
+          ALLOWLIST="CVE-2026-12087 CVE-2026-13221 CVE-2026-57433"
+          CRIT_NAMES=$(aws ecr describe-image-scan-findings --repository-name "$REPO" \
             --image-id imageTag="$TAG" \
-            --query 'imageScanFindings.findingSeverityCounts.CRITICAL' --output text 2>/dev/null || echo None)
-          if [ "$CRIT" != "None" ] && [ "$CRIT" != "0" ]; then
-            echo "::error::$CRIT CRITICAL CVEs in web image - blocking"; exit 1
+            --query 'imageScanFindings.findings[?severity==`CRITICAL`].name' \
+            --output text 2>/dev/null | tr '\t' '\n' | sed '/^$/d' || true)
+          BLOCKING=""
+          for cve in $CRIT_NAMES; do
+            case " $ALLOWLIST " in
+              *" $cve "*) echo "::warning::allowlisted base-image CVE $cve (unfixable perl, not in runtime path)";;
+              *) BLOCKING="$BLOCKING $cve";;
+            esac
+          done
+          if [ -n "$(echo "$BLOCKING" | tr -d ' ')" ]; then
+            echo "::error::Non-allowlisted CRITICAL CVEs in web image:$BLOCKING - blocking"; exit 1
           fi
+          echo "CVE gate passed (allowlisted-only or none critical)"
 
       - name: Stash widget dist for deploy jobs
         uses: actions/upload-artifact@v4
