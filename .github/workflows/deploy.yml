@@ -75,6 +75,7 @@ jobs:
           docker build -f apps/web/Dockerfile \
             --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.vantagemind.ai \
             --build-arg NEXT_PUBLIC_API_ADAPTER=http \
+            --build-arg NEXT_PUBLIC_HCAPTCHA_SITE_KEY=6f66ccc8-ae5a-4d20-90f6-e49adfa8c10e \
             -t "$ECR/$REPO:$TAG" -t "$ECR/$REPO:latest" .
           docker push "$ECR/$REPO:$TAG"
           docker push "$ECR/$REPO:latest"
