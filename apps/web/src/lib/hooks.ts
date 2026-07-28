@@ -117,6 +117,10 @@ export function useLucielMutations() {
       mutationFn: (p: PersonalityConfig) => api.luciel.updatePersonality(p),
       onSuccess: invalidate,
     }),
+    updateLeadRetention: useMutation({
+      mutationFn: (days: number | null) => api.luciel.updateLeadRetention(days),
+      onSuccess: invalidate,
+    }),
     acknowledgeVoiceConsent: useMutation({
       mutationFn: () => api.luciel.acknowledgeVoiceConsent(),
       onSuccess: invalidate,

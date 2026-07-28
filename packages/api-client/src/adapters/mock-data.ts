@@ -70,6 +70,8 @@ export const seedLuciel: Luciel = {
     preset: 'warm_concierge',
     businessContext: 'I specialize in first-time clients and small-business owners in Markham.',
   },
+  // Auto-prune is opt-in — off until the Admin sets it (Arch §3.4.10a).
+  leadRetentionDays: null,
 };
 
 export const seedBilling: BillingInfo = {

@@ -234,6 +234,12 @@ export const luciel = z.object({
   personality: personalityConfig,
   /** Grace window stamp when state = luciel_grace_window (Arch §3.6.4). */
   graceWindowStartedAt: isoTimestamp.optional(),
+  /**
+   * The Admin's opt-in lead auto-prune window in days; null = off, which is the
+   * default and the only value the platform assumes for them (Arch §3.4.10a,
+   * Legal §B5). Backend rejects anything below 1.
+   */
+  leadRetentionDays: z.number().int().min(1).nullable(),
 });
 export type Luciel = z.infer<typeof luciel>;
 

@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Banner, Card, CardTitle, CardDescription, Button, PageHeader } from '@luciel/ui';
 import { useAnalytics } from '@/lib/hooks';
+import { saveBlob } from '@/lib/download';
 import type { AnalyticsOverview } from '@luciel/api-client';
 
 /**
@@ -76,15 +77,7 @@ async function downloadAnalyticsCsv(view: string) {
   if (!res.ok) {
     throw new Error(`Analytics CSV export failed (${res.status})`);
   }
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `analytics_${view}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  saveBlob(await res.blob(), `analytics_${view}.csv`);
 }
 
 export default function AnalyticsPage() {

@@ -44,6 +44,18 @@ export interface MockAdminOptions {
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
+/** Mirrors the backend's lead export columns so mock ↔ http downloads match. */
+function toCsv(rows: Record<string, string>[]): string {
+  const [first] = rows;
+  if (!first) return '';
+  const columns = Object.keys(first);
+  const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  return [
+    columns.join(','),
+    ...rows.map((r) => columns.map((c) => cell(r[c] ?? '')).join(',')),
+  ].join('\n');
+}
+
 /** 50 MB per file (Vision §3.3) — the same limit the backend enforces. */
 const PER_FILE_MAX_BYTES = 50_000_000;
 
@@ -269,6 +281,18 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
         state.luciel.personality = clone(config);
+        return ok(state.luciel);
+      },
+      async updateLeadRetention(days) {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        if (days !== null && (!Number.isInteger(days) || days < 1)) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Retention window must be a whole number of days, at least 1.',
+          });
+        }
+        state.luciel.leadRetentionDays = days;
         return ok(state.luciel);
       },
       async acknowledgeVoiceConsent() {
@@ -639,6 +663,25 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
         l.state = 'archived';
         return ok(l);
+      },
+      async export(format) {
+        guardVerified();
+        const rows = state.leads.map((l) => ({
+          leadId: l.leadId,
+          name: l.name ?? '',
+          contactIdentifier: l.contactIdentifier ?? '',
+          intent: l.intent ?? '',
+          state: l.state,
+          lastActivityAt: l.lastActivityAt,
+        }));
+        const json = format === 'json';
+        await delay();
+        return {
+          blob: new Blob([json ? JSON.stringify(rows, null, 2) : toCsv(rows)], {
+            type: json ? 'application/json' : 'text/csv',
+          }),
+          filename: `leads.${format}`,
+        };
       },
     },
 

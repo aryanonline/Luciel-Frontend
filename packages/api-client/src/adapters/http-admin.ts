@@ -42,6 +42,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       updateTools: (tools) => t.put('/api/v1/admin/luciel/tools', { tools }),
       updateEscalation: (contact) => t.put('/api/v1/admin/luciel/escalation', contact),
       updatePersonality: (config) => t.put('/api/v1/admin/luciel/personality', config),
+      updateLeadRetention: (days) =>
+        t.put('/api/v1/admin/luciel/lead-retention', { leadRetentionDays: days }),
       acknowledgeVoiceConsent: () => t.post('/api/v1/admin/luciel/voice-consent'),
       pause: () => t.post('/api/v1/admin/luciel/pause'),
       resume: () => t.post('/api/v1/admin/luciel/resume'),
@@ -109,6 +111,10 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       erase: (leadId) => t.del(`/api/v1/dashboard/leads/${leadId}`),
       prune: (leadIds) => t.post('/api/v1/dashboard/leads/prune', { leadIds }),
       archive: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/archive`),
+      export: async (format) => {
+        const file = await t.getFile(`/api/v1/dashboard/leads/export?format=${format}`);
+        return { blob: file.blob, filename: file.filename ?? `leads.${format}` };
+      },
     },
     billing: {
       get: () => t.get('/api/v1/billing'),
