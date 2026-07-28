@@ -1,26 +1,33 @@
 'use client';
 
 import * as React from 'react';
-import {
-  createWidgetClient,
-  type WidgetMessage,
-  type WidgetRenderState,
-} from '@luciel/api-client/widget';
+import type { WidgetMessage, WidgetRenderState } from '@luciel/api-client/widget';
 import { Button } from '@luciel/ui';
+import { createPreviewWidgetClient, type WidgetAdapterKind } from '@/lib/widget-api';
 
 /**
  * In-dashboard "Test it here" preview (Customer Journey §5). This is a React
  * mirror of the widget for the admin to try their Luciel; it uses the SAME
- * data-plane client the real widget uses (@luciel/api-client/widget), so it
- * exercises the documented behaviors: AI-identity disclosure on open
- * (Arch §3.4.16), "Powered by VantageMind" chrome (§3.4.17), and the at-cap
- * graceful reply (§3.4.1b). Paused renders nothing (§3.6.2).
+ * data-plane client the real widget uses (@luciel/api-client/widget) against
+ * the SAME bootstrap/message endpoints, so what the admin tests here is their
+ * own assistant, answering from their own knowledge. It exercises the
+ * documented behaviors: AI-identity disclosure on open (Arch §3.4.16),
+ * "Powered by VantageMind" chrome (§3.4.17), and the at-cap graceful reply
+ * (§3.4.1b). Paused renders nothing (§3.6.2).
+ *
+ * `adapter` defaults to the deployed one; pass 'mock' only for a canned demo.
  *
  * The shipped embeddable (apps/widget) is the vanilla shadow-DOM bundle; this
  * preview is intentionally a separate React surface for the dashboard.
  */
-export function WidgetPreview({ embedKey }: { embedKey: string }) {
-  const client = React.useMemo(() => createWidgetClient({ adapter: 'mock' }), []);
+export function WidgetPreview({
+  embedKey,
+  adapter,
+}: {
+  embedKey: string;
+  adapter?: WidgetAdapterKind;
+}) {
+  const client = React.useMemo(() => createPreviewWidgetClient(adapter), [adapter]);
   const [boot, setBoot] = React.useState<{
     assistantName: string;
     aiAssistantLabel: string;
@@ -30,27 +37,38 @@ export function WidgetPreview({ embedKey }: { embedKey: string }) {
   const [messages, setMessages] = React.useState<WidgetMessage[]>([]);
   const [input, setInput] = React.useState('');
   const [sending, setSending] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
   const liveRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    client.bootstrap(embedKey).then((b) => {
-      setBoot({
-        assistantName: b.assistantName,
-        aiAssistantLabel: b.aiAssistantLabel,
-        poweredBy: b.poweredByVantageMind,
-        renderState: b.renderState,
+    let cancelled = false;
+    client
+      .bootstrap(embedKey)
+      .then((b) => {
+        if (cancelled) return;
+        setBoot({
+          assistantName: b.assistantName,
+          aiAssistantLabel: b.aiAssistantLabel,
+          poweredBy: b.poweredByVantageMind,
+          renderState: b.renderState,
+        });
+        if (b.renderState !== 'paused') {
+          setMessages([
+            {
+              messageId: 'open',
+              role: 'assistant',
+              text: b.openingMessage,
+              at: new Date().toISOString(),
+            },
+          ]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
       });
-      if (b.renderState !== 'paused') {
-        setMessages([
-          {
-            messageId: 'open',
-            role: 'assistant',
-            text: b.openingMessage,
-            at: new Date().toISOString(),
-          },
-        ]);
-      }
-    });
+    return () => {
+      cancelled = true;
+    };
   }, [client, embedKey]);
 
   const send = async () => {
@@ -64,12 +82,26 @@ export function WidgetPreview({ embedKey }: { embedKey: string }) {
     setMessages((m) => [...m, visitor]);
     setInput('');
     setSending(true);
-    const res = await client.send(embedKey, { text: visitor.text });
-    setMessages((m) => [...m, res.reply]);
-    setSending(false);
-    // Announce the incoming assistant message (a11y live region, Arch §5.16).
-    if (liveRef.current) liveRef.current.textContent = res.reply.text;
+    try {
+      const res = await client.send(embedKey, { text: visitor.text });
+      setMessages((m) => [...m, res.reply]);
+      // Announce the incoming assistant message (a11y live region, Arch §5.16).
+      if (liveRef.current) liveRef.current.textContent = res.reply.text;
+    } catch {
+      setFailed(true);
+    } finally {
+      setSending(false);
+    }
   };
+
+  if (failed) {
+    return (
+      <p className="text-vm-1 text-vm-danger" role="alert">
+        We couldn&apos;t reach your Luciel just now. Try again in a moment — this affects the test
+        here, not your live widget.
+      </p>
+    );
+  }
 
   // Paused → render nothing (the real widget renders an empty <div>, §3.6.2).
   if (boot?.renderState === 'paused') {

@@ -13,6 +13,7 @@ import {
 } from '@luciel/ui';
 import { chipForConnection } from '@luciel/api-client';
 import { useLuciel, useEmailProvisioning, useProvisionEmail } from '@/lib/hooks';
+import { WidgetPreview } from '@/components/widget-preview';
 
 /**
  * Embed + launch (Customer Journey §5). One-line embed script with the embed
@@ -155,6 +156,7 @@ function EmailProvisioningCard() {
 export default function EmbedPage() {
   const { data: luciel } = useLuciel();
   const [copied, setCopied] = React.useState(false);
+  const [testing, setTesting] = React.useState(false);
 
   const embedKey = luciel?.embedKeyPublicId ?? 'vm_live_…';
   const snippet = `<script src="https://embed.vantagemind.ai/v1/luciel.js" data-key="${embedKey}"></script>`;
@@ -195,12 +197,26 @@ export default function EmbedPage() {
           <Button asChild variant="secondary">
             <a href={mailto}>Email this to my web person</a>
           </Button>
-          <Button asChild variant="ghost">
-            <a href="/embed-preview" target="_blank" rel="noopener noreferrer">
-              Test it here
-            </a>
+          <Button
+            variant="ghost"
+            onClick={() => setTesting((t) => !t)}
+            disabled={!luciel?.embedKeyPublicId}
+          >
+            {testing ? 'Close test' : 'Test it here'}
           </Button>
         </div>
+
+        {/* The test runs against THIS Luciel's embed key, signed in, so what the
+            admin tries here is the same assistant their visitors get (CJ §5). */}
+        {testing && luciel?.embedKeyPublicId && (
+          <div className="mt-vm-4">
+            <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
+              This is your Luciel, answering from your knowledge. Ask it something a customer
+              would.
+            </p>
+            <WidgetPreview embedKey={luciel.embedKeyPublicId} />
+          </div>
+        )}
       </Card>
 
       <EmailProvisioningCard />
