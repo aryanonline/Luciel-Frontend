@@ -32,6 +32,9 @@ const stateLabel: Record<string, string> = {
   luciel_hard_deleted: 'Deleted',
 };
 
+/** Soft threshold for the "your lead store is large" nudge (Arch §3.4.10a). */
+const LARGE_LEAD_STORE = 250;
+
 export default function DashboardPage() {
   const luciel = useLuciel();
   const billing = useBilling();
@@ -43,6 +46,7 @@ export default function DashboardPage() {
   const b = billing.data?.budget;
   const nearCap = b && b.billingState === 'free_cap' && b.conversationsThisPeriod >= 40 && !b.atCap;
   const nearNextBlock = b && b.billingState === 'payg_enabled' && b.nearNextBlock;
+  const largeLeadStore = (leads.data?.length ?? 0) >= LARGE_LEAD_STORE;
   const needsAttention = connections.data?.filter((c) => c.status !== 'connected') ?? [];
   const hasConnected = (connections.data ?? []).some((c) => c.status === 'connected');
 
@@ -89,6 +93,16 @@ export default function DashboardPage() {
         <Banner tone="info">
           You&apos;re about 80% through your current billed block. Once you pass it, usage rolls into
           the next $39 / 100 block — this is just a heads-up, not a cap; your Luciel keeps answering.
+        </Banner>
+      )}
+      {/* Lead-store soft threshold nudge (Arch §3.4.10a, Customer Journey §7). */}
+      {largeLeadStore && (
+        <Banner tone="info">
+          Your lead store is getting large —{' '}
+          <Link href="/dashboard/leads" className="underline">
+            review stale leads
+          </Link>
+          .
         </Banner>
       )}
 
