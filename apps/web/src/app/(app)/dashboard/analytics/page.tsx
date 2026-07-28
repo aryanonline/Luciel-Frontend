@@ -1,6 +1,7 @@
 'use client';
 
-import { Card, CardTitle, CardDescription, Button, PageHeader } from '@luciel/ui';
+import * as React from 'react';
+import { Banner, Card, CardTitle, CardDescription, Button, PageHeader } from '@luciel/ui';
 import { useAnalytics } from '@/lib/hooks';
 import type { AnalyticsOverview } from '@luciel/api-client';
 
@@ -73,9 +74,7 @@ async function downloadAnalyticsCsv(view: string) {
     credentials: 'include',
   });
   if (!res.ok) {
-    // eslint-disable-next-line no-console
-    console.error(`Analytics CSV export failed (${res.status})`);
-    return;
+    throw new Error(`Analytics CSV export failed (${res.status})`);
   }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -91,6 +90,14 @@ async function downloadAnalyticsCsv(view: string) {
 export default function AnalyticsPage() {
   const { data: raw, isLoading } = useAnalytics();
   const a = raw as AnalyticsOverviewExtended | undefined;
+  const [exportError, setExportError] = React.useState<string | null>(null);
+
+  const exportCsv = (view: string) => {
+    setExportError(null);
+    downloadAnalyticsCsv(view).catch(() =>
+      setExportError('We could not download that CSV just now. Please try again.'),
+    );
+  };
 
   return (
     <div className="space-y-vm-5">
@@ -98,11 +105,13 @@ export default function AnalyticsPage() {
         title="Analytics"
         description="Aggregates only, scoped to your account. No individual customer data is exposed here."
         actions={
-          <Button variant="secondary" onClick={() => downloadAnalyticsCsv('overview')}>
+          <Button variant="secondary" onClick={() => exportCsv('overview')}>
             Export CSV
           </Button>
         }
       />
+
+      {exportError && <Banner tone="danger">{exportError}</Banner>}
 
       {isLoading || !a ? (
         <p className="text-vm-1 text-vm-text-muted" role="status">
@@ -147,7 +156,7 @@ export default function AnalyticsPage() {
           <Card>
             <div className="flex items-center justify-between">
               <CardTitle>Channel mix</CardTitle>
-              <Button variant="ghost" onClick={() => downloadAnalyticsCsv('channel_mix')}>
+              <Button variant="ghost" onClick={() => exportCsv('channel_mix')}>
                 Export CSV
               </Button>
             </div>
@@ -164,7 +173,7 @@ export default function AnalyticsPage() {
           <Card>
             <div className="flex items-center justify-between">
               <CardTitle>Conversion by channel</CardTitle>
-              <Button variant="ghost" onClick={() => downloadAnalyticsCsv('conversion_by_channel')}>
+              <Button variant="ghost" onClick={() => exportCsv('conversion_by_channel')}>
                 Export CSV
               </Button>
             </div>
@@ -193,7 +202,7 @@ export default function AnalyticsPage() {
           <Card>
             <div className="flex items-center justify-between">
               <CardTitle>Busiest times</CardTitle>
-              <Button variant="ghost" onClick={() => downloadAnalyticsCsv('busiest_times')}>
+              <Button variant="ghost" onClick={() => exportCsv('busiest_times')}>
                 Export CSV
               </Button>
             </div>

@@ -28,7 +28,7 @@ export default function BillingPage() {
 
   const addCard = async () => {
     const session = await api.billing.startCheckout();
-    // Real flow redirects to Stripe Checkout; here we open the mock URL.
+    // Stripe Checkout, hosted by Stripe — card details never touch our origin.
     window.open(session.url, '_blank', 'noopener,noreferrer');
   };
   const removeCard = async () => {
