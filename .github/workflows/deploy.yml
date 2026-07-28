@@ -64,7 +64,11 @@ jobs:
       - name: Install + build (web .next is baked into the image; widget dist here)
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @luciel/widget build   # -> apps/widget/dist
+          # The widget vite config defaults the adapter to 'mock'; this bundle is
+          # published to the real embed.vantagemind.ai CDN, so it must be LIVE.
+          VITE_WIDGET_ADAPTER=http \
+          VITE_WIDGET_API_BASE_URL=https://api.vantagemind.ai \
+            pnpm --filter @luciel/widget build   # -> apps/widget/dist
 
       - name: Build + push web image (context = repo root, Dockerfile apps/web)
         env:
