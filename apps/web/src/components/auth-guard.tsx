@@ -8,8 +8,8 @@ import { useSession } from '@/lib/hooks';
 /**
  * Client-side session guard for the dashboard surfaces. HONEST NOTE
  * (Space Instructions §3.7): real enforcement belongs in middleware against the
- * httpOnly session cookie (Arch §3.7.1a). Because this build runs against the
- * mock with no backend, the guard calls api.auth.me() and routes:
+ * httpOnly session cookie (Arch §3.7.1a), and that is what runs first. On top of
+ * it this guard calls api.auth.me() against the backend and routes:
  *   - 401 / no session  → /login
  *   - unverified        → /verify
  *   - verified, no Luciel → /first-run (handled where needed)
