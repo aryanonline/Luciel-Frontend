@@ -10,6 +10,7 @@ import type {
   CreateLucielRequest,
   ProvisionEmailRequest,
   ConnectionType,
+  StartConnectionResult,
 } from '@luciel/api-client';
 
 /**
@@ -120,10 +121,17 @@ export function useLucielMutations() {
       mutationFn: () => api.luciel.acknowledgeVoiceConsent(),
       onSuccess: invalidate,
     }),
-    // BYO SMS/Voice number connect (Arch §3.1.4/§3.1.6, Decision #48). Additive
-    // phoneNumber; invalidates both Luciel (channel status) and connections.
-    startConnection: useMutation({
-      mutationFn: (args: { connectionType: ConnectionType; provider: string; phoneNumber?: string }) =>
+    // Starts a connect flow. OAuth callers MUST use `mutateAsync` and hand the
+    // returned `authorizeUrl` to `authorizeOrExplain` — an unconsumed result
+    // leaves the admin on a page that silently did nothing (Arch §3.8.7).
+    // `phoneNumber` is the additive BYO SMS/Voice path (Arch §3.1.4/§3.1.6,
+    // Decision #48), which has no redirect. Invalidates Luciel + connections.
+    startConnection: useMutation<
+      StartConnectionResult,
+      Error,
+      { connectionType: ConnectionType; provider: string; phoneNumber?: string }
+    >({
+      mutationFn: (args) =>
         api.connections.start(args.connectionType, args.provider, {
           phoneNumber: args.phoneNumber,
         }),

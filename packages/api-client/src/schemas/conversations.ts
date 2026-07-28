@@ -49,6 +49,30 @@ export const message = z.object({
 });
 export type Message = z.infer<typeof message>;
 
+/**
+ * Why an admin reply was not pushed. `null` when `delivered` is true.
+ * `widget_poll_only` is the ONLY outcome for the widget channel — the reply is
+ * persisted and the visitor picks it up on their next history fetch, so it is a
+ * normal outcome, not a failure. `no_recipient` / `channel_not_provisioned` are
+ * actionable: the admin needs contact details or a sender connection.
+ */
+export const messageDeliveryDetail = z.enum([
+  'widget_poll_only',
+  'no_recipient',
+  'channel_not_provisioned',
+  'unsupported_channel',
+  'send_failed',
+]);
+export type MessageDeliveryDetail = z.infer<typeof messageDeliveryDetail>;
+
+/** Result of an admin takeover reply (Arch §3.4.12, §11.5–11.7). */
+export const sendMessageResult = z.object({
+  message,
+  delivered: z.boolean(),
+  deliveryDetail: messageDeliveryDetail.nullable().optional(),
+});
+export type SendMessageResult = z.infer<typeof sendMessageResult>;
+
 /** Source chunk + grounding score for answer review (Arch §3.4.13). */
 export const answerEvidence = z.object({
   messageId: uuid,

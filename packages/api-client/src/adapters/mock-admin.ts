@@ -8,6 +8,7 @@ import type {
   EmailProvisioning,
   KnowledgeSource,
   KnowledgeSyncConnection,
+  Message,
 } from '../schemas';
 import * as seed from './mock-data';
 
@@ -46,6 +47,12 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 /** 50 MB per file (Vision §3.3) — the same limit the backend enforces. */
 const PER_FILE_MAX_BYTES = 50_000_000;
 
+/**
+ * Stand-in consent host for OAuth starts. The UI only hands the browser to a
+ * known provider host, and accepts this one only while running on the mock.
+ */
+export const MOCK_AUTHORIZE_ORIGIN = 'https://accounts.example.com';
+
 export function createMockAdminClient(options: MockAdminOptions = {}): LucielApiClient {
   const latency = options.latencyMs ?? 0;
 
@@ -60,6 +67,8 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     knowledge: clone(seed.seedKnowledge),
     syncConnections: [] as KnowledgeSyncConnection[],
     conversations: clone(seed.seedConversations),
+    /** Admin takeover replies, per session, so the transcript stays coherent. */
+    humanReplies: {} as Record<string, Message[]>,
     leads: clone(seed.seedLeads),
     escalations: clone(seed.seedEscalations),
     analytics: clone(seed.seedAnalytics),
@@ -169,6 +178,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             state: 'unverified',
             emailVerified: false,
           }) as Account,
+          emailDeliveryDegraded: false,
         };
       },
       async login() {
@@ -203,7 +213,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async resendVerification() {
         await delay();
-        return { ok: true };
+        return { ok: true, emailDeliveryDegraded: false };
       },
       async forgotPassword() {
         await delay();
@@ -354,7 +364,21 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         // OAuth-class providers start unconfigured — nothing syncs until the
         // account is authorized (Arch §3.8.4 lifecycle starts at unconfigured).
-        return ok(addSyncConnection(provider, 'unconfigured'));
+        // Providers with no registered OAuth client do not fail: they come back
+        // with a placeholder URL the UI must not follow, plus an honest detail.
+        const configured =
+          provider === 'google_drive' || provider === 'hubspot' || provider === 'salesforce';
+        const connection = addSyncConnection(provider, 'unconfigured', {
+          authorize_url: configured
+            ? `${MOCK_AUTHORIZE_ORIGIN}/o/oauth2/v2/auth?provider=${provider}&state=${nextId()}`
+            : `https://${provider}.invalid/authorize`,
+          oauth_state_jti: nextId(),
+        });
+        if (!configured) {
+          connection.statusDetail =
+            "Action needed: this provider's OAuth client is not configured yet";
+        }
+        return ok(connection);
       },
       async startCrawl(crawlUrls) {
         guardVerified();
@@ -400,20 +424,40 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           }
           return ok({});
         }
-        return ok({ authorizeUrl: 'https://accounts.example.com/oauth/authorize?mock=1' });
+        return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
       },
       async reconnect(connectionId) {
         guardVerified();
         const c = state.connections.find((x) => x.connectionId === connectionId);
         if (c) c.status = 'connected';
-        return ok({ authorizeUrl: 'https://accounts.example.com/oauth/authorize?mock=1' });
+        return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
       },
-      async completeOauth(connectionId, _code) {
+      async completeOauth(connectionId, _code, oauthState) {
         guardVerified();
+        // State is mandatory and single-use; without it the attempt is gone and
+        // the caller must restart the connect flow, not retry (contract §3).
+        if (!oauthState) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'This connection attempt has expired. Start the connection again.',
+          });
+        }
         const c = state.connections.find((x) => x.connectionId === connectionId);
         if (c) c.status = 'connected';
-        await delay();
-        return ok({ status: 'connected' });
+        const sync = state.syncConnections.find((x) => x.connectionId === connectionId);
+        if (sync) {
+          sync.status = 'connected';
+          sync.statusDetail = null;
+          // Redeeming clears the pending attempt — that is what makes it single-use.
+          if (sync.nonSecretConfig) delete sync.nonSecretConfig.oauth_state_jti;
+        }
+        return ok(
+          sync ?? {
+            connectionId,
+            provider: 'google_drive' as const,
+            status: 'connected' as const,
+          },
+        );
       },
       async disconnect(connectionId) {
         guardVerified();
@@ -461,7 +505,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // connection stays LIVE (status unchanged) until the replacement
         // health-checks. We only kick off the new connect flow here.
         void state.connections.find((x) => x.connectionId === connectionId);
-        return ok({ authorizeUrl: 'https://accounts.example.com/oauth/authorize?mock=1' });
+        return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
       },
     },
 
@@ -470,9 +514,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         return ok(state.conversations);
       },
-      async getMessages(_sessionId) {
+      async getMessages(sessionId) {
         guardVerified();
-        return ok([
+        const transcript: Message[] = [
           {
             messageId: 'm1',
             role: 'lead',
@@ -485,7 +529,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             text: "Hi — I'm Sarah's AI assistant. Yes, she has openings this month.",
             at: '2026-06-13T23:42:30Z',
           },
-        ]);
+          ...(state.humanReplies[sessionId] ?? []),
+        ];
+        return ok(transcript);
       },
       async takeOver(sessionId) {
         guardVerified();
@@ -500,6 +546,33 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (c) c.mode = 'ai';
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Session not found.' });
         return ok(c);
+      },
+      async sendMessage(sessionId, text) {
+        guardVerified();
+        const c = state.conversations.find((x) => x.sessionId === sessionId);
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Session not found.' });
+        if (c.mode !== 'human_controlled') {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Take over the conversation before replying.',
+          });
+        }
+        const message: Message = {
+          messageId: nextId(),
+          role: 'human_agent',
+          text,
+          at: new Date().toISOString(),
+        };
+        (state.humanReplies[sessionId] ??= []).push(message);
+        c.lastMessageAt = message.at;
+        // The widget has no push transport: the reply is persisted and the
+        // visitor picks it up on their next history fetch (contract §1).
+        const delivered = c.channel !== 'widget';
+        return ok({
+          message,
+          delivered,
+          deliveryDetail: delivered ? null : ('widget_poll_only' as const),
+        });
       },
       async getAnswerEvidence(_sessionId, messageId) {
         guardVerified();

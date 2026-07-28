@@ -79,9 +79,24 @@ export const verifyEmailRequest = z.object({
 });
 export type VerifyEmailRequest = z.infer<typeof verifyEmailRequest>;
 
+/**
+ * True when the platform intended to put mail on the wire and it did not get
+ * there. The UI then offers a resend + a support path instead of telling the
+ * customer to check their inbox. The provider error is never on the wire, and
+ * forgot-password carries no such signal on purpose (non-enumeration, §3.7.1a).
+ */
+const emailDeliveryDegraded = z.boolean().optional();
+
+export const signupResult = z.object({
+  account,
+  emailDeliveryDegraded,
+});
+export type SignupResult = z.infer<typeof signupResult>;
+
 /** Resend is rate-limited to 3 / 15 min (Arch §3.7.1a). */
 export const resendVerificationResult = z.object({
   ok: z.boolean(),
   cooldownSecondsRemaining: z.number().int().nonnegative().optional(),
+  emailDeliveryDegraded,
 });
 export type ResendVerificationResult = z.infer<typeof resendVerificationResult>;

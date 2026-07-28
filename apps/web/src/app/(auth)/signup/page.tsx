@@ -44,8 +44,10 @@ export default function SignupPage() {
     }
     try {
       // Real hCaptcha token; the backend verifies it server-side (§3.7.1a).
-      await api.auth.signup({ ...values, captchaToken });
-      router.push('/verify');
+      const result = await api.auth.signup({ ...values, captchaToken });
+      // The verification mail did not make it onto the wire — the verify wall
+      // must offer a resend and a support path, not "check your inbox" (§1).
+      router.push(result.emailDeliveryDegraded ? '/verify?delivery=degraded' : '/verify');
     } catch {
       setServerError('Something went wrong creating your account. Please try again.');
     }

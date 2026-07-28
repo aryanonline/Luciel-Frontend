@@ -50,11 +50,19 @@ export const startConnectionRequest = z.object({
 });
 export type StartConnectionRequest = z.infer<typeof startConnectionRequest>;
 
-/** Start an OAuth/credential connect flow; UI redirects to authorizeUrl. */
+/**
+ * Start an OAuth/credential connect flow. `authorizeUrl` is a REAL provider
+ * consent URL carrying a single-use 10-minute signed state; the UI performs a
+ * full-page navigation to it and never reuses one across attempts. It is `null`
+ * for non-OAuth classes (then `requiresClientForm` is true) and for providers
+ * with no registered OAuth client — those also carry a `statusDetail` beginning
+ * "Action needed:", which means DO NOT REDIRECT, show the message.
+ */
 export const startConnectionResult = z.object({
-  authorizeUrl: z.string().url().optional(),
+  authorizeUrl: z.string().url().nullable().optional(),
   /** For non-OAuth (CSV upload, webhook URL) the UI collects fields client-side. */
-  requiresClientForm: z.boolean().optional(),
+  requiresClientForm: z.boolean().nullable().optional(),
+  statusDetail: z.string().nullable().optional(),
 });
 export type StartConnectionResult = z.infer<typeof startConnectionResult>;
 
