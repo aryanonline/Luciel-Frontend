@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
 import type { Luciel } from '@luciel/api-client';
@@ -10,8 +10,13 @@ import type { Luciel } from '@luciel/api-client';
  *
  * When SMS or Voice is enabled with no number configured, the pillar shows the
  * "Action needed: add your number" state and an E.164 entry affordance. When a
- * number is supplied (pending_carrier_registration) it shows "being activated
- * with carriers". No number is fabricated by the platform.
+ * number is supplied it sits at "Action needed: complete carrier registration"
+ * until the TENANT finishes their own A2P 10DLC registration and triggers
+ * Re-verify — the platform never registers on their behalf and never polls
+ * (Legal §A2, Arch §3.1.6).
+ *
+ * Enabling SMS is also a hard gate on the carrier/consent acknowledgment
+ * (Legal §A2/§A6).
  */
 
 const base: Luciel = {
@@ -76,10 +81,52 @@ describe('P0-1: SMS enabled without a number shows the action-needed state', () 
   });
 });
 
-describe('P0-1: a supplied number shows "being activated with carriers"', () => {
+describe('P0-1: a supplied number sits at "complete carrier registration"', () => {
   it('renders the pending-carrier-registration state and no entry field', () => {
     renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
-    expect(screen.getByText(/being activated with carriers/i)).toBeInTheDocument();
+    expect(screen.getByText(/action needed: complete carrier registration/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/Business phone number/i)).not.toBeInTheDocument();
+  });
+
+  it('does not claim the platform is registering the number with the carriers', () => {
+    renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
+    expect(screen.queryByText(/being activated with the carriers/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/You complete the Brand and Campaign registration yourself/i),
+    ).toBeInTheDocument();
+  });
+
+  it('offers a Re-verify trigger, since nothing polls the carrier in the background', () => {
+    renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
+    expect(screen.getByRole('button', { name: /Re-verify/i })).toBeInTheDocument();
+    expect(screen.getByText(/Nothing checks this in the background/i)).toBeInTheDocument();
+  });
+});
+
+describe('Legal §A2/§A6: enabling SMS is gated on the carrier/consent acknowledgment', () => {
+  it('opens the disclosure instead of enabling SMS straight away', () => {
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+    fireEvent.click(screen.getByRole('switch', { name: /Enable SMS/i }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText(/You register with the carriers, not us/i)).toBeInTheDocument();
+    expect(screen.getByText(/You are the sender of record/i)).toBeInTheDocument();
+    expect(screen.getByText(/Carrier costs are yours/i)).toBeInTheDocument();
+    expect(screen.getByText(/CASL in Canada and, where applicable, the US TCPA/i)).toBeInTheDocument();
+  });
+
+  it('keeps the acknowledgment required — confirm is disabled until the box is checked', () => {
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+    fireEvent.click(screen.getByRole('switch', { name: /Enable SMS/i }));
+
+    const confirm = screen.getByRole('button', { name: /Acknowledge and enable SMS/i });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(confirm).not.toBeDisabled();
+  });
+
+  it('discloses STOP/HELP handling durably once SMS is on, not only in the modal', () => {
+    renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
+    expect(screen.getByText(/honors STOP and HELP automatically/i)).toBeInTheDocument();
   });
 });

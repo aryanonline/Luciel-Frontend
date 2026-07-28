@@ -113,11 +113,13 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
         )}
       </Field>
 
-      {/* AI-identity disclosure is platform-enforced (Vision §3.5, Arch §3.4.16). */}
+      {/* AI-identity disclosure is platform-enforced (Vision §3.5, Arch §3.4.16).
+          The banner states only what this surface actually offers — wording
+          customization has no field here yet, so it is not promised. */}
       <Banner tone="info">
-        Your Luciel always introduces itself as an AI assistant for your business. You can word this
-        in your brand voice, but it can&apos;t be turned off. Model selection is handled by the
-        platform — there&apos;s no model to pick.
+        Your Luciel always introduces itself as an AI assistant for your business, on every channel.
+        That disclosure can&apos;t be turned off; the personality settings above shape how it sounds.
+        Model selection is handled by the platform — there&apos;s no model to pick.
       </Banner>
 
       <div className="mt-vm-4">

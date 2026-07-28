@@ -56,7 +56,8 @@ export default function PrivacyPage() {
         {
           heading: 'Your rights and your leads’ rights',
           body: [
-            'You may access, correct, export, or delete your admin data, subject to legitimate retention such as billing records. Your leads have data-subject rights (access and erasure); because you are the controller of their data, the platform gives you a per-lead erasure action and export to honor those requests.',
+            'You may access, correct, export, or delete your admin data, subject to legitimate retention such as billing records.',
+            'Your leads have data-subject rights under PIPEDA, and under GDPR or CCPA where those apply — in particular access and erasure. Because you are the controller of their data, your leads exercise those rights through you, and the platform gives you a per-lead erasure action and export to honor them. We assist you as processor in responding.',
           ],
         },
       ]}

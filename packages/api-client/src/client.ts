@@ -24,6 +24,7 @@ import type {
   CheckoutSession,
   Connection,
   StartConnectionResult,
+  ReverifySmsResult,
   EmailProvisioning,
   ProvisionEmailRequest,
   ConversationSummary,
@@ -118,6 +119,15 @@ export interface LucielApiClient {
     ): Promise<StartConnectionResult>;
     /** Re-auth path for expired/error connections (Arch §3.8.7 B). */
     reconnect(connectionId: string): Promise<StartConnectionResult>;
+    /**
+     * Re-read the BYO SMS/Voice number's A2P 10DLC status with the carrier
+     * (Arch §3.1.6). Distinct from reconnect: no credential is involved. The
+     * tenant completes Brand + Campaign registration themselves (Legal §A2) and
+     * then triggers this; since there is no background poller, without it a
+     * number stays at `pending_carrier_registration` indefinitely. Stateless
+     * and repeatable.
+     */
+    reverifySms(): Promise<ReverifySmsResult>;
     /**
      * Complete an OAuth flow: exchange the provider's `code` for a token, which the
      * backend stores as a tenant-scoped secret_ref (Arch §3.2.3/§3.8.3). Called by

@@ -34,6 +34,13 @@ export const channelConfig = z.object({
   connectionStatus: connectionStatus.optional(),
   /** Voice requires the one-time consent-ack modal before activation (Arch §3.1.2). */
   voiceConsentAcknowledgedAt: isoTimestamp.optional(),
+  /**
+   * SMS requires an A2P 10DLC / sender-of-record / STOP-HELP / CASL-TCPA
+   * acknowledgment before activation (Legal §A2, §A6). Optional and read-only
+   * here: when the backend starts stamping it the acknowledgment becomes
+   * durable, and until then the UI gates on it per session.
+   */
+  smsComplianceAcknowledgedAt: isoTimestamp.optional(),
 });
 export type ChannelConfig = z.infer<typeof channelConfig>;
 
