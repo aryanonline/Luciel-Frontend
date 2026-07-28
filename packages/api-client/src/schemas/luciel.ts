@@ -113,6 +113,45 @@ export const knowledgeQuota = z.object({
 });
 export type KnowledgeQuota = z.infer<typeof knowledgeQuota>;
 
+/** Pasted-text ingest body (Arch §3.2.2 "paste text"). */
+export const pasteTextRequest = z.object({
+  name: z.string().min(1),
+  text: z.string().min(1),
+});
+export type PasteTextRequest = z.infer<typeof pasteTextRequest>;
+
+/**
+ * Live-sync connectors (Arch §3.2.3). The provider is the concrete brand;
+ * hubspot/salesforce both land on the `crm_kb` source origin. `website_crawl`
+ * needs no authorization — it is an httpx fetch target, so it is created
+ * already connected.
+ */
+export const knowledgeSyncProvider = z.enum([
+  'google_drive',
+  'notion',
+  'hubspot',
+  'salesforce',
+  'website_crawl',
+]);
+export type KnowledgeSyncProvider = z.infer<typeof knowledgeSyncProvider>;
+
+export const knowledgeSyncConnection = z.object({
+  connectionId: uuid,
+  provider: knowledgeSyncProvider,
+  status: connectionStatus,
+  nonSecretConfig: z.record(z.unknown()).optional(),
+  statusDetail: z.string().optional(),
+});
+export type KnowledgeSyncConnection = z.infer<typeof knowledgeSyncConnection>;
+
+/** External ids reconciled by one sync/crawl run (Arch §3.2.3). */
+export const knowledgeSyncResult = z.object({
+  added: z.array(z.string()),
+  updated: z.array(z.string()),
+  removed: z.array(z.string()),
+});
+export type KnowledgeSyncResult = z.infer<typeof knowledgeSyncResult>;
+
 // --- Escalation (Vision §3.4) -------------------------------------------------
 /** The four signals are FIXED — never admin toggles (Vision §3.4, Arch §3.4.5). */
 export const escalationSignal = z.enum([

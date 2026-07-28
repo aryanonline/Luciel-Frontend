@@ -32,8 +32,11 @@ export interface TransportOptions {
 export function createTransport(opts: TransportOptions) {
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
     let res: Response;
+    const form = body instanceof FormData ? body : null;
     try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
+      // For multipart the browser must set content-type itself so the boundary
+      // is included; setting it by hand produces an unparseable body.
+      const headers: Record<string, string> = form ? {} : { 'content-type': 'application/json' };
       const token = opts.getBearerToken?.();
       if (token) headers['authorization'] = `Bearer ${token}`;
       res = await fetch(`${opts.baseUrl}${path}`, {
@@ -41,7 +44,7 @@ export function createTransport(opts: TransportOptions) {
         headers,
         // Carry the httpOnly session cookie; never touch localStorage.
         credentials: 'include',
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
       });
     } catch {
       throw new LucielApiError({ code: 'network_error', message: 'Network request failed.' });
@@ -68,6 +71,7 @@ export function createTransport(opts: TransportOptions) {
   return {
     get: <T>(path: string) => request<T>('GET', path),
     post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+    postForm: <T>(path: string, form: FormData) => request<T>('POST', path, form),
     put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
     del: <T>(path: string) => request<T>('DELETE', path),
   };

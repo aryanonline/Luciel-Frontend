@@ -16,6 +16,10 @@ import type {
   KnowledgeSource,
   KnowledgeChunk,
   KnowledgeQuota,
+  PasteTextRequest,
+  KnowledgeSyncProvider,
+  KnowledgeSyncConnection,
+  KnowledgeSyncResult,
   BillingInfo,
   CheckoutSession,
   Connection,
@@ -82,6 +86,21 @@ export interface LucielApiClient {
     quota(): Promise<KnowledgeQuota>;
     deleteSource(sourceId: string): Promise<void>;
     resyncSource(sourceId: string): Promise<KnowledgeSource>;
+    /** Multipart upload — PDF/DOCX/TXT/CSV, parsed server-side (Arch §3.2.2). */
+    uploadFile(file: File, name: string): Promise<KnowledgeSource>;
+    pasteText(req: PasteTextRequest): Promise<KnowledgeSource>;
+    /** Explicit CSV path: always lands as origin='csv' structured rows. */
+    importCsv(file: File, name: string): Promise<KnowledgeSource>;
+    /**
+     * Create a live-sync connection (Arch §3.2.3). OAuth providers come back
+     * `unconfigured` and do not sync until the account is authorized; the
+     * authorize navigation is a separate flow.
+     */
+    startSyncConnection(provider: KnowledgeSyncProvider): Promise<KnowledgeSyncConnection>;
+    /** Website crawl needs no authorization, so it is created ready to sync. */
+    startCrawl(crawlUrls: string[]): Promise<KnowledgeSyncConnection>;
+    /** Pull a sync connection now — this is what turns a crawl into sources. */
+    syncConnection(connectionId: string): Promise<KnowledgeSyncResult>;
   };
 
   connections: {

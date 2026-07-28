@@ -1,6 +1,14 @@
 import type { LucielApiClient } from '../client';
 import { LucielApiError } from '../schemas';
-import type { Account, Luciel, BillingInfo, Connection, EmailProvisioning } from '../schemas';
+import type {
+  Account,
+  Luciel,
+  BillingInfo,
+  Connection,
+  EmailProvisioning,
+  KnowledgeSource,
+  KnowledgeSyncConnection,
+} from '../schemas';
 import * as seed from './mock-data';
 
 /**
@@ -35,6 +43,9 @@ export interface MockAdminOptions {
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
+/** 50 MB per file (Vision §3.3) — the same limit the backend enforces. */
+const PER_FILE_MAX_BYTES = 50_000_000;
+
 export function createMockAdminClient(options: MockAdminOptions = {}): LucielApiClient {
   const latency = options.latencyMs ?? 0;
 
@@ -47,6 +58,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     connections: clone(seed.seedConnections),
     emailProvisioning: clone(seed.seedEmailProvisioning) as EmailProvisioning | null,
     knowledge: clone(seed.seedKnowledge),
+    syncConnections: [] as KnowledgeSyncConnection[],
     conversations: clone(seed.seedConversations),
     leads: clone(seed.seedLeads),
     escalations: clone(seed.seedEscalations),
@@ -106,6 +118,45 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
   const ok = async <T>(value: T): Promise<T> => {
     await delay();
     return clone(value);
+  };
+
+  // Deterministic ids for anything the mock creates at runtime.
+  let seq = 0;
+  const nextId = () => `aaaaaaaa-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
+
+  const addSource = (
+    name: string,
+    origin: KnowledgeSource['origin'],
+    sizeBytes: number,
+    syncStatus?: KnowledgeSource['syncStatus'],
+  ): KnowledgeSource => {
+    const now = new Date().toISOString();
+    const source: KnowledgeSource = {
+      sourceId: nextId(),
+      name,
+      origin,
+      ingestionStatus: 'ready',
+      sizeBytes,
+      lastUpdatedAt: now,
+      ...(syncStatus ? { syncStatus, lastSyncedAt: now } : {}),
+    };
+    state.knowledge.push(source);
+    return source;
+  };
+
+  const addSyncConnection = (
+    provider: KnowledgeSyncConnection['provider'],
+    status: KnowledgeSyncConnection['status'],
+    nonSecretConfig?: Record<string, unknown>,
+  ): KnowledgeSyncConnection => {
+    const connection: KnowledgeSyncConnection = {
+      connectionId: nextId(),
+      provider,
+      status,
+      ...(nonSecretConfig ? { nonSecretConfig } : {}),
+    };
+    state.syncConnections.push(connection);
+    return connection;
   };
 
   return {
@@ -256,7 +307,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async quota() {
         guardVerified();
-        return ok({ usedBytes: 7_400_000, totalBytes: 5_000_000_000, perFileMaxBytes: 50_000_000 });
+        return ok({
+          usedBytes: state.knowledge.reduce((n, s) => n + s.sizeBytes, 0),
+          totalBytes: 5_000_000_000,
+          perFileMaxBytes: PER_FILE_MAX_BYTES,
+        });
       },
       async deleteSource(sourceId) {
         guardVerified();
@@ -270,6 +325,57 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         s.lastSyncedAt = new Date().toISOString();
         s.syncStatus = 'synced';
         return ok(s);
+      },
+      async uploadFile(file, name) {
+        guardVerified();
+        if (file.size > PER_FILE_MAX_BYTES) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Knowledge quota: file exceeds the 50 MB per-file limit.',
+          });
+        }
+        return ok(addSource(name, file.name.endsWith('.csv') ? 'csv' : 'upload', file.size));
+      },
+      async pasteText(req) {
+        guardVerified();
+        return ok(addSource(req.name, 'paste', req.text.length));
+      },
+      async importCsv(file, name) {
+        guardVerified();
+        if (file.size > PER_FILE_MAX_BYTES) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Knowledge quota: file exceeds the 50 MB per-file limit.',
+          });
+        }
+        return ok(addSource(name, 'csv', file.size));
+      },
+      async startSyncConnection(provider) {
+        guardVerified();
+        // OAuth-class providers start unconfigured — nothing syncs until the
+        // account is authorized (Arch §3.8.4 lifecycle starts at unconfigured).
+        return ok(addSyncConnection(provider, 'unconfigured'));
+      },
+      async startCrawl(crawlUrls) {
+        guardVerified();
+        return ok(addSyncConnection('website_crawl', 'connected', { crawlUrls }));
+      },
+      async syncConnection(connectionId) {
+        guardVerified();
+        const c = state.syncConnections.find((x) => x.connectionId === connectionId);
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        if (c.status !== 'connected') {
+          throw new LucielApiError({
+            code: 'conflict',
+            message: 'Sync unavailable: this connection is not authorized yet.',
+          });
+        }
+        const urls = (c.nonSecretConfig?.crawlUrls as string[] | undefined) ?? [];
+        const added = urls.map((u) => {
+          addSource(u, 'website_crawl', 40_000, 'synced');
+          return u;
+        });
+        return ok({ added, updated: [], removed: [] });
       },
     },
 
