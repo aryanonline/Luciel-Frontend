@@ -24,6 +24,7 @@ export const qk = {
   connections: ['connections'] as const,
   emailProvisioning: ['emailProvisioning'] as const,
   knowledge: ['knowledge'] as const,
+  chunks: (sourceId: string) => ['chunks', sourceId] as const,
   quota: ['quota'] as const,
   conversations: ['conversations'] as const,
   escalations: ['escalations'] as const,
@@ -48,6 +49,13 @@ export const useKnowledge = () =>
   useQuery({ queryKey: qk.knowledge, queryFn: () => api.knowledge.listSources() });
 export const useQuota = () =>
   useQuery({ queryKey: qk.quota, queryFn: () => api.knowledge.quota() });
+/** Chunk preview (Arch §3.2.2) — only fetched while a source is open for viewing. */
+export const useChunks = (sourceId: string | null) =>
+  useQuery({
+    queryKey: qk.chunks(sourceId ?? ''),
+    queryFn: () => api.knowledge.getChunks(sourceId as string),
+    enabled: sourceId !== null,
+  });
 export const useConversations = () =>
   useQuery({ queryKey: qk.conversations, queryFn: () => api.conversations.list() });
 export const useEscalations = () =>
