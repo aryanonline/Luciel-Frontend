@@ -243,7 +243,7 @@ export default function LeadsPage() {
               hint={
                 retentionDays === null
                   ? 'Currently off: leads are kept until you prune them yourself.'
-                  : `Leads inactive for ${retentionLabel(retentionDays)} are permanently deleted — this cannot be undone.`
+                  : `Active leads with no activity for ${retentionLabel(retentionDays)} are permanently deleted — this cannot be undone. Archived leads are never auto-pruned.`
               }
               error={
                 updateLeadRetention.isError
