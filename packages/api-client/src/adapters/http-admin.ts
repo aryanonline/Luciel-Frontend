@@ -79,6 +79,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
           ...(opts?.phoneNumber ? { phoneNumber: opts.phoneNumber } : {}),
         }),
       reconnect: (connectionId) => t.post(`/api/v1/admin/connections/${connectionId}/reconnect`),
+      reverifySms: () => t.post('/api/v1/admin/connections/sms/reverify'),
       completeOauth: (connectionId, code, state) =>
         t.post(`/api/v1/admin/knowledge/sync-connections/${connectionId}/oauth-callback`, {
           code,

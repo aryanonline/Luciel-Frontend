@@ -22,8 +22,11 @@ export const connectionStatus = z.enum([
   'expired', // -> "Reconnect needed"
   'revoked', // not shown to broker; lifecycle teardown
   'dormant', // downgrade grace; restored on re-upgrade
-  // SMS/Voice number provisioned but A2P 10DLC carrier registration not yet
-  // approved — NOT live; shown as "being activated with the carriers" (Arch §3.1.6).
+  // SMS/Voice number supplied but the tenant's own A2P 10DLC Brand+Campaign
+  // registration is not yet verified — NOT live; shown as "Action needed:
+  // complete carrier registration" (Legal §A2, Arch §3.1.6). The platform never
+  // registers on the tenant's behalf, so this state clears only when the tenant
+  // triggers re-verify after completing registration themselves.
   'pending_carrier_registration',
   // Own-domain email address chosen but inbound DNS/MX routing not yet verified —
   // NOT live; shown as "Action needed: complete email routing" (Arch §3.1.6a).

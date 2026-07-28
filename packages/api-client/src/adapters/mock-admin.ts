@@ -203,7 +203,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             : state.account.hasLuciel
               ? ('dashboard' as const)
               : ('first_run' as const);
-        return { account: clone(state.account), nextRoute: next };
+        // Legal §A5/§A10 dashboard notices ride on the session payload. None in
+        // the steady state — a notice exists only while a reduction or material
+        // change is inside its notice window.
+        return { account: clone(state.account), nextRoute: next, notices: [] };
       },
       async verifyEmail() {
         await delay();
@@ -431,6 +434,22 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const c = state.connections.find((x) => x.connectionId === connectionId);
         if (c) c.status = 'connected';
         return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
+      },
+      async reverifySms() {
+        guardVerified();
+        // Models the tenant having completed their own A2P 10DLC Brand+Campaign
+        // registration (Legal §A2): re-reading the carrier status now clears the
+        // pending state. SMS and Voice share the one number (Arch §3.1.4).
+        const sender = state.connections.find((x) => x.connectionType === 'sms_sender');
+        if (sender) sender.status = 'connected';
+        if (state.luciel) {
+          for (const ch of state.luciel.channels) {
+            if (ch.connectionStatus === 'pending_carrier_registration') {
+              ch.connectionStatus = 'connected';
+            }
+          }
+        }
+        return ok({ status: 'connected' as const, statusDetail: null });
       },
       async completeOauth(connectionId, _code, oauthState) {
         guardVerified();

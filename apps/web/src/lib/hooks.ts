@@ -140,6 +140,16 @@ export function useLucielMutations() {
         qc.invalidateQueries({ queryKey: qk.connections });
       },
     }),
+    // On-demand A2P 10DLC re-verify of the BYO number (Arch §3.1.6). There is no
+    // background poller, so this is the only thing that moves a number out of
+    // pending_carrier_registration once the tenant has registered it themselves.
+    reverifySmsNumber: useMutation({
+      mutationFn: () => api.connections.reverifySms(),
+      onSuccess: () => {
+        invalidate();
+        qc.invalidateQueries({ queryKey: qk.connections });
+      },
+    }),
     pause: useMutation({ mutationFn: () => api.luciel.pause(), onSuccess: invalidate }),
     resume: useMutation({ mutationFn: () => api.luciel.resume(), onSuccess: invalidate }),
     remove: useMutation({ mutationFn: () => api.luciel.delete(), onSuccess: invalidate }),

@@ -25,8 +25,12 @@ export const budget = z.object({
   dunningState,
   /** Conversations counted this billing period. */
   conversationsThisPeriod: z.number().int().nonnegative(),
-  /** Free starter allowance — 50 (Vision §7). */
-  freeAllowance: z.literal(50),
+  /**
+   * Free starter allowance — 50 today (Vision §7). NOT pinned to a literal: Legal
+   * §A5 reserves the right to reduce it on 30 days' notice, and a literal would
+   * fail validation and break the budget bar the moment that happened.
+   */
+  freeAllowance: z.number().int().nonnegative(),
   /** Billed (PAYG) conversations above the free allowance this period. */
   billedThisPeriod: z.number().int().nonnegative(),
   /** Period boundary tied to Stripe billing date, not the calendar month. */

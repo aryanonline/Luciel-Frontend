@@ -67,6 +67,21 @@ export const startConnectionResult = z.object({
 export type StartConnectionResult = z.infer<typeof startConnectionResult>;
 
 /**
+ * Result of an on-demand A2P 10DLC re-verify of the BYO SMS/Voice number
+ * (Arch §3.1.6). There is NO background poller: a number sitting at
+ * `pending_carrier_registration` only becomes send-ready when the tenant asks
+ * the platform to re-read its carrier status, after completing the Brand +
+ * Campaign registration themselves (Legal §A2). Both fields are optional so a
+ * backend that answers with a bare 200 does not break the caller.
+ */
+export const reverifySmsResult = z.object({
+  status: connectionStatus.optional(),
+  /** Human-readable outcome, e.g. still pending vs. what is missing. */
+  statusDetail: z.string().nullable().optional(),
+});
+export type ReverifySmsResult = z.infer<typeof reverifySmsResult>;
+
+/**
  * Email-address provisioning (Arch §3.1.6a, Decision #49). The admin provisions
  * the address Luciel SENDS AND RECEIVES on. Two modes, both LAUNCH capabilities:
  *   own_domain   — the business's own address; requires an inbound DNS/MX routing

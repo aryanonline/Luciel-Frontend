@@ -22,13 +22,22 @@ import { channelLabel, chipKind } from './labels';
  * the tenant brings their number (BYO); the platform never provisions one
  * (Arch §3.1.4/§3.1.6, Decision #48). One number backs both SMS and Voice.
  * Until a number is supplied, SMS/Voice are "Action needed: add your number" and
- * are not live; a supplied number shows "being activated with carriers" while it
- * completes carrier registration (connectionStatus pending_carrier_registration).
+ * are not live. A supplied number sits at "Action needed: complete carrier
+ * registration" (connectionStatus pending_carrier_registration) until the TENANT
+ * completes their own A2P 10DLC Brand + Campaign registration and asks the
+ * platform to re-verify. The platform never registers on their behalf and there
+ * is no background poller (Legal §A2, Arch §3.1.6), so Re-verify is the only
+ * exit from that state.
  *
  * Voice enablement is a HARD GATE: a one-time consent-acknowledgment modal must
  * be accepted before Voice activates (Arch §3.1.2). The platform always plays an
- * AI-identity + recording/transcription notice the admin can reword but not
- * disable; the admin confirms they're responsible for jurisdiction consent law.
+ * AI-identity + recording/transcription notice that cannot be disabled; the
+ * admin confirms they're responsible for jurisdiction consent law.
+ *
+ * SMS enablement is likewise a HARD GATE (Legal §A2/§A6): before SMS switches on
+ * the admin acknowledges that they register with the carriers themselves, are
+ * the sender of record, owe the carrier fees, and own lawful opt-in plus
+ * STOP/HELP handling under CASL and, where applicable, the TCPA.
  *
  * Channel-→tool cascade (Arch §3.3 / Decision §43): disabling the SMS channel
  * force-disables send_sms; disabling the Email channel force-disables send_email.
@@ -44,11 +53,25 @@ const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], string>> = {
 /** UX-only E.164 shape check (client validation is never a security control). */
 const E164 = /^\+[1-9]\d{7,14}$/;
 
+/** Where the tenant registers their own A2P 10DLC brand + campaign (Legal §A2). */
+const A2P_GUIDE_URL = 'https://www.twilio.com/docs/messaging/compliance/a2p-10dlc';
+
 export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
-  const { updateChannels, acknowledgeVoiceConsent, updateTools, startConnection } =
-    useLucielMutations();
+  const {
+    updateChannels,
+    acknowledgeVoiceConsent,
+    updateTools,
+    startConnection,
+    reverifySmsNumber,
+  } = useLucielMutations();
   const [voiceModalOpen, setVoiceModalOpen] = React.useState(false);
   const [consentChecked, setConsentChecked] = React.useState(false);
+  const [smsModalOpen, setSmsModalOpen] = React.useState(false);
+  const [smsAckChecked, setSmsAckChecked] = React.useState(false);
+  // Session-scoped fallback while the backend does not yet stamp
+  // smsComplianceAcknowledgedAt. Once it does, the ack becomes durable and this
+  // never has to carry the gate.
+  const [smsAckedThisSession, setSmsAckedThisSession] = React.useState(false);
   const [phoneNumber, setPhoneNumber] = React.useState('');
 
   // One BYO number backs both SMS and Voice (Arch §3.1.4/§3.1.6). Derive the shared
@@ -62,6 +85,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const needsNumber = phoneEnabled && !numberConfigured;
   const phonePending = phoneEnabled && numberStatus === 'pending_carrier_registration';
   const phoneValid = E164.test(phoneNumber.trim());
+  const smsAcknowledged =
+    Boolean(smsChannel?.smsComplianceAcknowledgedAt) || smsAckedThisSession;
 
   const submitNumber = () => {
     if (!phoneValid) return;
@@ -81,6 +106,11 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         setVoiceModalOpen(true);
         return;
       }
+    }
+    // SMS requires the carrier/consent-responsibility ack (Legal §A2/§A6).
+    if (id === 'sms' && enabled && !smsAcknowledged) {
+      setSmsModalOpen(true);
+      return;
     }
     const nextChannels = luciel.channels.map((c) => (c.id === id ? { ...c, enabled } : c));
     updateChannels.mutate(nextChannels);
@@ -103,6 +133,14 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     await updateChannels.mutateAsync(next);
     setVoiceModalOpen(false);
     setConsentChecked(false);
+  };
+
+  const confirmSmsAck = async () => {
+    setSmsAckedThisSession(true);
+    const next = luciel.channels.map((c) => (c.id === 'sms' ? { ...c, enabled: true } : c));
+    await updateChannels.mutateAsync(next);
+    setSmsModalOpen(false);
+    setSmsAckChecked(false);
   };
 
   return (
@@ -140,7 +178,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
           <div className="flex items-center justify-between gap-vm-3">
             <span className="text-vm-2 font-label">Your business phone number (SMS &amp; Voice)</span>
             {phonePending ? (
-              <StatusChip kind="action_needed" detail="being activated with carriers" />
+              <StatusChip kind="action_needed" detail="complete carrier registration" />
             ) : needsNumber ? (
               <StatusChip kind="action_needed" detail="add your number" />
             ) : (
@@ -148,10 +186,45 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
             )}
           </div>
           {phonePending ? (
-            <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
-              Your number is being activated with the carriers. SMS and Voice go live once carrier
-              registration completes — no shared or platform number is used (Arch §3.1.4/§3.1.6).
-            </p>
+            <div className="mt-vm-2 space-y-vm-3 text-vm-1 text-vm-text-muted">
+              <p>
+                Your number is on file, but its A2P 10DLC carrier registration isn&apos;t verified
+                yet — so SMS and Voice aren&apos;t sending. You complete the Brand and Campaign
+                registration yourself, in your own carrier account, in your business&apos;s name.
+                VantageMind guides and verifies but never registers on your behalf, and no shared or
+                platform number is used.
+              </p>
+              <p>
+                Nothing checks this in the background. When you&apos;ve finished registering, use
+                Re-verify and we&apos;ll read your number&apos;s current carrier status.
+              </p>
+              <div className="flex flex-wrap items-center gap-vm-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => reverifySmsNumber.mutate()}
+                  disabled={reverifySmsNumber.isPending}
+                >
+                  {reverifySmsNumber.isPending ? 'Re-verifying…' : 'Re-verify'}
+                </Button>
+                <a
+                  href={A2P_GUIDE_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  How to register your brand and campaign
+                </a>
+              </div>
+              {reverifySmsNumber.data?.statusDetail && (
+                <p>{reverifySmsNumber.data.statusDetail}</p>
+              )}
+              {reverifySmsNumber.isError && (
+                <p className="text-vm-danger">
+                  We couldn&apos;t reach the carrier just now. Your number is unchanged — try
+                  Re-verify again in a moment.
+                </p>
+              )}
+            </div>
           ) : (
             <div className="mt-vm-3">
               <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
@@ -194,8 +267,88 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
               </div>
             </div>
           )}
+
+          {/* Durable SMS disclosure — the enablement modal is one-off, this is not
+              (Legal §A2/§A6, Arch §3.4.2). */}
+          {smsChannel?.enabled && (
+            <p className="mt-vm-4 border-t border-vm-border pt-vm-3 text-vm-0 text-vm-text-muted">
+              On SMS you are the sender of record: carrier registration and fees are yours, and so is
+              lawful opt-in and honoring opt-out under CASL and, where applicable, the TCPA. The
+              platform honors STOP and HELP automatically at the channel layer, and the first
+              outbound message to a recipient carries an AI-identity and STOP notice.
+            </p>
+          )}
         </div>
       )}
+
+      {/* SMS hard gate — carrier registration + consent responsibility (Legal §A2/§A6). */}
+      <Modal
+        open={smsModalOpen}
+        onOpenChange={(o) => {
+          setSmsModalOpen(o);
+          if (!o) setSmsAckChecked(false);
+        }}
+        title="Enable SMS — carrier registration and consent"
+        description="SMS is sent in your business's name, not ours. Please read this before turning it on."
+        confirmLabel="Acknowledge and enable SMS"
+        confirmDisabled={!smsAckChecked}
+        onConfirm={confirmSmsAck}
+      >
+        <div className="space-y-vm-3 text-vm-1">
+          <p>
+            <strong>You register with the carriers, not us.</strong> If your number isn&apos;t
+            already carrier-registered, you complete the required A2P 10DLC Brand and Campaign
+            registration yourself, in your own carrier account. VantageMind provides the guidance and
+            verifies your number&apos;s status, but does not perform, submit, or operate the
+            registration for you.{' '}
+            <a
+              href={A2P_GUIDE_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              Registration steps and the business details you&apos;ll need
+            </a>
+            .
+          </p>
+          <p>
+            <strong>You are the sender of record.</strong> The registration is made in your
+            business&apos;s legal name — carrier rules require the registered sender to be the party
+            actually messaging the consumer, which is you. It needs accurate business information
+            (legal name, address, and a Tax ID where applicable).
+          </p>
+          <p>
+            <strong>Carrier costs are yours.</strong> Number rental, message usage, and any carrier
+            registration fees are paid to your carrier directly. VantageMind is never in that
+            billing path.
+          </p>
+          <p>
+            <strong>Consent and opt-out are yours.</strong> You are responsible for the lawfulness of
+            your opt-in and for honoring opt-out — the consent and opt-out obligations of CASL in
+            Canada and, where applicable, the US TCPA. The platform enforces STOP and HELP handling
+            at the channel layer and the first outbound message carries an AI-identity and STOP
+            notice, but the lawful basis for contacting any given recipient is yours as the sender.
+          </p>
+          <p>
+            If you message only Canadian recipients, US A2P 10DLC may not apply and no US 10DLC fee
+            is incurred — but Canadian carrier requirements and CASL consent and opt-out obligations
+            still do.
+          </p>
+          <label className="flex items-start gap-vm-2">
+            <input
+              type="checkbox"
+              checked={smsAckChecked}
+              onChange={(e) => setSmsAckChecked(e.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
+            <span>
+              I understand I complete A2P 10DLC carrier registration myself as the sender of record,
+              that carrier and registration fees are mine, and that I&apos;m responsible for lawful
+              opt-in and for honoring STOP/HELP under CASL and, where applicable, the TCPA.
+            </span>
+          </label>
+        </div>
+      </Modal>
 
       <Modal
         open={voiceModalOpen}
@@ -213,8 +366,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
           <p>
             The platform always plays a spoken notice at the start of every call: that the caller is
             speaking with an AI assistant for your business and that the call may be
-            recorded/transcribed. You can reword this notice in your brand voice, but you cannot
-            disable it.
+            recorded/transcribed. This notice cannot be disabled.
           </p>
           <p>
             You are responsible for confirming this disclosure meets the consent law of every place
