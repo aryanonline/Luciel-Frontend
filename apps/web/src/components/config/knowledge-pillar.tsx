@@ -17,6 +17,7 @@ import {
 import type { KnowledgeSource, KnowledgeSyncProvider } from '@luciel/api-client';
 import { qk, useChunks, useKnowledge, useQuota } from '@/lib/hooks';
 import { api } from '@/lib/api';
+import { authorizeOrExplain } from '@/lib/oauth-connect';
 import { useQueryClient } from '@tanstack/react-query';
 
 /**
@@ -115,12 +116,26 @@ export function KnowledgePillar() {
     });
   };
 
+  /**
+   * Live-sync connectors (Arch §3.2.3). Creating the connection mints a fresh
+   * single-use consent URL; the admin's browser goes to the provider in full so
+   * they can authorize the account. Nothing syncs until they come back through
+   * the callback. Providers with no registered OAuth client say so instead.
+   */
   const connectProvider = (provider: KnowledgeSyncProvider, label: string) =>
     run(async () => {
       const connection = await api.knowledge.startSyncConnection(provider);
-      return connection.status === 'connected'
-        ? `${label} is connected and will sync.`
-        : `${label} connection created. It will not sync until you authorize access to the account.`;
+      if (connection.status === 'connected') return `${label} is connected and will sync.`;
+      const authorizeUrl = connection.nonSecretConfig?.authorize_url;
+      return (
+        authorizeOrExplain({
+          authorizeUrl: typeof authorizeUrl === 'string' ? authorizeUrl : null,
+          statusDetail: connection.statusDetail,
+          provider,
+          connectionId: connection.connectionId,
+          label,
+        }) ?? `Taking you to ${label} to authorize access…`
+      );
     });
 
   const resync = (source: KnowledgeSource) =>

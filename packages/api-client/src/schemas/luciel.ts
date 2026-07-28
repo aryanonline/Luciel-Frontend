@@ -139,8 +139,10 @@ export const knowledgeSyncConnection = z.object({
   connectionId: uuid,
   provider: knowledgeSyncProvider,
   status: connectionStatus,
+  /** Carries `authorize_url` (real provider consent URL) while a connect is pending. */
   nonSecretConfig: z.record(z.unknown()).optional(),
-  statusDetail: z.string().optional(),
+  /** A detail beginning "Action needed:" means do not redirect — show it instead. */
+  statusDetail: z.string().nullable().optional(),
 });
 export type KnowledgeSyncConnection = z.infer<typeof knowledgeSyncConnection>;
 

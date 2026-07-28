@@ -79,9 +79,10 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
           ...(opts?.phoneNumber ? { phoneNumber: opts.phoneNumber } : {}),
         }),
       reconnect: (connectionId) => t.post(`/api/v1/admin/connections/${connectionId}/reconnect`),
-      completeOauth: (connectionId, code) =>
+      completeOauth: (connectionId, code, state) =>
         t.post(`/api/v1/admin/knowledge/sync-connections/${connectionId}/oauth-callback`, {
           code,
+          state,
         }),
       disconnect: (connectionId) => t.del(`/api/v1/admin/connections/${connectionId}`),
       getEmailProvisioning: () => t.get('/api/v1/admin/connections/email'),
@@ -94,6 +95,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       getMessages: (sessionId) => t.get(`/api/v1/dashboard/conversations/${sessionId}/messages`),
       takeOver: (sessionId) => t.post(`/api/v1/dashboard/conversations/${sessionId}/take-over`),
       handBack: (sessionId) => t.post(`/api/v1/dashboard/conversations/${sessionId}/hand-back`),
+      sendMessage: (sessionId, text) =>
+        t.post(`/api/v1/dashboard/conversations/${sessionId}/messages`, { text }),
       getAnswerEvidence: (sessionId, messageId) =>
         t.get(`/api/v1/dashboard/conversations/${sessionId}/messages/${messageId}/evidence`),
       flagAnswer: (sessionId, messageId) =>

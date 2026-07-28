@@ -1,8 +1,15 @@
 'use client';
 
 import * as React from 'react';
-import { Card, CardTitle, Button, StatusChip, Banner, PageHeader } from '@luciel/ui';
-import type { Message, AnswerEvidence } from '@luciel/api-client';
+import Link from 'next/link';
+import { Card, CardTitle, Button, StatusChip, Banner, Textarea, PageHeader } from '@luciel/ui';
+import type {
+  Message,
+  AnswerEvidence,
+  SendMessageResult,
+  MessageDeliveryDetail,
+} from '@luciel/api-client';
+import { LucielApiError } from '@luciel/api-client';
 import { useConversations } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
@@ -10,21 +17,113 @@ import { qk } from '@/lib/hooks';
 
 /**
  * Conversations + answer review (Customer Journey §7; Arch §3.4.12, §3.4.13).
- *  - Live takeover / hand back (human_controlled mode).
+ *  - Live takeover / hand back (human_controlled mode), and the compose box the
+ *    admin types into while they hold the conversation.
  *  - Answer review: the source chunks Luciel used + the grounding score, with a
  *    flag action that corrects at the knowledge root (within this account only).
  */
+
+/** Server-enforced reply length (Arch §11.5). */
+const REPLY_MAX_CHARS = 4000;
+
+const ROLE_LABEL: Record<Message['role'], string> = {
+  lead: 'Visitor',
+  luciel: 'Luciel',
+  human_agent: 'You',
+};
+
+type Delivery = { tone: 'info' | 'warning'; text: React.ReactNode };
+
+/**
+ * How a reply landed. `delivered: false` is a normal outcome, not a failure —
+ * for the widget it is the ONLY outcome, because there is no push transport to
+ * a browser we hold no connection to; the reply is persisted and the visitor
+ * sees it on their next refresh. `no_recipient` / `channel_not_provisioned` are
+ * actionable: the admin needs contact details or a sender connection.
+ */
+function describeDelivery(result: SendMessageResult): Delivery {
+  if (result.delivered) return { tone: 'info', text: 'Sent to the visitor.' };
+  const connect = (
+    <>
+      {' '}
+      <Link href="/dashboard/configure" className="text-vm-accent underline">
+        Set up a sender
+      </Link>{' '}
+      so replies can go out.
+    </>
+  );
+  const detail: MessageDeliveryDetail | null | undefined = result.deliveryDetail;
+  switch (detail) {
+    case 'no_recipient':
+      return {
+        tone: 'warning',
+        text: <>Sent — but we have no contact details for this lead, so there was nowhere to deliver it.{connect}</>,
+      };
+    case 'channel_not_provisioned':
+      return {
+        tone: 'warning',
+        text: <>Sent — but this channel has no sender connected yet, so it could not go out.{connect}</>,
+      };
+    case 'unsupported_channel':
+      return { tone: 'warning', text: 'Sent and saved — this channel cannot send replies out.' };
+    case 'send_failed':
+      return {
+        tone: 'warning',
+        text: 'Sent and saved, but the channel rejected the delivery. Try again in a moment.',
+      };
+    default:
+      return {
+        tone: 'info',
+        text: 'Sent — the visitor will see this on their next refresh.',
+      };
+  }
+}
+
 export default function ConversationsPage() {
   const conversations = useConversations();
   const qc = useQueryClient();
   const [openSession, setOpenSession] = React.useState<string | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [evidence, setEvidence] = React.useState<AnswerEvidence | null>(null);
+  const [reply, setReply] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [delivery, setDelivery] = React.useState<Delivery | null>(null);
+  const [replyError, setReplyError] = React.useState<string | null>(null);
+
+  const openConversation = conversations.data?.find((c) => c.sessionId === openSession);
 
   const open = async (sessionId: string) => {
     setOpenSession(sessionId);
     setEvidence(null);
+    setDelivery(null);
+    setReplyError(null);
+    setReply('');
     setMessages(await api.conversations.getMessages(sessionId));
+  };
+
+  const send = async () => {
+    if (!openSession) return;
+    const text = reply.trim();
+    if (!text || text.length > REPLY_MAX_CHARS) return;
+    setSending(true);
+    setReplyError(null);
+    setDelivery(null);
+    try {
+      const result = await api.conversations.sendMessage(openSession, text);
+      // Append optimistically; a later fetch returns it in the same order.
+      setMessages((prev) => [...prev, result.message]);
+      setDelivery(describeDelivery(result));
+      setReply('');
+      qc.invalidateQueries({ queryKey: qk.conversations });
+    } catch (err) {
+      setReplyError(
+        err instanceof LucielApiError && err.code === 'validation_error'
+          ? err.message
+          : 'We could not send that reply. Please try again.',
+      );
+    } finally {
+      setSending(false);
+    }
   };
 
   const takeOver = async (sessionId: string) => {
@@ -88,7 +187,15 @@ export default function ConversationsPage() {
             <div className="mt-vm-3 space-y-vm-3">
               {messages.map((m) => (
                 <div key={m.messageId} className="text-vm-1">
-                  <span className="font-label capitalize text-vm-text-muted">{m.role}: </span>
+                  <span
+                    className={
+                      m.role === 'human_agent'
+                        ? 'font-label text-vm-accent'
+                        : 'font-label text-vm-text-muted'
+                    }
+                  >
+                    {ROLE_LABEL[m.role]}:{' '}
+                  </span>
                   <span>{m.text}</span>
                   {m.role === 'luciel' && (
                     <Button
@@ -135,6 +242,45 @@ export default function ConversationsPage() {
                     >
                       Flag this answer
                     </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Compose — only while this admin holds the conversation (§3.4.12). */}
+              {openConversation?.mode === 'human_controlled' && (
+                <div className="mt-vm-4 border-t border-vm-border pt-vm-3">
+                  <label htmlFor="reply" className="text-vm-1 font-label">
+                    You are replying as yourself — Luciel is not answering this conversation.
+                  </label>
+                  <Textarea
+                    id="reply"
+                    className="mt-vm-2"
+                    value={reply}
+                    maxLength={REPLY_MAX_CHARS}
+                    placeholder="Type your reply to the visitor…"
+                    onChange={(e) => setReply(e.target.value)}
+                  />
+                  <div className="mt-vm-2 flex items-center justify-between gap-vm-3">
+                    <span className="text-vm-0 text-vm-text-muted">
+                      {reply.length}/{REPLY_MAX_CHARS}
+                    </span>
+                    <Button
+                      variant="primary"
+                      disabled={sending || reply.trim().length === 0}
+                      onClick={() => void send()}
+                    >
+                      {sending ? 'Sending…' : 'Send reply'}
+                    </Button>
+                  </div>
+                  {delivery && (
+                    <Banner tone={delivery.tone} className="mt-vm-2">
+                      {delivery.text}
+                    </Banner>
+                  )}
+                  {replyError && (
+                    <Banner tone="danger" className="mt-vm-2">
+                      {replyError}
+                    </Banner>
                   )}
                 </div>
               )}

@@ -1,8 +1,10 @@
 'use client';
 
-import { Card, CardTitle, CardDescription, Toggle, StatusChip, Button } from '@luciel/ui';
-import type { Luciel, AddonTool, ChannelId } from '@luciel/api-client';
+import * as React from 'react';
+import { Banner, Card, CardTitle, CardDescription, Toggle, StatusChip, Button } from '@luciel/ui';
+import type { Luciel, AddonTool, ChannelId, ConnectionType } from '@luciel/api-client';
 import { useLucielMutations } from '@/lib/hooks';
+import { authorizeOrExplain } from '@/lib/oauth-connect';
 import { toolMeta, chipKind, channelLabel } from './labels';
 
 /**
@@ -29,6 +31,21 @@ const TOOL_CHANNEL_DEPENDENCY: Partial<Record<AddonTool['id'], ChannelId>> = {
   send_email: 'email',
 };
 
+/**
+ * The connection each tool's inline "Connect" starts (Arch §3.8.1). Connecting
+ * is a real OAuth round-trip through the provider — never a local status write.
+ */
+const TOOL_CONNECTION: Partial<
+  Record<AddonTool['id'], { connectionType: ConnectionType; provider: string }>
+> = {
+  check_availability: { connectionType: 'calendar', provider: 'google_calendar' },
+  book_appointment: { connectionType: 'calendar', provider: 'google_calendar' },
+  send_email: { connectionType: 'email_sender', provider: 'email' },
+  lookup_record: { connectionType: 'record_source', provider: 'salesforce' },
+  push_to_crm: { connectionType: 'crm', provider: 'hubspot' },
+  bring_your_own_webhook: { connectionType: 'outbound_webhook', provider: 'webhook' },
+};
+
 const ALWAYS_ON = [
   'Capture leads into the dashboard',
   'Escalate to a real person when needed',
@@ -37,7 +54,9 @@ const ALWAYS_ON = [
 ];
 
 export function ToolsPillar({ luciel }: { luciel: Luciel }) {
-  const { updateTools } = useLucielMutations();
+  const { updateTools, startConnection } = useLucielMutations();
+  const [connecting, setConnecting] = React.useState<AddonTool['id'] | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
 
   /**
    * Returns true when the tool's required channel is enabled, or when the
@@ -57,6 +76,29 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
     updateTools.mutate(next);
   };
 
+  /**
+   * Real connect: start the flow server-side, then hand the browser to the
+   * provider's consent screen. The tool only becomes `connected` when the
+   * provider redirects back and the callback redeems the code (Arch §3.8.7).
+   */
+  const connect = async (id: AddonTool['id']) => {
+    const target = TOOL_CONNECTION[id];
+    if (!target) return;
+    const meta = toolMeta[id];
+    const label = meta.connectLabel ?? meta.label;
+    setConnecting(id);
+    setNotice(null);
+    try {
+      const start = await startConnection.mutateAsync(target);
+      const explanation = authorizeOrExplain({ ...start, provider: target.provider, label });
+      if (explanation) setNotice(explanation);
+    } catch {
+      setNotice(`We could not start the connection for ${label}. Please try again.`);
+    } finally {
+      setConnecting(null);
+    }
+  };
+
   return (
     <Card>
       <CardTitle>Tools your Luciel can use</CardTitle>
@@ -73,6 +115,12 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
           Every Luciel does these. There is nothing to enable — it is how Luciel works.
         </p>
       </div>
+
+      {notice && (
+        <Banner tone="info" className="mt-vm-4">
+          {notice}
+        </Banner>
+      )}
 
       {/* Add-on tools checklist. */}
       <CardDescription className="mt-vm-5">
@@ -115,11 +163,14 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
                 <div className="mt-vm-2 flex items-center gap-vm-3 pl-[3.5rem]">
                   <Button
                     variant="secondary"
-                    onClick={() => setTool(t.id, { connectionStatus: 'connected' })}
+                    disabled={connecting !== null}
+                    onClick={() => void connect(t.id)}
                   >
-                    {t.connectionStatus === 'expired'
-                      ? `Reconnect ${meta.connectLabel}`
-                      : `Connect ${meta.connectLabel}`}
+                    {connecting === t.id
+                      ? 'Opening sign-in…'
+                      : t.connectionStatus === 'expired'
+                        ? `Reconnect ${meta.connectLabel}`
+                        : `Connect ${meta.connectLabel}`}
                   </Button>
                   <span className="text-vm-0 text-vm-text-muted">
                     A tool is usable only when it&apos;s switched on AND its connection is healthy.

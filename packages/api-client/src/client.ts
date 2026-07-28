@@ -1,11 +1,11 @@
 import type {
-  Account,
   Session,
   SignupRequest,
   LoginRequest,
   ForgotPasswordRequest,
   ResetPasswordRequest,
   VerifyEmailRequest,
+  SignupResult,
   ResendVerificationResult,
   Luciel,
   CreateLucielRequest,
@@ -28,6 +28,7 @@ import type {
   ProvisionEmailRequest,
   ConversationSummary,
   Message,
+  SendMessageResult,
   AnswerEvidence,
   EscalationEvent,
   Lead,
@@ -50,7 +51,7 @@ import type {
  */
 export interface LucielApiClient {
   auth: {
-    signup(req: SignupRequest): Promise<{ account: Account }>;
+    signup(req: SignupRequest): Promise<SignupResult>;
     login(req: LoginRequest): Promise<Session>;
     logout(): Promise<void>;
     /** Returns the current session, or throws LucielApiError('unauthorized'). */
@@ -120,9 +121,17 @@ export interface LucielApiClient {
     /**
      * Complete an OAuth flow: exchange the provider's `code` for a token, which the
      * backend stores as a tenant-scoped secret_ref (Arch §3.2.3/§3.8.3). Called by
-     * the OAuth callback landing page after the provider redirects back with `?code`.
+     * the OAuth callback landing page after the provider redirects back.
+     *
+     * `state` is MANDATORY and verified server-side — single-use, 10-minute TTL,
+     * bound to (admin, instance, connection, provider). A `validation_error` here
+     * means the attempt is gone: restart the connect flow, never retry this call.
      */
-    completeOauth(connectionId: string, code: string): Promise<{ status: string }>;
+    completeOauth(
+      connectionId: string,
+      code: string,
+      state: string,
+    ): Promise<KnowledgeSyncConnection>;
     disconnect(connectionId: string): Promise<void>;
     /**
      * Email-address provisioning (Arch §3.1.6a, Decision #49). Returns the current
@@ -146,6 +155,14 @@ export interface LucielApiClient {
     /** Live takeover (Arch §3.4.12). */
     takeOver(sessionId: string): Promise<ConversationSummary>;
     handBack(sessionId: string): Promise<ConversationSummary>;
+    /**
+     * Reply to the visitor as the human agent while the session is
+     * `human_controlled` (Arch §3.4.12, §11.5–11.7). Text is 1–4000 chars.
+     * Rejected with `validation_error` outside takeover — Luciel owns the reply
+     * then, and interleaving would make the transcript lie about who is speaking.
+     * A `delivered: false` result is NOT an error; read `deliveryDetail`.
+     */
+    sendMessage(sessionId: string, text: string): Promise<SendMessageResult>;
     /** Answer review — source chunks + grounding score (Arch §3.4.13). */
     getAnswerEvidence(sessionId: string, messageId: string): Promise<AnswerEvidence>;
     flagAnswer(sessionId: string, messageId: string): Promise<void>;

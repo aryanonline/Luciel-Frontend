@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Suspense } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, CardTitle, CardDescription, Banner } from '@luciel/ui';
 import { LucielApiError } from '@luciel/api-client';
@@ -25,6 +26,11 @@ function VerifyInner() {
   );
   const [cooldown, setCooldown] = React.useState<number>(0);
   const [resendMsg, setResendMsg] = React.useState<string | null>(null);
+  // Signup / resend told us the mail did not get onto the wire (§1). Don't send
+  // the customer to an inbox that will stay empty — offer a way through instead.
+  const [deliveryDegraded, setDeliveryDegraded] = React.useState(
+    params.get('delivery') === 'degraded',
+  );
 
   React.useEffect(() => {
     if (!token) return;
@@ -51,7 +57,9 @@ function VerifyInner() {
     setResendMsg(null);
     try {
       const res = await api.auth.resendVerification();
-      if (res.ok) setResendMsg('Verification email sent. Check your inbox.');
+      setDeliveryDegraded(res.emailDeliveryDegraded === true);
+      if (res.emailDeliveryDegraded) setResendMsg(null);
+      else if (res.ok) setResendMsg('Verification email sent. Check your inbox.');
       else if (res.cooldownSecondsRemaining) setCooldown(res.cooldownSecondsRemaining);
     } catch (e) {
       if (e instanceof LucielApiError && e.code === 'rate_limited') {
@@ -73,12 +81,29 @@ function VerifyInner() {
 
   return (
     <Card>
-      <CardTitle>{status === 'error' ? 'That link has expired' : 'Check your email'}</CardTitle>
+      <CardTitle>
+        {status === 'error'
+          ? 'That link has expired'
+          : deliveryDegraded
+            ? 'We could not send your verification email'
+            : 'Check your email'}
+      </CardTitle>
       <CardDescription>
         {status === 'error'
           ? 'Verification links expire after 24 hours and can only be used once. Request a new one below.'
-          : 'We sent you a verification link. Click it to unlock your account. You must verify your email before you can sign in.'}
+          : deliveryDegraded
+            ? 'Your account is created, but the verification email did not go out. Try sending it again — if it still does not arrive, contact us and we will verify you by hand.'
+            : 'We sent you a verification link. Click it to unlock your account. You must verify your email before you can sign in.'}
       </CardDescription>
+      {deliveryDegraded && (
+        <Banner tone="warning" className="mt-vm-4">
+          Nothing is wrong with your account — the problem is on our side.{' '}
+          <Link href="/contact" className="text-vm-accent underline">
+            Contact support
+          </Link>{' '}
+          if a resend does not reach you.
+        </Banner>
+      )}
       {resendMsg && (
         <Banner tone="info" className="mt-vm-4">
           {resendMsg}

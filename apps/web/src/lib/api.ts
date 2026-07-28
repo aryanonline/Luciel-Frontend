@@ -22,6 +22,9 @@ const adapter = (process.env.NEXT_PUBLIC_API_ADAPTER ?? 'mock') as ApiAdapterKin
 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 const scenario = (process.env.NEXT_PUBLIC_MOCK_SCENARIO ?? 'verified') as MockScenario;
 
+/** True when this build talks to the real backend (deploy sets `http`). */
+export const isHttpAdapter = adapter === 'http';
+
 export const api: LucielApiClient = createLucielClient({
   adapter,
   baseUrl,
