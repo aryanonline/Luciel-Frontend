@@ -29,6 +29,16 @@ export const lead = z.object({
 });
 export type Lead = z.infer<typeof lead>;
 
+/** Open formats only — the backend accepts no others (Legal §A7 portability). */
+export const leadExportFormat = z.enum(['csv', 'json']);
+export type LeadExportFormat = z.infer<typeof leadExportFormat>;
+
+/** A lead export ready to hand to the browser as a download. */
+export interface LeadExportFile {
+  blob: Blob;
+  filename: string;
+}
+
 export const conversationSummary = z.object({
   sessionId: uuid,
   leadId: uuid.optional(),

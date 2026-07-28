@@ -10,10 +10,13 @@ import {
   Banner,
   StatusChip,
   PageHeader,
+  Field,
+  Select,
 } from '@luciel/ui';
-import type { Lead } from '@luciel/api-client';
-import { useLeads, qk } from '@/lib/hooks';
+import type { Lead, LeadExportFormat } from '@luciel/api-client';
+import { useLeads, useLuciel, useLucielMutations, qk } from '@/lib/hooks';
 import { api } from '@/lib/api';
+import { saveBlob } from '@/lib/download';
 import { useQueryClient } from '@tanstack/react-query';
 
 /**
@@ -35,12 +38,29 @@ function staleCutoff(): number {
   return cutoff.getTime();
 }
 
+/** Offered auto-prune windows. Any whole number ≥ 1 is valid server-side, so a
+ *  window set outside this UI is preserved as an extra option rather than lost. */
+const RETENTION_PRESETS = [90, 180, 365, 730];
+
+const RETENTION_LABEL: Record<number, string> = {
+  90: '90 days',
+  180: '180 days (6 months)',
+  365: '365 days (1 year)',
+  730: '730 days (2 years)',
+};
+
+const retentionLabel = (days: number) => RETENTION_LABEL[days] ?? `${days} days`;
+
 export default function LeadsPage() {
   const leads = useLeads();
+  const luciel = useLuciel();
+  const { updateLeadRetention } = useLucielMutations();
   const qc = useQueryClient();
   const [staleOnly, setStaleOnly] = React.useState(false);
   const [selected, setSelected] = React.useState<string[]>([]);
   const [pruneIds, setPruneIds] = React.useState<string[] | null>(null);
+  const [exportError, setExportError] = React.useState<string | null>(null);
+  const [exporting, setExporting] = React.useState(false);
 
   const refresh = () => qc.invalidateQueries({ queryKey: qk.leads });
 
@@ -78,6 +98,29 @@ export default function LeadsPage() {
 
   const pruneCount = pruneIds?.length ?? 0;
 
+  const exportLeads = async (format: LeadExportFormat) => {
+    setExportError(null);
+    setExporting(true);
+    try {
+      const file = await api.leads.export(format);
+      saveBlob(file.blob, file.filename);
+    } catch {
+      setExportError('We could not prepare that export just now. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const retentionDays = luciel.data?.leadRetentionDays ?? null;
+  const retentionOptions =
+    retentionDays !== null && !RETENTION_PRESETS.includes(retentionDays)
+      ? [...RETENTION_PRESETS, retentionDays].sort((a, b) => a - b)
+      : RETENTION_PRESETS;
+
+  const changeRetention = (value: string) => {
+    updateLeadRetention.mutate(value === 'off' ? null : Number(value));
+  };
+
   return (
     <div className="space-y-vm-5">
       <PageHeader
@@ -108,15 +151,29 @@ export default function LeadsPage() {
               {staleCount})
             </span>
           </label>
-          {selectedVisible.length > 0 && (
-            <Button
-              variant="ghost"
-              onClick={() => setPruneIds(selectedVisible.map((l) => l.leadId))}
-            >
-              Prune {selectedVisible.length} selected
+          <div className="flex flex-wrap items-center gap-vm-2">
+            <Button variant="ghost" disabled={exporting} onClick={() => exportLeads('csv')}>
+              Export CSV
             </Button>
-          )}
+            <Button variant="ghost" disabled={exporting} onClick={() => exportLeads('json')}>
+              Export JSON
+            </Button>
+            {selectedVisible.length > 0 && (
+              <Button
+                variant="ghost"
+                onClick={() => setPruneIds(selectedVisible.map((l) => l.leadId))}
+              >
+                Prune {selectedVisible.length} selected
+              </Button>
+            )}
+          </div>
         </div>
+
+        {exportError && (
+          <Banner tone="danger" className="mt-vm-3">
+            {exportError}
+          </Banner>
+        )}
 
         {visible.length > 0 && (
           <label className="mt-vm-3 flex items-center gap-vm-2 text-vm-0 text-vm-text-muted">
@@ -171,6 +228,52 @@ export default function LeadsPage() {
           )}
         </ul>
       </Card>
+
+      {luciel.data && (
+        <Card>
+          <CardTitle>Auto-prune rule</CardTitle>
+          <CardDescription>
+            Optional. Off unless you turn it on — we never delete your leads on your behalf.
+          </CardDescription>
+
+          <div className="mt-vm-3 max-w-sm">
+            <Field
+              id="lead-retention-days"
+              label="Automatically prune leads with no activity for"
+              hint={
+                retentionDays === null
+                  ? 'Currently off: leads are kept until you prune them yourself.'
+                  : `Leads inactive for ${retentionLabel(retentionDays)} are permanently deleted — this cannot be undone.`
+              }
+              error={
+                updateLeadRetention.isError
+                  ? 'We could not save that just now. Please try again.'
+                  : undefined
+              }
+            >
+              {(props) => (
+                <Select
+                  {...props}
+                  value={retentionDays === null ? 'off' : String(retentionDays)}
+                  disabled={updateLeadRetention.isPending}
+                  onChange={(e) => changeRetention(e.target.value)}
+                >
+                  <option value="off">Off — keep leads until I prune them</option>
+                  {retentionOptions.map((days) => (
+                    <option key={days} value={days}>
+                      {retentionLabel(days)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          </div>
+
+          <p className="text-vm-0 text-vm-text-muted">
+            Export first if you want your own copy — pruning is permanent.
+          </p>
+        </Card>
+      )}
 
       <Modal
         open={Boolean(pruneIds)}

@@ -33,6 +33,8 @@ import type {
   AnswerEvidence,
   EscalationEvent,
   Lead,
+  LeadExportFormat,
+  LeadExportFile,
   AnalyticsOverview,
   AuditEvent,
 } from './schemas';
@@ -72,6 +74,11 @@ export interface LucielApiClient {
     updateTools(tools: AddonTool[]): Promise<Luciel>;
     updateEscalation(contact: EscalationContact): Promise<Luciel>;
     updatePersonality(config: PersonalityConfig): Promise<Luciel>;
+    /**
+     * Set (`days` ≥ 1) or clear (`null`) the lead auto-prune rule — the Admin's
+     * own retention choice over their own data (Arch §3.4.10a, Legal §B5).
+     */
+    updateLeadRetention(days: number | null): Promise<Luciel>;
     /** Voice-enable one-time consent ack — hard gate, logged (Arch §3.1.2). */
     acknowledgeVoiceConsent(): Promise<Luciel>;
     pause(): Promise<Luciel>;
@@ -187,6 +194,11 @@ export interface LucielApiClient {
     prune(leadIds: string[]): Promise<void>;
     /** Archive = kept in cold storage, NOT deleted (Arch §3.4.10a). */
     archive(leadId: string): Promise<Lead>;
+    /**
+     * Download this tenant's leads. Export exists so an Admin is never asked to
+     * prune what they cannot first take with them (Legal §B5, §A7).
+     */
+    export(format: LeadExportFormat): Promise<LeadExportFile>;
   };
 
   billing: {

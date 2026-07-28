@@ -57,7 +57,9 @@ export function createMockWidgetClient(options: MockWidgetOptions = {}): WidgetA
 }
 
 export function createHttpWidgetClient(baseUrl: string): WidgetApiClient {
-  const t = createTransport({ baseUrl });
+  // credentials:'omit' — the data-plane replies ACAO '*' and authenticates via
+  // embedKey in the body; a credentialed request would fail preflight.
+  const t = createTransport({ baseUrl, credentials: 'omit' });
   return {
     bootstrap: (embedKey) => t.post('/api/v1/chat-widget/bootstrap', { embedKey }),
     send: (embedKey, req) => t.post('/api/v1/chat-widget/messages', { embedKey, ...req }),
