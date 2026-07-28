@@ -2,6 +2,14 @@ import type { LucielApiClient } from '../client';
 import type { BillingInfo } from '../schemas';
 import { createTransport, type TransportOptions } from './transport';
 
+/** Ingest endpoints take `file` + `name` as multipart form fields. */
+function formData(file: File, name: string): FormData {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('name', name);
+  return form;
+}
+
 /**
  * Real httpAdapter for the admin client. Maps each interface method onto the
  * documented endpoint families (Arch §1.1). It is a thin, faithful mapping — the
@@ -46,6 +54,20 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       quota: () => t.get('/api/v1/admin/knowledge/quota'),
       deleteSource: (sourceId) => t.del(`/api/v1/admin/knowledge/sources/${sourceId}`),
       resyncSource: (sourceId) => t.post(`/api/v1/admin/knowledge/sources/${sourceId}/resync`),
+      uploadFile: (file, name) =>
+        t.postForm('/api/v1/admin/knowledge/sources/upload', formData(file, name)),
+      pasteText: (req) => t.post('/api/v1/admin/knowledge/sources/paste', req),
+      importCsv: (file, name) =>
+        t.postForm('/api/v1/admin/knowledge/sources/csv', formData(file, name)),
+      startSyncConnection: (provider) =>
+        t.post('/api/v1/admin/knowledge/sync-connections', { provider }),
+      startCrawl: (crawlUrls) =>
+        t.post('/api/v1/admin/knowledge/sync-connections', {
+          provider: 'website_crawl',
+          crawlUrls,
+        }),
+      syncConnection: (connectionId) =>
+        t.post(`/api/v1/admin/knowledge/sync-connections/${connectionId}/sync`),
     },
     connections: {
       list: () => t.get('/api/v1/admin/connections'),
