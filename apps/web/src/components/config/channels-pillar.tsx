@@ -68,10 +68,6 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const [consentChecked, setConsentChecked] = React.useState(false);
   const [smsModalOpen, setSmsModalOpen] = React.useState(false);
   const [smsAckChecked, setSmsAckChecked] = React.useState(false);
-  // Session-scoped fallback while the backend does not yet stamp
-  // smsComplianceAcknowledgedAt. Once it does, the ack becomes durable and this
-  // never has to carry the gate.
-  const [smsAckedThisSession, setSmsAckedThisSession] = React.useState(false);
   const [phoneNumber, setPhoneNumber] = React.useState('');
 
   // One BYO number backs both SMS and Voice (Arch §3.1.4/§3.1.6). Derive the shared
@@ -85,8 +81,9 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const needsNumber = phoneEnabled && !numberConfigured;
   const phonePending = phoneEnabled && numberStatus === 'pending_carrier_registration';
   const phoneValid = E164.test(phoneNumber.trim());
-  const smsAcknowledged =
-    Boolean(smsChannel?.smsComplianceAcknowledgedAt) || smsAckedThisSession;
+  // The backend stamps smsComplianceAcknowledgedAt server-side on first SMS
+  // enable, so the durable stamp alone carries this gate.
+  const smsAcknowledged = Boolean(smsChannel?.smsComplianceAcknowledgedAt);
 
   const submitNumber = () => {
     if (!phoneValid) return;
@@ -136,7 +133,6 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   };
 
   const confirmSmsAck = async () => {
-    setSmsAckedThisSession(true);
     const next = luciel.channels.map((c) => (c.id === 'sms' ? { ...c, enabled: true } : c));
     await updateChannels.mutateAsync(next);
     setSmsModalOpen(false);
