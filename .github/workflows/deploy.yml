@@ -150,6 +150,15 @@ jobs:
           ACCT=$(aws sts get-caller-identity --query Account --output text)
           BUCKET=luciel-${ENVIRONMENT}-widget-${ACCT}
           aws s3 sync dist "s3://${BUCKET}/v1/" --delete --cache-control "public,max-age=31536000,immutable"
+          # s3 sync guesses `text/javascript` with NO charset; the bundle carries UTF-8
+          # literals (e.g. the 'Type your message…' placeholder), which browsers then
+          # decode as latin-1 and render as mojibake. Re-upload the JS entrypoints with
+          # an explicit charset (same cache-control as the sync above).
+          for f in luciel.js luciel.mjs; do
+            aws s3 cp "dist/$f" "s3://${BUCKET}/v1/$f" \
+              --content-type "text/javascript; charset=utf-8" \
+              --cache-control "public,max-age=31536000,immutable"
+          done
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
           [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
@@ -185,6 +194,15 @@ jobs:
           done
           BUCKET=luciel-${ENVIRONMENT}-widget-${ACCT}
           aws s3 sync dist "s3://${BUCKET}/v1/" --delete --cache-control "public,max-age=31536000,immutable"
+          # s3 sync guesses `text/javascript` with NO charset; the bundle carries UTF-8
+          # literals (e.g. the 'Type your message…' placeholder), which browsers then
+          # decode as latin-1 and render as mojibake. Re-upload the JS entrypoints with
+          # an explicit charset (same cache-control as the sync above).
+          for f in luciel.js luciel.mjs; do
+            aws s3 cp "dist/$f" "s3://${BUCKET}/v1/$f" \
+              --content-type "text/javascript; charset=utf-8" \
+              --cache-control "public,max-age=31536000,immutable"
+          done
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
           [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
