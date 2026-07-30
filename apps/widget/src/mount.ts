@@ -3,6 +3,7 @@ import {
   type WidgetApiClient,
   type WidgetBootstrap,
 } from '@luciel/api-client/widget';
+import { markdownToPlainText, markdownToSafeHtml } from './markdown';
 import { widgetStyles } from './styles';
 
 /**
@@ -115,18 +116,30 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   body.setAttribute('aria-label', 'Conversation');
   // Opening message INCLUDES the AI-identity disclosure (Arch §3.4.16).
   const appendMessage = (role: 'visitor' | 'assistant', text: string) => {
-    const p = document.createElement('p');
-    p.className = 'vm-msg';
+    const msg = document.createElement('div');
+    msg.className = 'vm-msg';
     const who = document.createElement('strong');
     who.textContent = role === 'visitor' ? 'You: ' : `${boot.assistantName}: `;
-    p.append(who, document.createTextNode(text));
-    body.appendChild(p);
+    msg.appendChild(who);
+    if (role === 'assistant') {
+      // Assistant replies carry markdown; render it so the visitor doesn't read
+      // literal `**`/`-` markers. The HTML is sanitized by construction in
+      // markdownToSafeHtml (escape-first + tag whitelist) — never raw model
+      // output. Visitor text stays a plain text node.
+      const template = document.createElement('template');
+      template.innerHTML = markdownToSafeHtml(text);
+      msg.appendChild(template.content);
+    } else {
+      msg.appendChild(document.createTextNode(text));
+    }
+    body.appendChild(msg);
     body.scrollTop = body.scrollHeight;
   };
   appendMessage('assistant', boot.openingMessage);
 
-  // Live region so incoming messages are announced to screen readers.
-  const live = a11yLiveRegion(boot.openingMessage);
+  // Live region so incoming messages are announced to screen readers. It carries
+  // markdown-stripped PROSE — the formatting is visual only.
+  const live = a11yLiveRegion(markdownToPlainText(boot.openingMessage));
   body.appendChild(live);
 
   // Input row + working send loop.
@@ -152,7 +165,7 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       sessionId = res.sessionId;
       renderState = res.renderState;
       appendMessage('assistant', res.reply.text);
-      live.textContent = res.reply.text; // announce incoming (Arch §5.16)
+      live.textContent = markdownToPlainText(res.reply.text); // announce incoming (Arch §5.16)
       // At-cap is server-driven: the widget just renders the graceful reply
       // it receives, then disables further input (Arch §3.4.1b).
       if (renderState === 'at_cap') {
