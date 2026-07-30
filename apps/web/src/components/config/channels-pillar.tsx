@@ -140,6 +140,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const [smsModalOpen, setSmsModalOpen] = React.useState(false);
   const [smsAckChecked, setSmsAckChecked] = React.useState(false);
   const [phoneNumber, setPhoneNumber] = React.useState('');
+  const [changingNumber, setChangingNumber] = React.useState(false);
   const [twilioValues, setTwilioValues] = React.useState<Record<string, string>>({});
   const [twilioNotice, setTwilioNotice] = React.useState<string | null>(null);
 
@@ -159,6 +160,13 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const needsNumber = phoneEnabled && twilioConnected && !numberConfigured;
   const phonePending = phoneEnabled && numberStatus === 'pending_carrier_registration';
   const phoneValid = E164.test(phoneNumber.trim());
+  // The number the tenant designated, read from the row that holds it — a live
+  // number is shown back, not asked for again. Same destination the shared
+  // control reads (contract §2).
+  const designatedNumber =
+    typeof smsConnection?.nonSecretConfig?.destination === 'string'
+      ? smsConnection.nonSecretConfig.destination
+      : undefined;
   // The backend stamps smsComplianceAcknowledgedAt server-side on first SMS
   // enable, so the durable stamp alone carries this gate.
   const smsAcknowledged = Boolean(smsChannel?.smsComplianceAcknowledgedAt);
@@ -199,6 +207,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
       phoneNumber: phoneNumber.trim(),
     });
     setPhoneNumber('');
+    setChangingNumber(false);
   };
 
   const setEnabled = (id: ChannelConfig['id'], enabled: boolean) => {
@@ -415,6 +424,27 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                 </>
               )}
             </div>
+          ) : numberConfigured && !changingNumber ? (
+            /* Step two is done: show the designated number back instead of
+               asking for one that is already on file (Arch §3.1.4). Changing it
+               is the same field, revealed on demand — the switch-account
+               pattern the shared control uses. */
+            <div className="mt-vm-3 flex flex-wrap items-center justify-between gap-vm-3">
+              <p className="text-vm-1 text-vm-text-muted">
+                {designatedNumber ? (
+                  <>
+                    Luciel texts and calls from{' '}
+                    <span className="font-label text-vm-text">{designatedNumber}</span>
+                  </>
+                ) : (
+                  'Luciel texts and calls from your designated business number'
+                )}{' '}
+                — your own number on your own Twilio account.
+              </p>
+              <Button variant="ghost" onClick={() => setChangingNumber(true)}>
+                Change number
+              </Button>
+            </div>
           ) : (
             <div className="mt-vm-3">
               <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
@@ -452,8 +482,20 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   disabled={!phoneValid || startConnection.isPending}
                   className="mb-vm-4"
                 >
-                  Add number
+                  {changingNumber ? 'Save number' : 'Add number'}
                 </Button>
+                {changingNumber && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setChangingNumber(false);
+                      setPhoneNumber('');
+                    }}
+                    className="mb-vm-4"
+                  >
+                    Keep this number
+                  </Button>
+                )}
               </div>
             </div>
           )}
