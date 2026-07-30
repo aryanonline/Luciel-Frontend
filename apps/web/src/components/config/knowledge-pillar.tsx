@@ -19,6 +19,7 @@ import { qk, useChunks, useKnowledge, useQuota } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
 import { useQueryClient } from '@tanstack/react-query';
+import { KnowledgeScopeSections } from './knowledge-scope';
 
 /**
  * Knowledge pillar (Vision §3.3, Arch §3.2.2, Customer Journey §4.3). Ingestion
@@ -269,6 +270,9 @@ export function KnowledgePillar() {
           </li>
         ))}
       </ul>
+
+      {/* Scope selection for connected Drive/Notion sources (Decision #9). */}
+      <KnowledgeScopeSections />
 
       <Modal
         open={pasteOpen}

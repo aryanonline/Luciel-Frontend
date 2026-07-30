@@ -27,15 +27,15 @@ describe('P0-5: config-timing note on the configure surface', () => {
 describe('P0-5: connection swap affordance on the dashboard', () => {
   it('offers "Change connected account" for a connected account', async () => {
     renderWithQuery(<DashboardPage />);
-    // seedConnections has a connected google_calendar → swap affordance shows.
+    // seedConnections has connected accounts → every one gets a swap affordance.
     expect(
-      await screen.findByRole('button', { name: /Change connected account/i }),
-    ).toBeInTheDocument();
+      (await screen.findAllByRole('button', { name: /Change connected account/i })).length,
+    ).toBeGreaterThan(0);
   });
 
   it('reassures that the current connection stays live until the new one is verified', async () => {
     renderWithQuery(<DashboardPage />);
-    await screen.findByRole('button', { name: /Change connected account/i });
+    await screen.findAllByRole('button', { name: /Change connected account/i });
     expect(
       screen.getByText(/Your current connection stays live until the new one is verified\./i),
     ).toBeInTheDocument();

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Card, CardTitle, Button, StatusChip, Banner, Textarea, PageHeader } from '@luciel/ui';
+import { Card, CardTitle, Button, Banner, Textarea, PageHeader, cn } from '@luciel/ui';
 import type {
   Message,
   AnswerEvidence,
@@ -21,10 +21,17 @@ import { qk } from '@/lib/hooks';
  *    admin types into while they hold the conversation.
  *  - Answer review: the source chunks Luciel used + the grounding score, with a
  *    flag action that corrects at the knowledge root (within this account only).
+ *
+ * The evidence is not hidden behind a click (Decision #10): every Luciel answer
+ * carries its grounding and the knowledge it used inline, with the verbatim text
+ * one tap away, so "which knowledge produced this?" is answerable at a glance.
  */
 
 /** Server-enforced reply length (Arch §11.5). */
 const REPLY_MAX_CHARS = 4000;
+
+/** Uniform grounding floor (Vision §3.3) — below it, the answer is thinly backed. */
+const GROUNDING_FLOOR = 0.5;
 
 const ROLE_LABEL: Record<Message['role'], string> = {
   lead: 'Visitor',
@@ -79,26 +86,78 @@ function describeDelivery(result: SendMessageResult): Delivery {
   }
 }
 
+/** Grounding, paired with an icon + number so colour is never the only signal. */
+function GroundingBadge({ score }: { score: number }) {
+  const grounded = score >= GROUNDING_FLOOR;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label',
+        grounded ? 'text-vm-success' : 'text-vm-warning',
+      )}
+    >
+      <span aria-hidden="true">{grounded ? '✓' : '!'}</span>
+      <span>
+        {grounded ? 'Grounded' : 'Weakly grounded'} {score.toFixed(2)}
+      </span>
+    </span>
+  );
+}
+
+/** One name per source, even when several chunks came from the same document. */
+const sourceNames = (e: AnswerEvidence) =>
+  Array.from(new Set(e.sourceChunks.map((ch) => ch.sourceName)));
+
+/** `'unavailable'` records an evidence fetch that failed, so we can say so. */
+type EvidenceState = AnswerEvidence | 'unavailable';
+
 export default function ConversationsPage() {
   const conversations = useConversations();
   const qc = useQueryClient();
   const [openSession, setOpenSession] = React.useState<string | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
-  const [evidence, setEvidence] = React.useState<AnswerEvidence | null>(null);
+  const [evidence, setEvidence] = React.useState<Record<string, EvidenceState>>({});
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
   const [reply, setReply] = React.useState('');
   const [sending, setSending] = React.useState(false);
   const [delivery, setDelivery] = React.useState<Delivery | null>(null);
   const [replyError, setReplyError] = React.useState<string | null>(null);
+  /** Which transcript the in-flight fetches belong to, so a fast switch can't cross-fill. */
+  const openedSession = React.useRef<string | null>(null);
 
   const openConversation = conversations.data?.find((c) => c.sessionId === openSession);
 
+  /**
+   * Evidence still comes one request per answer — that is the only endpoint —
+   * but it is fetched with the transcript rather than on a click, because the
+   * whole point of this screen is seeing what backed each answer.
+   */
+  const loadEvidence = async (sessionId: string, transcript: Message[]) => {
+    await Promise.all(
+      transcript
+        .filter((m) => m.role === 'luciel')
+        .map(async (m) => {
+          const result = await api.conversations
+            .getAnswerEvidence(sessionId, m.messageId)
+            .catch((): EvidenceState => 'unavailable');
+          if (openedSession.current !== sessionId) return;
+          setEvidence((prev) => ({ ...prev, [m.messageId]: result }));
+        }),
+    );
+  };
+
   const open = async (sessionId: string) => {
     setOpenSession(sessionId);
-    setEvidence(null);
+    openedSession.current = sessionId;
+    setEvidence({});
+    setExpanded({});
     setDelivery(null);
     setReplyError(null);
     setReply('');
-    setMessages(await api.conversations.getMessages(sessionId));
+    const transcript = await api.conversations.getMessages(sessionId);
+    if (openedSession.current !== sessionId) return;
+    setMessages(transcript);
+    void loadEvidence(sessionId, transcript);
   };
 
   const send = async () => {
@@ -135,12 +194,13 @@ export default function ConversationsPage() {
     qc.invalidateQueries({ queryKey: qk.conversations });
   };
 
-  const reviewAnswer = async (sessionId: string, messageId: string) => {
-    setEvidence(await api.conversations.getAnswerEvidence(sessionId, messageId));
-  };
   const flag = async (sessionId: string, messageId: string) => {
     await api.conversations.flagAnswer(sessionId, messageId);
-    if (evidence) setEvidence({ ...evidence, flaggedByAdmin: true });
+    setEvidence((prev) => {
+      const current = prev[messageId];
+      if (!current || current === 'unavailable') return prev;
+      return { ...prev, [messageId]: { ...current, flaggedByAdmin: true } };
+    });
   };
 
   return (
@@ -185,66 +245,102 @@ export default function ConversationsPage() {
           <CardTitle>{openSession ? 'Transcript' : 'Select a conversation'}</CardTitle>
           {openSession && (
             <div className="mt-vm-3 space-y-vm-3">
-              {messages.map((m) => (
-                <div key={m.messageId} className="text-vm-1">
-                  <span
-                    className={
-                      m.role === 'human_agent'
-                        ? 'font-label text-vm-accent'
-                        : 'font-label text-vm-text-muted'
-                    }
-                  >
-                    {ROLE_LABEL[m.role]}:{' '}
-                  </span>
-                  <span>{m.text}</span>
-                  {m.role === 'luciel' && (
-                    <Button
-                      variant="ghost"
-                      className="ml-vm-2 align-baseline"
-                      onClick={() => reviewAnswer(openSession, m.messageId)}
-                    >
-                      Review answer
-                    </Button>
-                  )}
-                </div>
-              ))}
-
-              {evidence && (
-                <div className="mt-vm-3 rounded-vm-card border border-vm-border bg-vm-surface p-vm-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-vm-1 font-label">Answer evidence</h4>
-                    <StatusChip
-                      kind={evidence.groundingScore >= 0.5 ? 'connected' : 'reconnect_needed'}
-                      detail={`grounding ${evidence.groundingScore.toFixed(2)}`}
-                    />
-                  </div>
-                  <ul className="mt-vm-2 space-y-vm-2 text-vm-0">
-                    {evidence.sourceChunks.map((ch, i) => (
-                      <li
-                        key={i}
-                        className="rounded-vm-control border border-vm-border bg-vm-bg p-vm-2"
+              {messages.map((m) => {
+                const answer = m.role === 'luciel' ? evidence[m.messageId] : undefined;
+                const isOpen = Boolean(expanded[m.messageId]);
+                return (
+                  <div key={m.messageId} className="text-vm-1">
+                    <div>
+                      <span
+                        className={
+                          m.role === 'human_agent'
+                            ? 'font-label text-vm-accent'
+                            : 'font-label text-vm-text-muted'
+                        }
                       >
-                        <div className="font-label">{ch.sourceName}</div>
-                        <div className="text-vm-text-muted">{ch.text}</div>
-                      </li>
-                    ))}
-                  </ul>
-                  {evidence.flaggedByAdmin ? (
-                    <Banner tone="info" className="mt-vm-2">
-                      Flagged. Fix the source in your knowledge base to correct future answers — the
-                      fix stays within your account.
-                    </Banner>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      className="mt-vm-2"
-                      onClick={() => flag(openSession, evidence.messageId)}
-                    >
-                      Flag this answer
-                    </Button>
-                  )}
-                </div>
-              )}
+                        {ROLE_LABEL[m.role]}:{' '}
+                      </span>
+                      <span>{m.text}</span>
+                    </div>
+
+                    {/* Evidence sits under the answer it belongs to (Decision #10). */}
+                    {m.role === 'luciel' && (
+                      <div className="mt-vm-2 rounded-vm-card border border-vm-border bg-vm-surface p-vm-3">
+                        {!answer ? (
+                          <p className="text-vm-0 text-vm-text-muted" role="status">
+                            Loading the knowledge this answer used…
+                          </p>
+                        ) : answer === 'unavailable' ? (
+                          <p className="text-vm-0 text-vm-text-muted">
+                            We could not load the evidence for this answer right now.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap items-center justify-between gap-vm-2">
+                              <span className="text-vm-0 text-vm-text-muted">
+                                {answer.sourceChunks.length > 0 ? (
+                                  <>
+                                    <span className="font-label">Knowledge used: </span>
+                                    {sourceNames(answer).join(', ')}
+                                  </>
+                                ) : (
+                                  'No knowledge source backed this answer.'
+                                )}
+                              </span>
+                              <GroundingBadge score={answer.groundingScore} />
+                            </div>
+
+                            {answer.sourceChunks.length > 0 && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  className="mt-vm-2"
+                                  aria-expanded={isOpen}
+                                  onClick={() =>
+                                    setExpanded((prev) => ({ ...prev, [m.messageId]: !isOpen }))
+                                  }
+                                >
+                                  {isOpen ? 'Hide the exact text' : 'Show the exact text'}
+                                </Button>
+                                {isOpen && (
+                                  <ul className="mt-vm-2 space-y-vm-2 text-vm-0">
+                                    {answer.sourceChunks.map((ch, i) => (
+                                      <li
+                                        key={i}
+                                        className="rounded-vm-control border border-vm-border bg-vm-bg p-vm-2"
+                                      >
+                                        <div className="font-label">{ch.sourceName}</div>
+                                        <div className="whitespace-pre-wrap text-vm-text-muted">
+                                          {ch.text}
+                                        </div>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </>
+                            )}
+
+                            {answer.flaggedByAdmin ? (
+                              <Banner tone="info" className="mt-vm-2">
+                                Flagged. Fix the source in your knowledge base to correct future
+                                answers — the fix stays within your account.
+                              </Banner>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                className="mt-vm-2"
+                                onClick={() => flag(openSession, m.messageId)}
+                              >
+                                Flag this answer
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
               {/* Compose — only while this admin holds the conversation (§3.4.12). */}
               {openConversation?.mode === 'human_controlled' && (

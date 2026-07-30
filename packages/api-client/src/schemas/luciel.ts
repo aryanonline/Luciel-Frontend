@@ -153,6 +153,44 @@ export const knowledgeSyncConnection = z.object({
 });
 export type KnowledgeSyncConnection = z.infer<typeof knowledgeSyncConnection>;
 
+/**
+ * Knowledge scope (Decision #9) — WHICH folders (Drive) or pages/databases
+ * (Notion) Luciel may read. Stored as a pointer on the connection's
+ * nonSecretConfig: ids + display names only, never credential material.
+ */
+export const knowledgeScopeKind = z.enum(['drive_folders', 'notion_pages']);
+export type KnowledgeScopeKind = z.infer<typeof knowledgeScopeKind>;
+
+export const scopeCandidate = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.enum(['folder', 'page', 'database']),
+});
+export type ScopeCandidate = z.infer<typeof scopeCandidate>;
+
+/** One selection. `name` is display-only and falls back to the id server-side. */
+export const scopeSelection = z.object({
+  id: z.string(),
+  name: z.string().optional(),
+  /** Server echo on read ('selected'); not meaningful on write. */
+  kind: z.string().optional(),
+});
+export type ScopeSelection = z.infer<typeof scopeSelection>;
+
+/**
+ * `wholeAccount: true` is the DEFAULT and means Luciel reads the WHOLE connected
+ * account — it must never be rendered as "nothing selected, so nothing is read".
+ * `scopeKind: null` means the provider has no selectable scope: hide the picker.
+ */
+export const knowledgeScope = z.object({
+  connectionId: uuid,
+  provider: knowledgeSyncProvider,
+  scopeKind: knowledgeScopeKind.nullable(),
+  selections: z.array(scopeSelection),
+  wholeAccount: z.boolean(),
+});
+export type KnowledgeScope = z.infer<typeof knowledgeScope>;
+
 /** External ids reconciled by one sync/crawl run (Arch §3.2.3). */
 export const knowledgeSyncResult = z.object({
   added: z.array(z.string()),

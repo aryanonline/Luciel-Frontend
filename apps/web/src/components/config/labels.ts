@@ -25,10 +25,13 @@ export const toolMeta: Record<AddonToolId, { label: string; desc: string; connec
       desc: 'Write a confirmed booking to your calendar (read-before-write).',
       connectLabel: 'a calendar',
     },
+    // Channel vs tool, in the owner's words (Decision #4): the Email channel is
+    // Luciel answering people who emailed it; this tool is Luciel starting an
+    // email to someone who reached out somewhere else.
     send_email: {
       label: 'Send email',
-      desc: 'Send outbound email on behalf of your business.',
-      connectLabel: 'a sender identity',
+      desc: 'Luciel starts an email to a lead who reached out somewhere else, like the chat widget. The Email channel is the other half: that is Luciel replying to people who email it.',
+      connectLabel: "Luciel's work email",
     },
     send_sms: {
       label: 'Send SMS',

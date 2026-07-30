@@ -20,6 +20,9 @@ import type {
   KnowledgeSyncProvider,
   KnowledgeSyncConnection,
   KnowledgeSyncResult,
+  KnowledgeScope,
+  ScopeCandidate,
+  ScopeSelection,
   BillingInfo,
   CheckoutSession,
   Connection,
@@ -110,6 +113,20 @@ export interface LucielApiClient {
     startCrawl(crawlUrls: string[]): Promise<KnowledgeSyncConnection>;
     /** Pull a sync connection now — this is what turns a crawl into sources. */
     syncConnection(connectionId: string): Promise<KnowledgeSyncResult>;
+    /**
+     * The scope in force for a sync connection (Decision #9). `wholeAccount:
+     * true` is the default and means the WHOLE account is read; `scopeKind: null`
+     * means this provider has no selectable scope, so hide the picker.
+     */
+    getScope(connectionId: string): Promise<KnowledgeScope>;
+    /**
+     * What the owner may pick — a live call to the provider. Throws `conflict`
+     * when there is no token yet, the provider call fails, or there is nothing to
+     * narrow; show that message rather than an empty "no folders found" list.
+     */
+    listScopeCandidates(connectionId: string): Promise<ScopeCandidate[]>;
+    /** Empty `selections` clears the scope back to the whole account. */
+    saveScope(connectionId: string, selections: ScopeSelection[]): Promise<KnowledgeScope>;
   };
 
   connections: {
