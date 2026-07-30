@@ -52,11 +52,14 @@ const TOOL_CHANNEL_DEPENDENCY: Partial<Record<AddonToolId, ChannelId>> = {
  * tools take their connection type from the capability instead. The provider is
  * NOT named here — that choice comes from the served registry (Decision #6);
  * `fallbackProvider` is only for the types the registry offers no choice for.
+ *
+ * `send_email` is deliberately absent: it sends from Luciel's work address, and
+ * that address has ONE home, beside the Email channel (Decision #4). A connect
+ * affordance here would be a second one that could disagree with it.
  */
 const TOOL_CONNECTION: Partial<
   Record<AddonToolId, { connectionType: ConnectionType; fallbackProvider?: string }>
 > = {
-  send_email: { connectionType: 'email_sender', fallbackProvider: 'email' },
   lookup_record: { connectionType: 'record_source' },
   push_to_crm: { connectionType: 'crm' },
   bring_your_own_webhook: { connectionType: 'outbound_webhook', fallbackProvider: 'webhook' },
@@ -162,6 +165,14 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
                     {channelBlocked && channelDep && (
                       <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
                         Enable the {channelLabel[channelDep]} channel to use {meta.label}.
+                      </p>
+                    )}
+                    {/* Sends from Luciel's work address, which is set up in one
+                        place only — beside the Email channel (Decision #4). */}
+                    {on && t.id === 'send_email' && t.connectionStatus !== 'connected' && (
+                      <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+                        Luciel sends from its own work email — finish setting that address up with
+                        the Email channel above.
                       </p>
                     )}
                   </div>
