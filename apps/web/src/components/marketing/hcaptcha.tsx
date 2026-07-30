@@ -70,5 +70,9 @@ export function HCaptcha({ onVerify }: { onVerify: (token: string | null) => voi
     };
   }, [onVerify]);
 
-  return <div ref={ref} className="min-h-[78px]" aria-label="Spam protection challenge" />;
+  // role="group" so the aria-label is allowed: ARIA prohibits naming a bare div
+  // (axe aria-prohibited-attr / WCAG 4.1.2), and hCaptcha injects its iframe here.
+  return (
+    <div ref={ref} role="group" className="min-h-[78px]" aria-label="Spam protection challenge" />
+  );
 }
