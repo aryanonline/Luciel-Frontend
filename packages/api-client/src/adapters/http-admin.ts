@@ -70,6 +70,15 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         }),
       syncConnection: (connectionId) =>
         t.post(`/api/v1/admin/knowledge/sync-connections/${connectionId}/sync`),
+      getScope: (connectionId) =>
+        t.get(`/api/v1/admin/knowledge/sync-connections/${connectionId}/scope`),
+      listScopeCandidates: (connectionId) =>
+        t.get(`/api/v1/admin/knowledge/sync-connections/${connectionId}/scope/candidates`),
+      // `kind` is a server echo on read, so only id + name go back on write.
+      saveScope: (connectionId, selections) =>
+        t.put(`/api/v1/admin/knowledge/sync-connections/${connectionId}/scope`, {
+          selections: selections.map(({ id, name }) => ({ id, name })),
+        }),
     },
     connections: {
       list: () => t.get('/api/v1/admin/connections'),

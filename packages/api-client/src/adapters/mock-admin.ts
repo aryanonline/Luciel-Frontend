@@ -8,6 +8,10 @@ import type {
   EmailProvisioning,
   KnowledgeSource,
   KnowledgeSyncConnection,
+  KnowledgeSyncProvider,
+  KnowledgeScope,
+  KnowledgeScopeKind,
+  ScopeCandidate,
   Message,
 } from '../schemas';
 import * as seed from './mock-data';
@@ -65,6 +69,25 @@ const PER_FILE_MAX_BYTES = 50_000_000;
  */
 export const MOCK_AUTHORIZE_ORIGIN = 'https://accounts.example.com';
 
+/** Which providers offer a selectable knowledge scope (Decision #9). */
+const SCOPE_KINDS: Partial<Record<KnowledgeSyncProvider, KnowledgeScopeKind>> = {
+  google_drive: 'drive_folders',
+  notion: 'notion_pages',
+};
+
+/** What the owner may pick, per provider. Absent ⇒ nothing to narrow (409). */
+const SCOPE_CANDIDATES: Partial<Record<KnowledgeSyncProvider, ScopeCandidate[]>> = {
+  google_drive: [
+    { id: '1AbC_folderId', name: 'Public FAQ', kind: 'folder' },
+    { id: '1XyZ_folderId', name: 'Pricing', kind: 'folder' },
+    { id: '1QrS_folderId', name: 'Service playbooks', kind: 'folder' },
+  ],
+  notion: [
+    { id: 'notion-page-1', name: 'Client onboarding', kind: 'page' },
+    { id: 'notion-db-1', name: 'Services database', kind: 'database' },
+  ],
+};
+
 export function createMockAdminClient(options: MockAdminOptions = {}): LucielApiClient {
   const latency = options.latencyMs ?? 0;
 
@@ -78,6 +101,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     emailProvisioning: clone(seed.seedEmailProvisioning) as EmailProvisioning | null,
     knowledge: clone(seed.seedKnowledge),
     syncConnections: [] as KnowledgeSyncConnection[],
+    knowledgeScopes: {} as Record<string, KnowledgeScope>,
     conversations: clone(seed.seedConversations),
     /** Admin takeover replies, per session, so the transcript stays coherent. */
     humanReplies: {} as Record<string, Message[]>,
@@ -178,6 +202,17 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     };
     state.syncConnections.push(connection);
     return connection;
+  };
+
+  /** A knowledge sync connection is either one created here or a seeded row. */
+  const syncProviderOf = (connectionId: string): KnowledgeSyncProvider => {
+    const sync = state.syncConnections.find((x) => x.connectionId === connectionId);
+    if (sync) return sync.provider;
+    const conn = state.connections.find((x: Connection) => x.connectionId === connectionId);
+    if (conn?.connectionType === 'knowledge_source') {
+      return conn.provider as KnowledgeSyncProvider;
+    }
+    throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
   };
 
   return {
@@ -427,6 +462,53 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           return u;
         });
         return ok({ added, updated: [], removed: [] });
+      },
+      async getScope(connectionId) {
+        guardVerified();
+        const provider = syncProviderOf(connectionId);
+        // Unscoped is the default: the WHOLE account is read.
+        return ok(
+          state.knowledgeScopes[connectionId] ?? {
+            connectionId,
+            provider,
+            scopeKind: SCOPE_KINDS[provider] ?? null,
+            selections: [],
+            wholeAccount: true,
+          },
+        );
+      },
+      async listScopeCandidates(connectionId) {
+        guardVerified();
+        const provider = syncProviderOf(connectionId);
+        const candidates = SCOPE_CANDIDATES[provider];
+        if (!candidates) {
+          throw new LucielApiError({
+            code: 'conflict',
+            message: `Scope unavailable: ${provider} has nothing to narrow.`,
+          });
+        }
+        return ok(candidates);
+      },
+      async saveScope(connectionId, selections) {
+        guardVerified();
+        const provider = syncProviderOf(connectionId);
+        const scopeKind = SCOPE_KINDS[provider];
+        if (!scopeKind) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: `'${provider}' has no selectable scope.`,
+          });
+        }
+        const scope: KnowledgeScope = {
+          connectionId,
+          provider,
+          scopeKind,
+          selections: selections.map((s) => ({ id: s.id, name: s.name, kind: 'selected' })),
+          // Empty selections = back to the whole account (contract §4).
+          wholeAccount: selections.length === 0,
+        };
+        state.knowledgeScopes[connectionId] = scope;
+        return ok(scope);
       },
     },
 

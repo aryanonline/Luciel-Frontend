@@ -104,10 +104,21 @@ export const seedConnections: Connection[] = [
     createdAt: '2026-02-01T10:05:00Z',
     lastHealthCheckAt: '2026-06-14T16:00:00Z',
   },
+  // A connected knowledge source, so the scope picker (Decision #9) has
+  // something to narrow: unscoped by default = Luciel reads the whole Drive.
+  {
+    connectionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    connectionType: 'knowledge_source',
+    provider: 'google_drive',
+    status: 'connected',
+    createdAt: '2026-02-01T10:10:00Z',
+    lastHealthCheckAt: '2026-06-14T16:00:00Z',
+  },
 ];
 
-// Email address not provisioned yet → the embed page shows the own-domain vs
-// VM-subdomain choice (Arch §3.1.6a, Decision #49). provisionEmail() flips this
+// Email address not provisioned yet → the Email channel in Configure shows the
+// own-domain vs VM-subdomain choice (Arch §3.1.6a, Decision #49; Decision #4 put
+// it there and only there, not on the embed tab). provisionEmail() flips this
 // to `pending_email_routing` (own-domain) or `connected` (VM-subdomain).
 export const seedEmailProvisioning: EmailProvisioning | null = null;
 
