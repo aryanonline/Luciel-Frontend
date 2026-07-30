@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { Banner, Button, PageHeader } from '@luciel/ui';
 import { useLuciel } from '@/lib/hooks';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
-import { EmailChannelProvisioning } from '@/components/config/email-provisioning';
 import { ToolsPillar } from '@/components/config/tools-pillar';
 import { KnowledgePillar } from '@/components/config/knowledge-pillar';
 import { EscalationPillar } from '@/components/config/escalation-pillar';
@@ -54,11 +53,6 @@ export default function ConfigurePage() {
       </Banner>
 
       <ChannelsPillar luciel={luciel} />
-      {/* Luciel's work-email address lives with the Email channel, and only here
-          — it is no longer on the Embed & launch tab (Decision #4). */}
-      <EmailChannelProvisioning
-        emailChannelEnabled={Boolean(luciel.channels.find((c) => c.id === 'email')?.enabled)}
-      />
       <ToolsPillar luciel={luciel} />
       <KnowledgePillar />
       <EscalationPillar luciel={luciel} />

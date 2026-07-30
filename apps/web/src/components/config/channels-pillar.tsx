@@ -15,6 +15,7 @@ import {
 import type { ChannelId, Luciel, ChannelConfig } from '@luciel/api-client';
 import { useConnections, useLucielMutations } from '@/lib/hooks';
 import { ConnectionControl } from './connection-control';
+import { EmailChannelProvisioning } from './email-provisioning';
 import { channelLabel, chipKind } from './labels';
 
 /**
@@ -220,6 +221,15 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     WhatsApp and Instagram / Messenger run on one Meta connection — connecting one
                     of them replaces the other.
                   </p>
+                </div>
+              )}
+              {/* Luciel's work address is part of the Email channel, so it is set up
+                  in this row and nowhere else (Decision #4). Rendered whether or not
+                  the channel is on: the address can be provisioned first, and the
+                  component itself says Luciel isn't answering email until it is on. */}
+              {c.id === 'email' && (
+                <div className="mt-vm-3 pl-[3.5rem]">
+                  <EmailChannelProvisioning emailChannelEnabled={c.enabled} />
                 </div>
               )}
             </li>
