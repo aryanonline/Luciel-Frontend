@@ -50,7 +50,7 @@ export const toolMeta: Record<AddonToolId, { label: string; desc: string; connec
     lookup_record: {
       label: 'Look up a record',
       desc: 'Query a live data source for an exact record.',
-      connectLabel: 'a record/data source',
+      connectLabel: 'your record system',
     },
     schedule_callback: {
       label: 'Schedule a callback',
@@ -59,12 +59,12 @@ export const toolMeta: Record<AddonToolId, { label: string; desc: string; connec
     push_to_crm: {
       label: 'Push leads to my CRM',
       desc: 'Write captured leads into your external CRM.',
-      connectLabel: 'a CRM',
+      connectLabel: 'your CRM',
     },
     bring_your_own_webhook: {
       label: 'Custom webhook',
       desc: 'Register your own HTTP endpoint as a tool.',
-      connectLabel: 'a webhook',
+      connectLabel: 'your endpoint',
     },
   };
 

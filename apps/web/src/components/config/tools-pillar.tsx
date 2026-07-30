@@ -65,6 +65,39 @@ const TOOL_CONNECTION: Partial<
   bring_your_own_webhook: { connectionType: 'outbound_webhook', fallbackProvider: 'webhook' },
 };
 
+/**
+ * What connecting THIS kind of account actually buys the owner, in their words.
+ * "Connect account" tells them nothing about what they are agreeing to, and the
+ * same generic line under every capability is how a calendar prompt ends up
+ * under a CRM. `unavailableReason` is the plain reason behind an honest-disabled
+ * panel when the platform cannot start any flow for the type yet (contract §1).
+ */
+const CONNECTION_COPY: Partial<
+  Record<ConnectionType, { connectLabel?: string; purpose: string; unavailableReason?: string }>
+> = {
+  calendar: {
+    connectLabel: 'your calendar',
+    purpose:
+      'Luciel offers and books real times on your own calendar, and reads what is already there first — so it never offers a slot you are busy in.',
+    unavailableReason: "we're finishing the calendar sign-in",
+  },
+  crm: {
+    connectLabel: 'your CRM',
+    purpose:
+      'Every lead Luciel captures is written into your own CRM, so your pipeline stays where your team already works.',
+  },
+  record_source: {
+    connectLabel: 'your record system',
+    purpose:
+      'Luciel looks answers up in your own system at the moment it is asked, so what a customer is told matches your records.',
+  },
+  outbound_webhook: {
+    connectLabel: 'your endpoint',
+    purpose:
+      'Luciel posts what it captures to an endpoint you run, so you can wire it into whatever you already use.',
+  },
+};
+
 const ALWAYS_ON = [
   'Capture leads into the dashboard',
   'Escalate to a real person when needed',
@@ -186,8 +219,10 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
                   <ConnectionControl
                     connectionType={target.connectionType}
                     label={meta.connectLabel ?? meta.label}
+                    purpose={CONNECTION_COPY[target.connectionType]?.purpose}
                     connection={connectionFor(target.connectionType)}
                     fallbackProvider={target.fallbackProvider}
+                    unavailableReason={CONNECTION_COPY[target.connectionType]?.unavailableReason}
                     disabledReason={t.disabledReason}
                   />
                 </div>
@@ -245,8 +280,10 @@ function CapabilityRow({
         <div className="mt-vm-3 pl-[3.5rem]">
           <ConnectionControl
             connectionType={group.connectionType}
-            label={group.label.toLowerCase()}
+            label={CONNECTION_COPY[group.connectionType]?.connectLabel ?? group.label.toLowerCase()}
+            purpose={CONNECTION_COPY[group.connectionType]?.purpose}
             connection={connection}
+            unavailableReason={CONNECTION_COPY[group.connectionType]?.unavailableReason}
             disabledReason={disabledReason}
           />
         </div>

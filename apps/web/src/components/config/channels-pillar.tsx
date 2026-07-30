@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import {
+  Banner,
   Card,
   CardTitle,
   CardDescription,
@@ -12,9 +13,21 @@ import {
   Input,
   Button,
 } from '@luciel/ui';
-import type { ChannelId, Luciel, ChannelConfig } from '@luciel/api-client';
-import { useConnections, useLucielMutations } from '@/lib/hooks';
+import {
+  LucielApiError,
+  type ChannelId,
+  type Luciel,
+  type ChannelConfig,
+  type MetaChannel,
+} from '@luciel/api-client';
+import {
+  useConnectionLifecycle,
+  useConnectionProviders,
+  useConnections,
+  useLucielMutations,
+} from '@/lib/hooks';
 import { ConnectionControl } from './connection-control';
+import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
 import { channelLabel, chipKind } from './labels';
 
@@ -23,8 +36,11 @@ import { channelLabel, chipKind } from './labels';
  * The widget is on by default. SMS/Voice run on the BUSINESS'S OWN phone number —
  * the tenant brings their number (BYO); the platform never provisions one
  * (Arch §3.1.4/§3.1.6, Decision #48). One number backs both SMS and Voice.
- * Until a number is supplied, SMS/Voice are "Action needed: add your number" and
- * are not live. A supplied number sits at "Action needed: complete carrier
+ * BYO is two ordered steps: the tenant's OWN Twilio account first ("Action
+ * needed: connect your Twilio account"), then which of that account's numbers
+ * Luciel answers on ("Action needed: add your number") — you cannot designate a
+ * number before the account holding it is on file. Both are actionable next
+ * steps, not errors. A supplied number sits at "Action needed: complete carrier
  * registration" (connectionStatus pending_carrier_registration) until the TENANT
  * completes their own A2P 10DLC Brand + Campaign registration and asks the
  * platform to re-verify. The platform never registers on their behalf and there
@@ -45,14 +61,13 @@ import { channelLabel, chipKind } from './labels';
  * force-disables send_sms; disabling the Email channel force-disables send_email.
  * The tools-pillar UI also shows the tool toggle as blocked (see tools-pillar.tsx).
  *
- * WhatsApp and Instagram/Messenger are REAL Meta connections (Decision #7,
- * contract §2): the same connection control every other pillar uses, with the
- * provider pinned because the row already names it. Two things are specific to
- * Meta and both are enforced by the control, not here — authorization alone does
- * not make the channel live (the owner must supply the WhatsApp
- * `phone_number_id` / Page id inbound routing resolves them by), and the two
- * rows share ONE `channel_auth` connection, so connecting the second replaces
- * the first.
+ * WhatsApp and Instagram/Messenger run on ONE Meta connection (Decision #7,
+ * contract §2): a single `channel_auth` grant to the owner's Meta Business
+ * account authorizes all three surfaces, and each enabled channel then names the
+ * asset it answers on. Authorization alone does not make a channel live — until
+ * that id is bound, inbound has nothing to route by — but binding one channel
+ * never unbinds another, so turning a second Meta channel on cannot knock the
+ * first offline. Both rules are enforced by the shared connection control.
  */
 
 /** Channel IDs whose disable cascades to a dependent send tool. */
@@ -62,22 +77,31 @@ const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], string>> = {
 };
 
 /**
- * The Meta channels and the destination each one answers on (contract §2). The
- * owner pastes the id — there is no asset picker route, and guessing which of
- * their numbers or Pages Luciel should answer on is not ours to guess.
+ * The Meta channels each UI row covers and the destination it answers on
+ * (contract §2). One row can cover more than one Meta channel: Instagram DMs and
+ * Messenger are the same Page, so the one Page id is bound for both. The owner
+ * pastes the id — there is no asset picker route, and which of their numbers or
+ * Pages Luciel should answer on is not ours to guess.
  */
 const META_CHANNEL: Partial<
-  Record<ChannelId, { provider: string; destination: { label: string; hint: string } }>
+  Record<
+    ChannelId,
+    { channels: MetaChannel[]; purpose: string; destination: { label: string; hint: string } }
+  >
 > = {
   whatsapp: {
-    provider: 'meta_whatsapp',
+    channels: ['whatsapp'],
+    purpose:
+      'Luciel replies to people who message your business on WhatsApp, from your own WhatsApp Business number — the conversation stays in your Meta account.',
     destination: {
       label: 'WhatsApp phone number ID',
       hint: 'In Meta Business Suite → WhatsApp Manager → API Setup, the "Phone number ID" (digits, not the phone number itself).',
     },
   },
   instagram_messenger: {
-    provider: 'meta_instagram',
+    channels: ['instagram', 'messenger'],
+    purpose:
+      'Luciel replies to Instagram DMs and Facebook Messenger for your Page, from your own Meta account — both run on the same Page, so one id covers them.',
     destination: {
       label: 'Facebook Page ID',
       hint: 'In your Facebook Page settings → About → Page ID. This is the Page your Instagram account is linked to.',
@@ -100,13 +124,23 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     reverifySmsNumber,
   } = useLucielMutations();
   const connections = useConnections();
-  // One row per type (§3.8.2), so both Meta channels read the same one.
+  const { connect, submitCredentials } = useConnectionLifecycle();
+  // One row per type (§3.8.2) — and for Meta that is the point: every Meta
+  // channel reads the same grant instead of competing for the slot.
   const metaConnection = connections.data?.find((c) => c.connectionType === 'channel_auth');
+  const smsConnection = connections.data?.find((c) => c.connectionType === 'sms_sender');
+  const smsProviders = useConnectionProviders('sms_sender');
+  const twilioOption = smsProviders.data
+    ?.find((group) => group.connectionType === 'sms_sender')
+    ?.providers.find((option) => option.provider === 'twilio');
+  const twilioFields = twilioOption?.credentialFields ?? [];
   const [voiceModalOpen, setVoiceModalOpen] = React.useState(false);
   const [consentChecked, setConsentChecked] = React.useState(false);
   const [smsModalOpen, setSmsModalOpen] = React.useState(false);
   const [smsAckChecked, setSmsAckChecked] = React.useState(false);
   const [phoneNumber, setPhoneNumber] = React.useState('');
+  const [twilioValues, setTwilioValues] = React.useState<Record<string, string>>({});
+  const [twilioNotice, setTwilioNotice] = React.useState<string | null>(null);
 
   // One BYO number backs both SMS and Voice (Arch §3.1.4/§3.1.6). Derive the shared
   // number status from whichever of the two carries a connectionStatus.
@@ -116,12 +150,45 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const numberStatus = smsChannel?.connectionStatus ?? voiceChannel?.connectionStatus;
   const numberConfigured =
     numberStatus === 'connected' || numberStatus === 'pending_carrier_registration';
-  const needsNumber = phoneEnabled && !numberConfigured;
+  // BYO is two steps and they are ordered: you cannot designate one of the
+  // account's numbers before the account itself is on file. The Account SID is
+  // the non-secret half of the credential, so its presence is the proof.
+  const twilioConnected = numberConfigured || Boolean(smsConnection?.nonSecretConfig?.accountSid);
+  const needsTwilio = phoneEnabled && !twilioConnected;
+  const needsNumber = phoneEnabled && twilioConnected && !numberConfigured;
   const phonePending = phoneEnabled && numberStatus === 'pending_carrier_registration';
   const phoneValid = E164.test(phoneNumber.trim());
   // The backend stamps smsComplianceAcknowledgedAt server-side on first SMS
   // enable, so the durable stamp alone carries this gate.
   const smsAcknowledged = Boolean(smsChannel?.smsComplianceAcknowledgedAt);
+
+  /**
+   * Step one of BYO (contract §1a): the customer's OWN Twilio credential. The
+   * start creates the row the credentials belong to, so the two run together —
+   * a started row with nothing in it is a dead end.
+   */
+  const submitTwilio = async () => {
+    setTwilioNotice(null);
+    try {
+      const start = await connect.mutateAsync({
+        connectionType: 'sms_sender',
+        provider: 'twilio',
+      });
+      const connectionId = start.connectionId ?? smsConnection?.connectionId;
+      if (!connectionId) {
+        setTwilioNotice('We could not start the Twilio connection. Please try again.');
+        return;
+      }
+      await submitCredentials.mutateAsync({ connectionId, fields: twilioValues });
+      setTwilioValues({});
+    } catch (err) {
+      setTwilioNotice(
+        err instanceof LucielApiError
+          ? err.message
+          : 'We could not save those Twilio details. Please check them and try again.',
+      );
+    }
+  };
 
   const submitNumber = () => {
     if (!phoneValid) return;
@@ -182,8 +249,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
       <CardTitle>Channels your Luciel uses</CardTitle>
       <CardDescription>
         Pick how customers reach your Luciel. The website widget is on by default. For SMS and Voice,
-        your business brings its own phone number — one number backs both. Add your number below to
-        turn them on.
+        your business brings its own phone number — one number backs both. Connect your Twilio
+        account below and name the number to turn them on.
       </CardDescription>
       <ul className="mt-vm-4 divide-y divide-vm-border">
         {luciel.channels.map((c) => {
@@ -213,13 +280,15 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   <ConnectionControl
                     connectionType="channel_auth"
                     label={channelLabel[c.id]}
+                    purpose={meta.purpose}
                     connection={metaConnection}
-                    provider={meta.provider}
-                    destinationField={meta.destination}
+                    provider="meta"
+                    destinationField={{ ...meta.destination, channels: meta.channels }}
+                    unavailableReason="Meta app not configured"
                   />
                   <p className="mt-vm-2 text-vm-0 text-vm-text-muted" role="note">
-                    WhatsApp and Instagram / Messenger run on one Meta connection — connecting one
-                    of them replaces the other.
+                    One Meta sign-in covers WhatsApp, Instagram DMs and Messenger. Each channel
+                    keeps its own id, so turning another one on never disconnects this one.
                   </p>
                 </div>
               )}
@@ -243,6 +312,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
             <span className="text-vm-2 font-label">Your business phone number (SMS &amp; Voice)</span>
             {phonePending ? (
               <StatusChip kind="action_needed" detail="complete carrier registration" />
+            ) : needsTwilio ? (
+              <StatusChip kind="action_needed" detail="connect your Twilio account" />
             ) : needsNumber ? (
               <StatusChip kind="action_needed" detail="add your number" />
             ) : (
@@ -289,12 +360,57 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                 </p>
               )}
             </div>
+          ) : needsTwilio ? (
+            /* Step one: the customer's OWN Twilio account (Arch §3.1.4). The
+               fields are whatever the registry advertises, so a provider that
+               starts asking for one more thing needs no frontend change. */
+            <div className="mt-vm-3">
+              <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
+                Connect your Twilio account so Luciel can text and call from your own business
+                number — your number stays yours and your carrier costs are billed by Twilio
+                directly.
+              </p>
+              {smsProviders.isError && (
+                <Banner tone="warning">
+                  We could not load the Twilio form just now. Reload the page to try again.
+                </Banner>
+              )}
+              {twilioNotice && <Banner tone="warning">{twilioNotice}</Banner>}
+              {twilioFields.length > 0 && (
+                <>
+                  <CredentialFields
+                    idPrefix="twilio"
+                    fields={twilioFields}
+                    values={twilioValues}
+                    onChange={setTwilioValues}
+                  />
+                  <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
+                    Give either your Auth Token or an API Key SID and Secret — whichever your Twilio
+                    account uses. Find both in the Twilio Console under Account Info.
+                  </p>
+                  <Button
+                    variant="primary"
+                    className="mt-vm-3"
+                    onClick={() => void submitTwilio()}
+                    disabled={
+                      connect.isPending ||
+                      submitCredentials.isPending ||
+                      !credentialFieldsComplete(twilioFields, twilioValues)
+                    }
+                  >
+                    {connect.isPending || submitCredentials.isPending
+                      ? 'Saving…'
+                      : 'Connect Twilio account'}
+                  </Button>
+                </>
+              )}
+            </div>
           ) : (
             <div className="mt-vm-3">
               <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
-                Enter the number your business already owns, in E.164 format (e.g. +14155551234).
-                Your Luciel sends and receives on this number; the platform never provisions one for
-                you.
+                Your Twilio account is connected. Tell us which of its numbers Luciel uses, in E.164
+                format (e.g. +14155551234). Your Luciel sends and receives on this number; the
+                platform never provisions one for you.
               </p>
               <div className="flex items-end gap-vm-2">
                 <div className="flex-1">

@@ -83,10 +83,13 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     },
     connections: {
       list: () => t.get('/api/v1/admin/connections'),
+      // snake_case is the parameter the backend declares (camelCase is an alias).
+      // Sending the declared spelling is what keeps a pillar's picker to its own
+      // providers instead of the whole catalog (contract §1).
       listProviders: (connectionType) =>
         t.get(
           connectionType
-            ? `/api/v1/admin/connections/providers?connectionType=${encodeURIComponent(connectionType)}`
+            ? `/api/v1/admin/connections/providers?connection_type=${encodeURIComponent(connectionType)}`
             : '/api/v1/admin/connections/providers',
         ),
       start: (connectionType, provider, opts) =>
@@ -109,8 +112,13 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         t.post(`/api/v1/admin/connections/${connectionId}/disconnect`),
       switchAccount: (connectionId, provider) =>
         t.post(`/api/v1/admin/connections/${connectionId}/switch`, { provider: provider ?? null }),
-      bindDestination: (connectionId, destination) =>
-        t.put(`/api/v1/admin/connections/${connectionId}/destination`, { destination }),
+      bindDestination: (connectionId, destination, channel) =>
+        t.put(`/api/v1/admin/connections/${connectionId}/destination`, {
+          destination,
+          ...(channel ? { channel } : {}),
+        }),
+      submitCredentials: (connectionId, fields) =>
+        t.post(`/api/v1/admin/connections/${connectionId}/credentials`, { fields }),
       revoke: (connectionId) => t.del(`/api/v1/admin/connections/${connectionId}`),
       getEmailProvisioning: () => t.get('/api/v1/admin/connections/email'),
       provisionEmail: (req) => t.post('/api/v1/admin/connections/email', req),
