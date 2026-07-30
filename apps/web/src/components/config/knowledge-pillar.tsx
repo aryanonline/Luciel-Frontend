@@ -15,7 +15,7 @@ import {
   Modal,
 } from '@luciel/ui';
 import type { KnowledgeSource, KnowledgeSyncProvider } from '@luciel/api-client';
-import { qk, useChunks, useKnowledge, useQuota } from '@/lib/hooks';
+import { qk, useChunks, useConnectionProviders, useKnowledge, useQuota } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
 import { useQueryClient } from '@tanstack/react-query';
@@ -37,6 +37,12 @@ const PER_FILE_MAX_BYTES = 50_000_000;
 /** Chunk preview shows the head of the source verbatim (Arch §3.2.2). */
 const CHUNK_PREVIEW_LIMIT = 10;
 
+/** The live-sync connectors this pillar offers; availability comes from the registry. */
+const SYNC_CONNECTORS: { provider: KnowledgeSyncProvider; label: string }[] = [
+  { provider: 'google_drive', label: 'Google Drive' },
+  { provider: 'notion', label: 'Notion' },
+];
+
 type Notice = { tone: 'info' | 'danger'; text: string };
 
 export function KnowledgePillar() {
@@ -52,6 +58,15 @@ export function KnowledgePillar() {
   const [crawlUrl, setCrawlUrl] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<Notice | null>(null);
+
+  // The same registry every other pillar reads (contract §1): a connector the
+  // platform holds no OAuth app for is offered DISABLED with the reason, not as
+  // a button that dead-ends on "Action needed" after the click.
+  const syncProviders = useConnectionProviders('knowledge_source');
+  const syncOption = (provider: KnowledgeSyncProvider) =>
+    syncProviders.data
+      ?.find((group) => group.connectionType === 'knowledge_source')
+      ?.providers.find((option) => option.provider === provider);
 
   const uploadRef = React.useRef<HTMLInputElement>(null);
   const csvRef = React.useRef<HTMLInputElement>(null);
@@ -171,20 +186,21 @@ export function KnowledgePillar() {
         <Button variant="secondary" disabled={busy} onClick={() => setCrawlOpen(true)}>
           Crawl a website
         </Button>
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={() => connectProvider('google_drive', 'Google Drive')}
-        >
-          Connect Google Drive
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={() => connectProvider('notion', 'Notion')}
-        >
-          Connect Notion
-        </Button>
+        {SYNC_CONNECTORS.map(({ provider, label }) => {
+          const option = syncOption(provider);
+          const unavailable = option?.configured === false;
+          return (
+            <Button
+              key={provider}
+              variant="secondary"
+              disabled={busy || unavailable}
+              title={unavailable ? `${label} isn’t available yet.` : undefined}
+              onClick={() => connectProvider(provider, label)}
+            >
+              {unavailable ? `${label} — not available yet` : `Connect ${label}`}
+            </Button>
+          );
+        })}
       </div>
 
       <input
