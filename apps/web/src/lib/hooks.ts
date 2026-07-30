@@ -5,6 +5,8 @@ import { api } from './api';
 import type {
   ChannelConfig,
   AddonTool,
+  Connection,
+  DisconnectResult,
   EscalationContact,
   PersonalityConfig,
   CreateLucielRequest,
@@ -23,6 +25,9 @@ export const qk = {
   luciel: ['luciel'] as const,
   billing: ['billing'] as const,
   connections: ['connections'] as const,
+  connectionProviders: (connectionType?: ConnectionType) =>
+    ['connectionProviders', connectionType ?? 'all'] as const,
+  capabilities: ['capabilities'] as const,
   emailProvisioning: ['emailProvisioning'] as const,
   knowledge: ['knowledge'] as const,
   chunks: (sourceId: string) => ['chunks', sourceId] as const,
@@ -41,6 +46,18 @@ export const useBilling = () =>
   useQuery({ queryKey: qk.billing, queryFn: () => api.billing.get() });
 export const useConnections = () =>
   useQuery({ queryKey: qk.connections, queryFn: () => api.connections.list() });
+/**
+ * The provider CHOICES for a connection type (Decision #6). Served, not
+ * hardcoded, so a customer on a different CRM is never stuck with our default.
+ */
+export const useConnectionProviders = (connectionType?: ConnectionType) =>
+  useQuery({
+    queryKey: qk.connectionProviders(connectionType),
+    queryFn: () => api.connections.listProviders(connectionType),
+  });
+/** Owner-facing capability groups — the source of the scheduling control (Decision #8). */
+export const useCapabilities = () =>
+  useQuery({ queryKey: qk.capabilities, queryFn: () => api.luciel.capabilities() });
 export const useEmailProvisioning = () =>
   useQuery({
     queryKey: qk.emailProvisioning,
@@ -75,6 +92,74 @@ export function useProvisionEmail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.emailProvisioning }),
   });
 }
+
+/**
+ * The ONE connection lifecycle (Decision #5) every tool and channel shares:
+ * connect → disconnect → switch account/provider → reconnect. Each mutation
+ * invalidates the Luciel too, because a disconnect switches dependent tools and
+ * channels off server-side and the pillars must show that immediately.
+ *
+ * `connect` and `switchTo` resolve the connection id the OAuth callback will
+ * need: `POST /connections` answers with an authorize URL but no id, and there
+ * is one active connection per type (§3.8.2), so the row is read back.
+ */
+export function useConnectionLifecycle() {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: qk.connections });
+    qc.invalidateQueries({ queryKey: qk.luciel });
+  };
+  const resolveId = async (connectionType: ConnectionType, provider: string) => {
+    const rows = await api.connections.list();
+    const match =
+      rows.find((c) => c.connectionType === connectionType && c.provider === provider) ??
+      rows.find((c) => c.connectionType === connectionType);
+    return match?.connectionId;
+  };
+  return {
+    connect: useMutation<
+      StartedConnectFlow,
+      Error,
+      { connectionType: ConnectionType; provider: string }
+    >({
+      mutationFn: async ({ connectionType, provider }) => {
+        const start = await api.connections.start(connectionType, provider);
+        return { ...start, connectionId: await resolveId(connectionType, provider) };
+      },
+      onSuccess: invalidate,
+    }),
+    switchTo: useMutation<
+      StartedConnectFlow,
+      Error,
+      { connectionId: string; provider?: string | null }
+    >({
+      mutationFn: async ({ connectionId, provider }) => ({
+        ...(await api.connections.switchAccount(connectionId, provider ?? null)),
+        connectionId,
+      }),
+      onSuccess: invalidate,
+    }),
+    reconnect: useMutation<StartedConnectFlow, Error, { connectionId: string }>({
+      mutationFn: async ({ connectionId }) => ({
+        ...(await api.connections.reconnect(connectionId)),
+        connectionId,
+      }),
+      onSuccess: invalidate,
+    }),
+    disconnect: useMutation<DisconnectResult, Error, { connectionId: string }>({
+      mutationFn: ({ connectionId }) => api.connections.disconnect(connectionId),
+      onSuccess: invalidate,
+    }),
+    bindDestination: useMutation<Connection, Error, { connectionId: string; destination: string }>({
+      mutationFn: ({ connectionId, destination }) =>
+        api.connections.bindDestination(connectionId, destination),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+/** A started connect/switch/reconnect flow, plus the id its callback completes. */
+export type StartedConnectFlow = StartConnectionResult & { connectionId?: string };
 
 /**
  * Swap a connected account, proven-before-cutover (Arch §3.8.7 B, Decision #39):

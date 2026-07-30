@@ -40,6 +40,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       create: (req) => t.post('/api/v1/admin/luciel', req),
       updateChannels: (channels) => t.put('/api/v1/admin/luciel/channels', { channels }),
       updateTools: (tools) => t.put('/api/v1/admin/luciel/tools', { tools }),
+      capabilities: () => t.get('/api/v1/admin/luciel/capabilities'),
       updateEscalation: (contact) => t.put('/api/v1/admin/luciel/escalation', contact),
       updatePersonality: (config) => t.put('/api/v1/admin/luciel/personality', config),
       updateLeadRetention: (days) =>
@@ -82,6 +83,12 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     },
     connections: {
       list: () => t.get('/api/v1/admin/connections'),
+      listProviders: (connectionType) =>
+        t.get(
+          connectionType
+            ? `/api/v1/admin/connections/providers?connectionType=${encodeURIComponent(connectionType)}`
+            : '/api/v1/admin/connections/providers',
+        ),
       start: (connectionType, provider, opts) =>
         t.post('/api/v1/admin/connections', {
           connectionType,
@@ -96,7 +103,15 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
           code,
           state,
         }),
-      disconnect: (connectionId) => t.del(`/api/v1/admin/connections/${connectionId}`),
+      completeConnectionOauth: (connectionId, code, state) =>
+        t.post(`/api/v1/admin/connections/${connectionId}/oauth-callback`, { code, state }),
+      disconnect: (connectionId) =>
+        t.post(`/api/v1/admin/connections/${connectionId}/disconnect`),
+      switchAccount: (connectionId, provider) =>
+        t.post(`/api/v1/admin/connections/${connectionId}/switch`, { provider: provider ?? null }),
+      bindDestination: (connectionId, destination) =>
+        t.put(`/api/v1/admin/connections/${connectionId}/destination`, { destination }),
+      revoke: (connectionId) => t.del(`/api/v1/admin/connections/${connectionId}`),
       getEmailProvisioning: () => t.get('/api/v1/admin/connections/email'),
       provisionEmail: (req) => t.post('/api/v1/admin/connections/email', req),
       swap: (connectionId, provider) =>

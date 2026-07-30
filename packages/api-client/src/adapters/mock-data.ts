@@ -1,8 +1,10 @@
 import type {
   Account,
+  CapabilityGroup,
   Luciel,
   BillingInfo,
   Connection,
+  ConnectionProviders,
   EmailProvisioning,
   KnowledgeSource,
   ConversationSummary,
@@ -53,6 +55,10 @@ export const seedLuciel: Luciel = {
     // Healthy connection example:
     { id: 'book_appointment', enabled: true, connectionStatus: 'connected' },
     { id: 'check_availability', enabled: true, connectionStatus: 'connected' },
+    // Same calendar connection, off until the owner turns the capability on —
+    // the mixed state a served capability list has to render correctly.
+    { id: 'reschedule_appointment', enabled: false, connectionStatus: 'connected' },
+    { id: 'cancel_appointment', enabled: false, connectionStatus: 'connected' },
     // Expired connection example → "Reconnect needed" chip (Arch §3.8.4):
     { id: 'push_to_crm', enabled: true, connectionStatus: 'expired' },
     // Enabled but unconfigured → "Action needed: connect [X]":
@@ -113,6 +119,166 @@ export const seedConnections: Connection[] = [
     status: 'connected',
     createdAt: '2026-02-01T10:10:00Z',
     lastHealthCheckAt: '2026-06-14T16:00:00Z',
+  },
+];
+
+/**
+ * The provider registry the mock serves for GET /connections/providers
+ * (contract §1). Mirrors the registered choices, including the two states the UI
+ * has to render honestly: a provider the platform has no OAuth client for
+ * (`configured: false` → disabled, not hidden) and a `credential_form` provider
+ * whose secret field must be masked.
+ */
+export const seedConnectionProviders: ConnectionProviders[] = [
+  {
+    connectionType: 'calendar',
+    providers: [
+      {
+        provider: 'google_calendar',
+        displayName: 'Google Calendar',
+        authKind: 'oauth',
+        helpText: 'Offer and book real times from your Google Calendar.',
+        configured: true,
+        credentialFields: [],
+        scopeKind: null,
+      },
+      {
+        provider: 'calendly',
+        displayName: 'Calendly',
+        authKind: 'oauth',
+        helpText: 'Offer and book times from your Calendly availability.',
+        configured: false,
+        credentialFields: [],
+        scopeKind: null,
+      },
+    ],
+  },
+  {
+    connectionType: 'channel_auth',
+    providers: [
+      {
+        provider: 'meta_whatsapp',
+        displayName: 'WhatsApp Business',
+        authKind: 'oauth',
+        helpText: 'Answer the WhatsApp number your business already messages from.',
+        configured: true,
+        credentialFields: [],
+        scopeKind: null,
+      },
+      {
+        provider: 'meta_instagram',
+        displayName: 'Instagram / Messenger',
+        authKind: 'oauth',
+        helpText: 'Answer direct messages sent to your Instagram or Facebook Page.',
+        configured: true,
+        credentialFields: [],
+        scopeKind: null,
+      },
+    ],
+  },
+  {
+    connectionType: 'crm',
+    providers: [
+      {
+        provider: 'hubspot',
+        displayName: 'HubSpot',
+        authKind: 'oauth',
+        helpText: 'Write captured leads into your HubSpot contacts.',
+        configured: true,
+        credentialFields: [],
+        scopeKind: null,
+      },
+      {
+        provider: 'salesforce',
+        displayName: 'Salesforce',
+        authKind: 'oauth',
+        helpText: 'Write captured leads into your Salesforce org.',
+        configured: true,
+        credentialFields: [],
+        scopeKind: null,
+      },
+      {
+        provider: 'custom_webhook',
+        displayName: 'Custom webhook',
+        authKind: 'credential_form',
+        helpText: 'Post captured leads to your own endpoint instead of a CRM.',
+        configured: true,
+        credentialFields: [
+          { name: 'url', label: 'Webhook URL', secret: false, required: true },
+          { name: 'signingSecret', label: 'Signing secret', secret: true, required: false },
+        ],
+        scopeKind: null,
+      },
+    ],
+  },
+  {
+    connectionType: 'knowledge_source',
+    providers: [
+      {
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        authKind: 'oauth',
+        helpText: 'Keep answers in step with the documents in your Drive.',
+        configured: true,
+        credentialFields: [],
+        scopeKind: 'drive_folders',
+      },
+      {
+        provider: 'notion',
+        displayName: 'Notion',
+        authKind: 'oauth',
+        helpText: 'Keep answers in step with your Notion pages and databases.',
+        configured: false,
+        credentialFields: [],
+        scopeKind: 'notion_pages',
+      },
+    ],
+  },
+  {
+    connectionType: 'record_source',
+    providers: [
+      {
+        provider: 'live_connector',
+        displayName: 'Live connector',
+        authKind: 'credential_form',
+        helpText: 'Look records up in your own system, live, at answer time.',
+        configured: true,
+        credentialFields: [
+          { name: 'baseUrl', label: 'Base URL', secret: false, required: true },
+          { name: 'apiKey', label: 'API key', secret: true, required: true },
+        ],
+        scopeKind: null,
+      },
+      {
+        provider: 'csv',
+        displayName: 'CSV file',
+        authKind: 'credential_form',
+        helpText: 'Look records up in a CSV you upload under Knowledge.',
+        configured: true,
+        credentialFields: [],
+        scopeKind: null,
+      },
+    ],
+  },
+];
+
+/**
+ * The capability grouping the mock serves for GET /admin/luciel/capabilities
+ * (contract §3). All four scheduling tools ride the ONE calendar connection.
+ */
+export const seedCapabilities: CapabilityGroup[] = [
+  {
+    capability: 'scheduling',
+    label: 'Appointment scheduling',
+    helpText:
+      'Luciel can offer open times, book an appointment, and move or cancel one it already booked — all on the calendar you connect here.',
+    toolIds: [
+      'check_availability',
+      'book_appointment',
+      'reschedule_appointment',
+      'cancel_appointment',
+    ],
+    connectionType: 'calendar',
   },
 ];
 

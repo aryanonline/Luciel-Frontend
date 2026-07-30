@@ -1,0 +1,440 @@
+'use client';
+
+import * as React from 'react';
+import { Banner, Button, Field, Input, Modal, StatusChip } from '@luciel/ui';
+import {
+  LucielApiError,
+  type AddonToolId,
+  type ChannelId,
+  type Connection,
+  type ConnectionStatus,
+  type ConnectionType,
+  type ProviderOption,
+} from '@luciel/api-client';
+import {
+  useConnectionLifecycle,
+  useConnectionProviders,
+  type StartedConnectFlow,
+} from '@/lib/hooks';
+import { authorizeOrExplain } from '@/lib/oauth-connect';
+import { channelLabel, chipKind, toolMeta } from './labels';
+
+/**
+ * THE connection control (Decisions #5 + #6). Every external connection — each
+ * tool's and each channel's — gets the same lifecycle on the same surface:
+ *
+ *   choose a provider → Connect → (Connected / Action needed / Reconnect needed)
+ *   → Switch account or provider → Disconnect
+ *
+ * Two things are deliberately NOT per-vendor here. The provider CHOICES come
+ * from `GET /connections/providers` (a provider the platform has no OAuth client
+ * for renders disabled, never hidden), and the status comes from the connection
+ * row — there is no local "connected" flag anywhere, because only the provider
+ * round-trip can make a connection real (Arch §3.8.7).
+ */
+
+export interface ConnectionControlProps {
+  connectionType: ConnectionType;
+  /** Owner-facing name of what is being connected, e.g. "a calendar", "WhatsApp". */
+  label: string;
+  /** The row backing this connection today, if there is one. */
+  connection?: Connection;
+  /**
+   * Pins the provider instead of letting the owner pick — a channel row implies
+   * its provider (the WhatsApp row is Meta WhatsApp). The pinned option is still
+   * read from the registry, so `configured: false` still disables it.
+   */
+  provider?: string;
+  /** Used when the registry offers no choice for this type (email sender, webhook). */
+  fallbackProvider?: string;
+  /** Collect a destination once connected — Meta `channel_auth` (contract §2). */
+  destinationField?: { label: string; hint: string };
+  /** Server-derived hold-off reason from the dependent tool (read-only, contract §3). */
+  disabledReason?: string | null;
+}
+
+/** Chip detail per raw status, so "Action needed" always says what to do. */
+function chipDetail(status: ConnectionStatus | undefined, label: string): string | undefined {
+  switch (status) {
+    case undefined:
+    case 'unconfigured':
+    case 'not_connected':
+      return `connect ${label}`;
+    case 'error':
+      return `${label} is having trouble`;
+    case 'revoked':
+      return `reconnect ${label}`;
+    default:
+      return undefined;
+  }
+}
+
+/** Human names for whatever a disconnect took down with it (contract §1). */
+function disabledSummary(tools: string[], channels: string[]): string | null {
+  const names = [
+    ...tools.map((id) => toolMeta[id as AddonToolId]?.label ?? id),
+    ...channels.map((id) => channelLabel[id as ChannelId] ?? id),
+  ];
+  if (names.length === 0) return null;
+  return `Switched off too: ${names.join(', ')}. Turn them back on after you reconnect.`;
+}
+
+export function ConnectionControl({
+  connectionType,
+  label,
+  connection,
+  provider,
+  fallbackProvider,
+  destinationField,
+  disabledReason,
+}: ConnectionControlProps) {
+  const providers = useConnectionProviders(connectionType);
+  const { connect, switchTo, reconnect, disconnect, bindDestination } = useConnectionLifecycle();
+
+  const options = providers.data?.[0]?.providers ?? [];
+  const pinned = provider ? options.find((o) => o.provider === provider) : undefined;
+  const choices = pinned ? [pinned] : options;
+
+  const [chosen, setChosen] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
+  const [switching, setSwitching] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [credentials, setCredentials] = React.useState<Record<string, string>>({});
+  const [destinationValue, setDestinationValue] = React.useState('');
+
+  const selectedProvider =
+    provider ?? chosen ?? connection?.provider ?? choices[0]?.provider ?? fallbackProvider;
+  const selectedOption = choices.find((o) => o.provider === selectedProvider);
+  const providerName = selectedOption?.displayName ?? label;
+
+  // A pinned provider that is not the one currently connected means this surface
+  // is asking for the OTHER end of a shared connection (WhatsApp vs Instagram,
+  // which share the single channel_auth row) — that transition is a switch.
+  const boundElsewhere = Boolean(provider && connection && connection.provider !== provider);
+  const status = boundElsewhere ? undefined : connection?.status;
+  const destination =
+    typeof connection?.nonSecretConfig?.destination === 'string'
+      ? connection.nonSecretConfig.destination
+      : undefined;
+  // Contract §2 UI rule: connected without a destination is NOT live.
+  const needsDestination = Boolean(destinationField) && status === 'connected' && !destination;
+  const isLive = status === 'connected' && !needsDestination;
+  const busy =
+    connect.isPending || switchTo.isPending || reconnect.isPending || disconnect.isPending;
+
+  const runFlow = async (flow: Promise<StartedConnectFlow>) => {
+    setNotice(null);
+    try {
+      const start = await flow;
+      if (start.requiresClientForm) {
+        // No route accepts typed credentials yet, so say so instead of
+        // pretending the connection happened.
+        setNotice(
+          `${providerName} connects with details you enter rather than a sign-in, and we cannot store them from the dashboard yet. Nothing was connected.`,
+        );
+        setCredentials({});
+        return;
+      }
+      const explanation = authorizeOrExplain({
+        ...start,
+        provider: selectedProvider ?? '',
+        label: providerName,
+        callbackKind: 'connection',
+      });
+      if (explanation) setNotice(explanation);
+    } catch (err) {
+      setNotice(
+        err instanceof LucielApiError
+          ? err.message
+          : `We could not start the connection for ${providerName}. Please try again.`,
+      );
+    }
+  };
+
+  const beginConnect = () => {
+    if (!selectedProvider) return;
+    // An existing row is re-credentialed in place: switch when the account or
+    // provider is changing, reconnect when it is the same one expiring.
+    if (connection && (boundElsewhere || switching)) {
+      void runFlow(
+        switchTo.mutateAsync({
+          connectionId: connection.connectionId,
+          provider: selectedProvider === connection.provider ? null : selectedProvider,
+        }),
+      );
+      setSwitching(false);
+      return;
+    }
+    if (connection && (status === 'expired' || status === 'error')) {
+      void runFlow(reconnect.mutateAsync({ connectionId: connection.connectionId }));
+      return;
+    }
+    void runFlow(connect.mutateAsync({ connectionType, provider: selectedProvider }));
+  };
+
+  const confirmDisconnect = async () => {
+    if (!connection) return;
+    setNotice(null);
+    try {
+      const result = await disconnect.mutateAsync({ connectionId: connection.connectionId });
+      const consequence = disabledSummary(result.disabledTools, result.disabledChannels);
+      setNotice(
+        [`${providerName} is disconnected and its saved credentials were deleted.`, consequence]
+          .filter(Boolean)
+          .join(' '),
+      );
+    } catch (err) {
+      setNotice(
+        err instanceof LucielApiError
+          ? err.message
+          : `We could not disconnect ${providerName}. Please try again.`,
+      );
+    } finally {
+      setConfirmOpen(false);
+    }
+  };
+
+  const saveDestination = async () => {
+    if (!connection) return;
+    setNotice(null);
+    try {
+      await bindDestination.mutateAsync({
+        connectionId: connection.connectionId,
+        destination: destinationValue.trim(),
+      });
+      setDestinationValue('');
+    } catch (err) {
+      setNotice(
+        err instanceof LucielApiError
+          ? err.message
+          : `We could not save that id for ${providerName}. Please try again.`,
+      );
+    }
+  };
+
+  const connectLabel = () => {
+    if (busy) return 'Opening sign-in…';
+    if (boundElsewhere) return `Switch to ${providerName}`;
+    if (switching) return `Switch to ${providerName}`;
+    if (status === 'expired' || status === 'error') return `Reconnect ${providerName}`;
+    return `Connect ${providerName}`;
+  };
+
+  return (
+    <div className="space-y-vm-3">
+      <div className="flex flex-wrap items-center gap-vm-3">
+        {needsDestination ? (
+          <StatusChip kind="action_needed" detail="choose the number Luciel answers on" />
+        ) : (
+          <StatusChip
+            kind={chipKind(status) ?? 'action_needed'}
+            detail={chipDetail(status, label)}
+          />
+        )}
+        {isLive && (
+          <>
+            {!switching && choices.length > 1 && (
+              <Button variant="ghost" onClick={() => setSwitching(true)} disabled={busy}>
+                Switch account or provider
+              </Button>
+            )}
+            {!switching && choices.length <= 1 && (
+              <Button variant="ghost" onClick={() => setSwitching(true)} disabled={busy}>
+                Switch account
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => setConfirmOpen(true)} disabled={busy}>
+              Disconnect
+            </Button>
+          </>
+        )}
+      </div>
+
+      {/* Server-derived, read-only: why the dependent tool is being held off. */}
+      {disabledReason && !isLive && (
+        <p className="text-vm-0 text-vm-text-muted" role="note">
+          {disabledReason.startsWith('connection_disconnected')
+            ? `Luciel cannot use this until you connect ${label} again.`
+            : `Held off by ${label}: ${disabledReason}.`}
+        </p>
+      )}
+
+      {notice && <Banner tone="info">{notice}</Banner>}
+
+      {providers.isError && (
+        <Banner tone="warning">
+          We could not load the {label} options just now. Reload the page to try again.
+        </Banner>
+      )}
+
+      {/* Provider CHOICE (Decision #6) — shown while connecting or switching. */}
+      {(!isLive || switching) && !pinned && choices.length > 1 && (
+        <fieldset className="rounded-vm-card border border-vm-border p-vm-3">
+          <legend className="px-vm-1 text-vm-1 font-label">Choose how to connect {label}</legend>
+          <div className="grid gap-vm-2">
+            {choices.map((option) => (
+              <ProviderChoice
+                key={option.provider}
+                option={option}
+                name={`provider-${connectionType}`}
+                checked={option.provider === selectedProvider}
+                onSelect={() => {
+                  setChosen(option.provider);
+                  setCredentials({});
+                }}
+              />
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {/* credential_form providers collect fields instead of a sign-in (contract §1). */}
+      {(!isLive || switching) && selectedOption?.authKind === 'credential_form' && (
+        <div className="rounded-vm-card border border-vm-border p-vm-3">
+          {selectedOption.credentialFields.map((field) => (
+            <Field
+              key={field.name}
+              id={`${connectionType}-${field.name}`}
+              label={field.label}
+              required={field.required}
+              hint={field.secret ? 'Stored in the secrets vault, never shown again.' : undefined}
+            >
+              {(fieldProps) => (
+                <Input
+                  {...fieldProps}
+                  type={field.secret ? 'password' : 'text'}
+                  autoComplete={field.secret ? 'new-password' : 'off'}
+                  value={credentials[field.name] ?? ''}
+                  onChange={(e) =>
+                    setCredentials((prev) => ({ ...prev, [field.name]: e.target.value }))
+                  }
+                />
+              )}
+            </Field>
+          ))}
+        </div>
+      )}
+
+      {(!isLive || switching) && (
+        <div className="flex flex-wrap items-center gap-vm-2">
+          <Button
+            variant="secondary"
+            onClick={beginConnect}
+            disabled={
+              busy ||
+              !selectedProvider ||
+              selectedOption?.configured === false ||
+              (selectedOption?.credentialFields ?? []).some(
+                (f) => f.required && !credentials[f.name]?.trim(),
+              )
+            }
+          >
+            {connectLabel()}
+          </Button>
+          {switching && (
+            <Button variant="ghost" onClick={() => setSwitching(false)} disabled={busy}>
+              Keep the current one
+            </Button>
+          )}
+          {selectedOption?.configured === false && (
+            <span className="text-vm-0 text-vm-text-muted">
+              {providerName} isn&apos;t available yet — pick another option for now.
+            </span>
+          )}
+          {selectedOption?.helpText && selectedOption.configured && (
+            <span className="text-vm-0 text-vm-text-muted">{selectedOption.helpText}</span>
+          )}
+        </div>
+      )}
+
+      {/* Meta destination step: connected is not live until this is bound (§2). */}
+      {needsDestination && destinationField && (
+        <div className="rounded-vm-card border border-vm-border p-vm-3">
+          <p className="text-vm-1">
+            {providerName} is authorized. Tell us which one Luciel answers on — messages to any
+            other one are dropped, because that id is how we route them to you.
+          </p>
+          <div className="mt-vm-3 flex items-end gap-vm-2">
+            <div className="flex-1">
+              <Field
+                id={`${connectionType}-destination`}
+                label={destinationField.label}
+                hint={destinationField.hint}
+              >
+                {(fieldProps) => (
+                  <Input
+                    {...fieldProps}
+                    value={destinationValue}
+                    onChange={(e) => setDestinationValue(e.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+            <Button
+              variant="primary"
+              className="mb-vm-4"
+              onClick={() => void saveDestination()}
+              disabled={!destinationValue.trim() || bindDestination.isPending}
+            >
+              {bindDestination.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {isLive && destination && (
+        <p className="text-vm-0 text-vm-text-muted">
+          Answering on <span className="font-label">{destination}</span>.
+        </p>
+      )}
+
+      <Modal
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={`Disconnect ${providerName}?`}
+        description="We delete the saved credentials and hand the account back. Anything that runs on this connection stops until you connect again."
+        confirmLabel={disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
+        confirmVariant="danger"
+        confirmDisabled={disconnect.isPending}
+        onConfirm={() => void confirmDisconnect()}
+      >
+        <p className="text-vm-1">
+          You can reconnect this later — the connection stays listed. Nothing about your leads or
+          conversation history changes.
+        </p>
+      </Modal>
+    </div>
+  );
+}
+
+function ProviderChoice({
+  option,
+  name,
+  checked,
+  onSelect,
+}: {
+  option: ProviderOption;
+  name: string;
+  checked: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <label className="flex items-start gap-vm-2 text-vm-1">
+      <input
+        type="radio"
+        name={name}
+        className="mt-1 h-4 w-4"
+        checked={checked}
+        disabled={!option.configured}
+        onChange={onSelect}
+      />
+      <span>
+        <span className={option.configured ? undefined : 'text-vm-text-muted'}>
+          {option.displayName}
+        </span>
+        {!option.configured && <span className="text-vm-text-muted"> — not available yet</span>}
+        <span className="block text-vm-0 text-vm-text-muted">{option.helpText}</span>
+      </span>
+    </label>
+  );
+}

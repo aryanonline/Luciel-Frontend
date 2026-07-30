@@ -25,6 +25,16 @@ export const toolMeta: Record<AddonToolId, { label: string; desc: string; connec
       desc: 'Write a confirmed booking to your calendar (read-before-write).',
       connectLabel: 'a calendar',
     },
+    reschedule_appointment: {
+      label: 'Reschedule an appointment',
+      desc: 'Move an existing booking to a new slot on your calendar.',
+      connectLabel: 'a calendar',
+    },
+    cancel_appointment: {
+      label: 'Cancel an appointment',
+      desc: 'Cancel an existing booking on your calendar.',
+      connectLabel: 'a calendar',
+    },
     // Channel vs tool, in the owner's words (Decision #4): the Email channel is
     // Luciel answering people who emailed it; this tool is Luciel starting an
     // email to someone who reached out somewhere else.

@@ -16,6 +16,8 @@ export function chipForConnection(status: ConnectionStatus): ConnectionChip {
     case 'unconfigured':
     case 'error':
     case 'revoked':
+    // Disconnected by the admin: reconnectable, but nothing works until they do.
+    case 'not_connected':
     case 'dormant':
     // Carrier registration pending: the channel is not yet live, so it shows the
     // "action needed / being activated" chip — never "connected" (Arch §3.1.6).

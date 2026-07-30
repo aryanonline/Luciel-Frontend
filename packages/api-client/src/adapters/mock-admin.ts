@@ -2,9 +2,12 @@ import type { LucielApiClient } from '../client';
 import { LucielApiError } from '../schemas';
 import type {
   Account,
+  AddonToolId,
+  ChannelId,
   Luciel,
   BillingInfo,
   Connection,
+  ConnectionType,
   EmailProvisioning,
   KnowledgeSource,
   KnowledgeSyncConnection,
@@ -86,6 +89,44 @@ const SCOPE_CANDIDATES: Partial<Record<KnowledgeSyncProvider, ScopeCandidate[]>>
     { id: 'notion-page-1', name: 'Client onboarding', kind: 'page' },
     { id: 'notion-db-1', name: 'Services database', kind: 'database' },
   ],
+};
+
+/**
+ * What a disconnect takes down with it (contract §1). Scheduling is NOT listed
+ * here: its members are derived from the served capability groups, so the mock
+ * cannot drift from the grouping the UI renders.
+ */
+const TOOLS_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, AddonToolId[]>> = {
+  crm: ['push_to_crm'],
+  record_source: ['lookup_record'],
+  email_sender: ['send_email'],
+  outbound_webhook: ['bring_your_own_webhook'],
+};
+
+const CHANNELS_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, ChannelId[]>> = {
+  sms_sender: ['sms', 'voice'],
+  email_sender: ['email'],
+};
+
+/** WhatsApp and Instagram share the single `channel_auth` connection (§3.8.2). */
+const META_CHANNEL_BY_PROVIDER: Record<string, ChannelId> = {
+  meta_whatsapp: 'whatsapp',
+  meta_instagram: 'instagram_messenger',
+};
+
+const toolsForConnectionType = (connectionType: ConnectionType): AddonToolId[] => [
+  ...seed.seedCapabilities
+    .filter((c) => c.connectionType === connectionType)
+    .flatMap((c) => c.toolIds),
+  ...(TOOLS_BY_CONNECTION_TYPE[connectionType] ?? []),
+];
+
+const channelsForConnection = (connection: Connection): ChannelId[] => {
+  const meta = META_CHANNEL_BY_PROVIDER[connection.provider];
+  return [
+    ...(CHANNELS_BY_CONNECTION_TYPE[connection.connectionType] ?? []),
+    ...(connection.connectionType === 'channel_auth' && meta ? [meta] : []),
+  ];
 };
 
 export function createMockAdminClient(options: MockAdminOptions = {}): LucielApiClient {
@@ -303,8 +344,22 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async updateTools(tools) {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
-        state.luciel.tools = clone(tools);
+        // `disabledReason` is server-derived: accepted on the way in, then ignored
+        // and re-derived, exactly as the backend does (contract §3).
+        const previous = state.luciel.tools;
+        state.luciel.tools = clone(tools).map((t) => {
+          const before = previous.find((p) => p.id === t.id);
+          return {
+            ...t,
+            ...(before?.connectionStatus ? { connectionStatus: before.connectionStatus } : {}),
+            disabledReason: before?.disabledReason ?? null,
+          };
+        });
         return ok(state.luciel);
+      },
+      async capabilities() {
+        guardVerified();
+        return ok(seed.seedCapabilities);
       },
       async updateEscalation(contact) {
         guardVerified();
@@ -517,7 +572,15 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         return ok(state.connections);
       },
-      async start(connectionType, _provider, opts) {
+      async listProviders(connectionType) {
+        guardVerified();
+        return ok(
+          connectionType
+            ? seed.seedConnectionProviders.filter((p) => p.connectionType === connectionType)
+            : seed.seedConnectionProviders,
+        );
+      },
+      async start(connectionType, provider, opts) {
         guardVerified();
         // BYO SMS/Voice number (Arch §3.1.4/§3.1.6, Decision #48): the tenant supplies
         // their OWN E.164 number — no OAuth redirect. A supplied number enters carrier
@@ -533,12 +596,29 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           }
           return ok({});
         }
+        // One active connection per type (§3.8.2): the row is created here so the
+        // OAuth callback has an id to complete, exactly as the backend does.
+        const existing = state.connections.find((x) => x.connectionType === connectionType);
+        if (existing) {
+          existing.provider = provider;
+          if (existing.status !== 'connected') existing.statusDetail = null;
+        } else {
+          state.connections.push({
+            connectionId: nextId(),
+            connectionType,
+            provider,
+            status: 'unconfigured',
+            createdAt: new Date().toISOString(),
+          });
+        }
         return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
       },
       async reconnect(connectionId) {
         guardVerified();
+        // Re-auth is a real provider round-trip: the row only becomes `connected`
+        // when the callback redeems the code (Arch §3.8.7), never here.
         const c = state.connections.find((x) => x.connectionId === connectionId);
-        if (c) c.status = 'connected';
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
         return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
       },
       async reverifySms() {
@@ -584,7 +664,106 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           },
         );
       },
+      async completeConnectionOauth(connectionId, _code, oauthState) {
+        guardVerified();
+        if (!oauthState) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'This connection attempt has expired. Start the connection again.',
+          });
+        }
+        const c = state.connections.find((x) => x.connectionId === connectionId);
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        c.status = 'connected';
+        c.statusDetail = null;
+        c.lastHealthCheckAt = new Date().toISOString();
+        // A connected Meta channel is not a working one until its destination is
+        // bound (contract §2), so nothing flips the channel live here.
+        return ok(c);
+      },
       async disconnect(connectionId) {
+        guardVerified();
+        const c = state.connections.find((x: Connection) => x.connectionId === connectionId);
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        // Fail-safe: the credential is destroyed and the row lands on the
+        // RECONNECTABLE not_connected, not terminal revoked (contract §1).
+        c.status = 'not_connected';
+        c.statusDetail = 'disconnected_by_admin';
+        c.lastHealthCheckAt = null;
+        delete c.nonSecretConfig;
+
+        const disabledTools: string[] = [];
+        const disabledChannels: string[] = [];
+        if (state.luciel) {
+          const toolIds = toolsForConnectionType(c.connectionType);
+          for (const t of state.luciel.tools) {
+            if (!toolIds.includes(t.id)) continue;
+            // Only what this disconnect actually took down is reported back.
+            if (t.enabled) disabledTools.push(t.id);
+            t.enabled = false;
+            t.connectionStatus = 'not_connected';
+            t.disabledReason = `connection_disconnected:${c.connectionType}`;
+          }
+          const channelIds = channelsForConnection(c);
+          for (const ch of state.luciel.channels) {
+            if (!channelIds.includes(ch.id)) continue;
+            if (ch.enabled) disabledChannels.push(ch.id);
+            ch.enabled = false;
+            ch.connectionStatus = 'not_connected';
+          }
+        }
+        await delay();
+        return { connection: clone(c), secretDeleted: true, disabledTools, disabledChannels };
+      },
+      async switchAccount(connectionId, provider) {
+        guardVerified();
+        const c = state.connections.find((x) => x.connectionId === connectionId);
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        if (provider) {
+          const offered = seed.seedConnectionProviders
+            .find((p) => p.connectionType === c.connectionType)
+            ?.providers.some((p) => p.provider === provider);
+          if (!offered) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: `'${provider}' is not a provider we offer for ${c.connectionType}.`,
+            });
+          }
+          c.provider = provider;
+        }
+        // Disconnect FIRST so nothing keeps serving from the account being left
+        // behind, then hand back a fresh connect flow (contract §1).
+        c.status = 'not_connected';
+        c.statusDetail = 'switch_started';
+        delete c.nonSecretConfig;
+        return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
+      },
+      async bindDestination(connectionId, destination) {
+        guardVerified();
+        const c = state.connections.find((x) => x.connectionId === connectionId);
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        if (c.connectionType !== 'channel_auth') {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'A destination is not bound here.',
+          });
+        }
+        const value = destination.trim();
+        if (!value || value.length > 128) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Enter the id Luciel should answer on (1–128 characters).',
+          });
+        }
+        c.nonSecretConfig = { ...(c.nonSecretConfig ?? {}), destination: value };
+        const channel = META_CHANNEL_BY_PROVIDER[c.provider];
+        if (state.luciel && channel) {
+          const ch = state.luciel.channels.find((x) => x.id === channel);
+          if (ch) ch.connectionStatus = c.status;
+        }
+        return ok(c);
+      },
+      async revoke(connectionId) {
         guardVerified();
         const c = state.connections.find((x: Connection) => x.connectionId === connectionId);
         if (c) c.status = 'revoked';
