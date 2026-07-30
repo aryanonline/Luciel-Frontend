@@ -134,6 +134,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     ?.find((group) => group.connectionType === 'sms_sender')
     ?.providers.find((option) => option.provider === 'twilio');
   const twilioFields = twilioOption?.credentialFields ?? [];
+  const twilioUnavailable = twilioOption?.configured === false;
   const [voiceModalOpen, setVoiceModalOpen] = React.useState(false);
   const [consentChecked, setConsentChecked] = React.useState(false);
   const [smsModalOpen, setSmsModalOpen] = React.useState(false);
@@ -376,7 +377,16 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                 </Banner>
               )}
               {twilioNotice && <Banner tone="warning">{twilioNotice}</Banner>}
-              {twilioFields.length > 0 && (
+              {/* Honest-disabled, the same rule the shared control applies: the
+                  registry says no flow can be started, so there is no button to
+                  press (contract §1). */}
+              {twilioUnavailable && (
+                <p className="text-vm-1">
+                  Not available yet — we&apos;re finishing the Twilio connection. We&apos;ll switch
+                  this on as soon as it&apos;s ready; there is nothing for you to do.
+                </p>
+              )}
+              {!twilioUnavailable && twilioFields.length > 0 && (
                 <>
                   <CredentialFields
                     idPrefix="twilio"
