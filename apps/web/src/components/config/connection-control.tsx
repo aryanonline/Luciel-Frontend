@@ -9,6 +9,7 @@ import {
   type Connection,
   type ConnectionStatus,
   type ConnectionType,
+  type MetaChannel,
   type ProviderOption,
 } from '@luciel/api-client';
 import {
@@ -17,6 +18,7 @@ import {
   type StartedConnectFlow,
 } from '@/lib/hooks';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
+import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { channelLabel, chipKind, toolMeta } from './labels';
 
 /**
@@ -26,29 +28,43 @@ import { channelLabel, chipKind, toolMeta } from './labels';
  *   choose a provider → Connect → (Connected / Action needed / Reconnect needed)
  *   → Switch account or provider → Disconnect
  *
- * Two things are deliberately NOT per-vendor here. The provider CHOICES come
- * from `GET /connections/providers` (a provider the platform has no OAuth client
- * for renders disabled, never hidden), and the status comes from the connection
- * row — there is no local "connected" flag anywhere, because only the provider
- * round-trip can make a connection real (Arch §3.8.7).
+ * Three things are deliberately NOT per-vendor here. The provider CHOICES come
+ * from `GET /connections/providers` for THIS connection type and no other — a
+ * CRM picker never offers a calendar. The status comes from the connection row,
+ * because only the provider round-trip can make a connection real (Arch §3.8.7).
+ * And a provider the platform cannot start a flow for (`configured: false`)
+ * renders as a disabled "Not available yet" row with a plain reason: a connect
+ * button that redirects into a broken OAuth is worse than no button at all.
  */
 
 export interface ConnectionControlProps {
   connectionType: ConnectionType;
   /** Owner-facing name of what is being connected, e.g. "a calendar", "WhatsApp". */
   label: string;
+  /**
+   * One purpose-built sentence in the customer's words: what this connection
+   * lets Luciel do, and that it runs on THEIR account. Generic "Connect
+   * [account]" tells the owner nothing about what they are agreeing to.
+   */
+  purpose?: string;
   /** The row backing this connection today, if there is one. */
   connection?: Connection;
   /**
    * Pins the provider instead of letting the owner pick — a channel row implies
-   * its provider (the WhatsApp row is Meta WhatsApp). The pinned option is still
-   * read from the registry, so `configured: false` still disables it.
+   * its provider (every Meta channel is the one Meta grant). The pinned option
+   * is still read from the registry, so `configured: false` still disables it.
    */
   provider?: string;
   /** Used when the registry offers no choice for this type (email sender, webhook). */
   fallbackProvider?: string;
-  /** Collect a destination once connected — Meta `channel_auth` (contract §2). */
-  destinationField?: { label: string; hint: string };
+  /**
+   * Collect the destination this surface answers on once connected — Meta
+   * `channel_auth` (contract §2). `channels` names which of the one Meta
+   * grant's channels this row binds, so binding one never unbinds another.
+   */
+  destinationField?: { label: string; hint: string; channels?: MetaChannel[] };
+  /** Plain reason shown when nothing here can be connected yet (honest-disabled). */
+  unavailableReason?: string;
   /** Server-derived hold-off reason from the dependent tool (read-only, contract §3). */
   disabledReason?: string | null;
 }
@@ -79,21 +95,40 @@ function disabledSummary(tools: string[], channels: string[]): string | null {
   return `Switched off too: ${names.join(', ')}. Turn them back on after you reconnect.`;
 }
 
+/** The per-channel Meta ids this row has bound, plus the pre-per-channel one. */
+function readDestinations(connection: Connection | undefined): {
+  perChannel: Record<string, string>;
+  legacy: string | undefined;
+} {
+  const config = connection?.nonSecretConfig;
+  const perChannel = (config?.destinations as Record<string, string> | undefined) ?? {};
+  const legacy = typeof config?.destination === 'string' ? config.destination : undefined;
+  return { perChannel, legacy };
+}
+
 export function ConnectionControl({
   connectionType,
   label,
+  purpose,
   connection,
   provider,
   fallbackProvider,
   destinationField,
+  unavailableReason,
   disabledReason,
 }: ConnectionControlProps) {
   const providers = useConnectionProviders(connectionType);
-  const { connect, switchTo, reconnect, disconnect, bindDestination } = useConnectionLifecycle();
+  const { connect, switchTo, reconnect, disconnect, bindDestination, submitCredentials } =
+    useConnectionLifecycle();
 
-  const options = providers.data?.[0]?.providers ?? [];
+  // ONLY this connection type's providers, matched by type rather than taken
+  // positionally: the first group in the response is not necessarily ours.
+  const options =
+    providers.data?.find((group) => group.connectionType === connectionType)?.providers ?? [];
   const pinned = provider ? options.find((o) => o.provider === provider) : undefined;
   const choices = pinned ? [pinned] : options;
+  const connectable = choices.filter((o) => o.configured);
+  const nothingAvailable = choices.length > 0 && connectable.length === 0;
 
   const [chosen, setChosen] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -103,36 +138,66 @@ export function ConnectionControl({
   const [destinationValue, setDestinationValue] = React.useState('');
 
   const selectedProvider =
-    provider ?? chosen ?? connection?.provider ?? choices[0]?.provider ?? fallbackProvider;
+    provider ??
+    chosen ??
+    connection?.provider ??
+    connectable[0]?.provider ??
+    choices[0]?.provider ??
+    fallbackProvider;
   const selectedOption = choices.find((o) => o.provider === selectedProvider);
   const providerName = selectedOption?.displayName ?? label;
+  // A credential_form provider with no fields is not connected from here at all
+  // (CSV lives under Knowledge) — say where it happens instead of offering a
+  // button that would be refused.
+  const isCredentialForm = selectedOption?.authKind === 'credential_form';
+  const credentialFields = selectedOption?.credentialFields ?? [];
+  const providedElsewhere = isCredentialForm && credentialFields.length === 0;
 
   // A pinned provider that is not the one currently connected means this surface
-  // is asking for the OTHER end of a shared connection (WhatsApp vs Instagram,
-  // which share the single channel_auth row) — that transition is a switch.
+  // is asking for a different grant than the row holds (an older Meta provider
+  // id, say) — that transition is a switch.
   const boundElsewhere = Boolean(provider && connection && connection.provider !== provider);
   const status = boundElsewhere ? undefined : connection?.status;
-  const destination =
-    typeof connection?.nonSecretConfig?.destination === 'string'
-      ? connection.nonSecretConfig.destination
-      : undefined;
+
+  const { perChannel, legacy } = readDestinations(connection);
+  const metaChannels = destinationField?.channels ?? [];
+  const unboundChannels = metaChannels.filter((c) => !perChannel[c] && !legacy);
+  const destination = metaChannels.length
+    ? (metaChannels.map((c) => perChannel[c]).find(Boolean) ?? legacy)
+    : legacy;
   // Contract §2 UI rule: connected without a destination is NOT live.
   const needsDestination = Boolean(destinationField) && status === 'connected' && !destination;
   const isLive = status === 'connected' && !needsDestination;
   const busy =
-    connect.isPending || switchTo.isPending || reconnect.isPending || disconnect.isPending;
+    connect.isPending ||
+    switchTo.isPending ||
+    reconnect.isPending ||
+    disconnect.isPending ||
+    submitCredentials.isPending;
 
+  const failed = (err: unknown, fallbackMessage: string) =>
+    setNotice(err instanceof LucielApiError ? err.message : fallbackMessage);
+
+  /**
+   * One connect action for both classes. An OAuth provider is handed to the
+   * consent screen; a credential_form provider's details are sent to the row
+   * the start just created, so the flow finishes here instead of dead-ending on
+   * "we cannot store these yet".
+   */
   const runFlow = async (flow: Promise<StartedConnectFlow>) => {
     setNotice(null);
     try {
       const start = await flow;
-      if (start.requiresClientForm) {
-        // No route accepts typed credentials yet, so say so instead of
-        // pretending the connection happened.
-        setNotice(
-          `${providerName} connects with details you enter rather than a sign-in, and we cannot store them from the dashboard yet. Nothing was connected.`,
-        );
+      if (start.requiresClientForm || isCredentialForm) {
+        const connectionId = start.connectionId ?? connection?.connectionId;
+        if (!connectionId) {
+          setNotice(`We could not start the connection for ${providerName}. Please try again.`);
+          return;
+        }
+        await submitCredentials.mutateAsync({ connectionId, fields: credentials });
         setCredentials({});
+        setSwitching(false);
+        setNotice(`${providerName} is connected. Your details are stored in the secrets vault.`);
         return;
       }
       const explanation = authorizeOrExplain({
@@ -143,11 +208,7 @@ export function ConnectionControl({
       });
       if (explanation) setNotice(explanation);
     } catch (err) {
-      setNotice(
-        err instanceof LucielApiError
-          ? err.message
-          : `We could not start the connection for ${providerName}. Please try again.`,
-      );
+      failed(err, `We could not connect ${providerName}. Please try again.`);
     }
   };
 
@@ -184,11 +245,7 @@ export function ConnectionControl({
           .join(' '),
       );
     } catch (err) {
-      setNotice(
-        err instanceof LucielApiError
-          ? err.message
-          : `We could not disconnect ${providerName}. Please try again.`,
-      );
+      failed(err, `We could not disconnect ${providerName}. Please try again.`);
     } finally {
       setConfirmOpen(false);
     }
@@ -201,27 +258,25 @@ export function ConnectionControl({
       await bindDestination.mutateAsync({
         connectionId: connection.connectionId,
         destination: destinationValue.trim(),
+        channels: unboundChannels.length > 0 ? unboundChannels : metaChannels,
       });
       setDestinationValue('');
     } catch (err) {
-      setNotice(
-        err instanceof LucielApiError
-          ? err.message
-          : `We could not save that id for ${providerName}. Please try again.`,
-      );
+      failed(err, `We could not save that id for ${label}. Please try again.`);
     }
   };
 
   const connectLabel = () => {
-    if (busy) return 'Opening sign-in…';
-    if (boundElsewhere) return `Switch to ${providerName}`;
-    if (switching) return `Switch to ${providerName}`;
+    if (busy) return isCredentialForm ? 'Saving…' : 'Opening sign-in…';
+    if (boundElsewhere || switching) return `Switch to ${providerName}`;
     if (status === 'expired' || status === 'error') return `Reconnect ${providerName}`;
     return `Connect ${providerName}`;
   };
 
   return (
     <div className="space-y-vm-3">
+      {purpose && <p className="text-vm-1 text-vm-text-muted">{purpose}</p>}
+
       <div className="flex flex-wrap items-center gap-vm-3">
         {needsDestination ? (
           <StatusChip kind="action_needed" detail="choose the number Luciel answers on" />
@@ -233,16 +288,9 @@ export function ConnectionControl({
         )}
         {isLive && (
           <>
-            {!switching && choices.length > 1 && (
-              <Button variant="ghost" onClick={() => setSwitching(true)} disabled={busy}>
-                Switch account or provider
-              </Button>
-            )}
-            {!switching && choices.length <= 1 && (
-              <Button variant="ghost" onClick={() => setSwitching(true)} disabled={busy}>
-                Switch account
-              </Button>
-            )}
+            <Button variant="ghost" onClick={() => setSwitching(true)} disabled={busy || switching}>
+              {choices.length > 1 ? 'Switch account or provider' : 'Switch account'}
+            </Button>
             <Button variant="ghost" onClick={() => setConfirmOpen(true)} disabled={busy}>
               Disconnect
             </Button>
@@ -267,8 +315,38 @@ export function ConnectionControl({
         </Banner>
       )}
 
+      {/* Honest-disabled: nothing here can be connected yet, so there is no
+          connect button to press. The choices stay visible so the owner can see
+          what this will offer (contract §1). */}
+      {(!isLive || switching) && nothingAvailable && (
+        <div className="rounded-vm-card border border-vm-border p-vm-3">
+          <p className="text-vm-1">
+            Not available yet
+            {unavailableReason ? ` — ${unavailableReason}` : ''}. We&apos;ll switch this on as soon
+            as it&apos;s ready — there is nothing for you to do.
+          </p>
+          <ul className="mt-vm-2 grid gap-vm-1 text-vm-0 text-vm-text-muted">
+            {choices.map((option) => (
+              <li key={option.provider}>
+                {option.displayName} — {option.helpText}
+              </li>
+            ))}
+          </ul>
+          {switching && (
+            <Button
+              variant="ghost"
+              className="mt-vm-2"
+              onClick={() => setSwitching(false)}
+              disabled={busy}
+            >
+              Keep the current one
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Provider CHOICE (Decision #6) — shown while connecting or switching. */}
-      {(!isLive || switching) && !pinned && choices.length > 1 && (
+      {(!isLive || switching) && !nothingAvailable && !pinned && choices.length > 1 && (
         <fieldset className="rounded-vm-card border border-vm-border p-vm-3">
           <legend className="px-vm-1 text-vm-1 font-label">Choose how to connect {label}</legend>
           <div className="grid gap-vm-2">
@@ -288,49 +366,37 @@ export function ConnectionControl({
         </fieldset>
       )}
 
-      {/* credential_form providers collect fields instead of a sign-in (contract §1). */}
-      {(!isLive || switching) && selectedOption?.authKind === 'credential_form' && (
+      {/* credential_form providers collect the customer's own details instead of
+          a sign-in, and those details are saved to this connection (§1a). */}
+      {(!isLive || switching) && !nothingAvailable && isCredentialForm && !providedElsewhere && (
         <div className="rounded-vm-card border border-vm-border p-vm-3">
-          {selectedOption.credentialFields.map((field) => (
-            <Field
-              key={field.name}
-              id={`${connectionType}-${field.name}`}
-              label={field.label}
-              required={field.required}
-              hint={field.secret ? 'Stored in the secrets vault, never shown again.' : undefined}
-            >
-              {(fieldProps) => (
-                <Input
-                  {...fieldProps}
-                  type={field.secret ? 'password' : 'text'}
-                  autoComplete={field.secret ? 'new-password' : 'off'}
-                  value={credentials[field.name] ?? ''}
-                  onChange={(e) =>
-                    setCredentials((prev) => ({ ...prev, [field.name]: e.target.value }))
-                  }
-                />
-              )}
-            </Field>
-          ))}
+          <CredentialFields
+            idPrefix={connectionType}
+            fields={credentialFields}
+            values={credentials}
+            onChange={setCredentials}
+          />
         </div>
       )}
 
-      {(!isLive || switching) && (
+      {(!isLive || switching) && !nothingAvailable && (
         <div className="flex flex-wrap items-center gap-vm-2">
-          <Button
-            variant="secondary"
-            onClick={beginConnect}
-            disabled={
-              busy ||
-              !selectedProvider ||
-              selectedOption?.configured === false ||
-              (selectedOption?.credentialFields ?? []).some(
-                (f) => f.required && !credentials[f.name]?.trim(),
-              )
-            }
-          >
-            {connectLabel()}
-          </Button>
+          {providedElsewhere ? (
+            <span className="text-vm-1 text-vm-text-muted">{selectedOption?.helpText}</span>
+          ) : (
+            <Button
+              variant="secondary"
+              onClick={beginConnect}
+              disabled={
+                busy ||
+                !selectedProvider ||
+                selectedOption?.configured === false ||
+                !credentialFieldsComplete(credentialFields, credentials)
+              }
+            >
+              {connectLabel()}
+            </Button>
+          )}
           {switching && (
             <Button variant="ghost" onClick={() => setSwitching(false)} disabled={busy}>
               Keep the current one
@@ -341,7 +407,7 @@ export function ConnectionControl({
               {providerName} isn&apos;t available yet — pick another option for now.
             </span>
           )}
-          {selectedOption?.helpText && selectedOption.configured && (
+          {selectedOption?.helpText && selectedOption.configured && !providedElsewhere && (
             <span className="text-vm-0 text-vm-text-muted">{selectedOption.helpText}</span>
           )}
         </div>
@@ -351,13 +417,13 @@ export function ConnectionControl({
       {needsDestination && destinationField && (
         <div className="rounded-vm-card border border-vm-border p-vm-3">
           <p className="text-vm-1">
-            {providerName} is authorized. Tell us which one Luciel answers on — messages to any
+            Your Meta account is authorized. Tell us which one {label} answers on — messages to any
             other one are dropped, because that id is how we route them to you.
           </p>
           <div className="mt-vm-3 flex items-end gap-vm-2">
             <div className="flex-1">
               <Field
-                id={`${connectionType}-destination`}
+                id={`${connectionType}-${metaChannels[0] ?? 'destination'}`}
                 label={destinationField.label}
                 hint={destinationField.hint}
               >

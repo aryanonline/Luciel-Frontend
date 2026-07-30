@@ -5,15 +5,17 @@ import { ChannelsPillar } from '@/components/config/channels-pillar';
 import type { Luciel } from '@luciel/api-client';
 
 /**
- * P0-1 (BYO number): the tenant supplies their OWN phone number for SMS/Voice;
- * the platform never provisions one (Arch §3.1.4/§3.1.6, Decision #48).
+ * P0-1 (BYO number): the tenant supplies their OWN Twilio account and their OWN
+ * phone number for SMS/Voice; the platform never provisions either
+ * (Arch §3.1.4/§3.1.6, Decision #48).
  *
- * When SMS or Voice is enabled with no number configured, the pillar shows the
- * "Action needed: add your number" state and an E.164 entry affordance. When a
- * number is supplied it sits at "Action needed: complete carrier registration"
- * until the TENANT finishes their own A2P 10DLC registration and triggers
- * Re-verify — the platform never registers on their behalf and never polls
- * (Legal §A2, Arch §3.1.6).
+ * The two steps are ordered — you cannot designate one of an account's numbers
+ * before the account is on file — so an enabled SMS/Voice channel with nothing
+ * connected asks for the Twilio credentials first, and only then for the number.
+ * Both are actionable next steps, not errors. Once a number is supplied it sits
+ * at "Action needed: complete carrier registration" until the TENANT finishes
+ * their own A2P 10DLC registration and triggers Re-verify — the platform never
+ * registers on their behalf and never polls (Legal §A2, Arch §3.1.6).
  *
  * Enabling SMS is also a hard gate on the carrier/consent acknowledgment
  * (Legal §A2/§A6).
@@ -62,11 +64,21 @@ const withNumberPending: Luciel = {
   ),
 };
 
-describe('P0-1: SMS enabled without a number shows the action-needed state', () => {
-  it('renders the "add your number" action-needed chip and an E.164 entry field', () => {
+describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own Twilio account', () => {
+  it('renders the action-needed chip and the served Twilio credential form', async () => {
     renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
-    expect(screen.getByText(/action needed: add your number/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Business phone number/i)).toBeInTheDocument();
+    expect(screen.getByText(/action needed: connect your Twilio account/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /your number stays yours and your carrier costs are billed by Twilio directly/i,
+      ),
+    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Twilio Account SID/i)).toBeInTheDocument();
+  });
+
+  it('does not ask which number to use before the Twilio account is on file', () => {
+    renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
+    expect(screen.queryByLabelText(/Business phone number/i)).not.toBeInTheDocument();
   });
 
   it('does not claim SMS/Voice run on a platform-provisioned number', () => {

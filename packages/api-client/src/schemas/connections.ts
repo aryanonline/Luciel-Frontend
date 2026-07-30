@@ -136,15 +136,36 @@ export const oauthCallbackRequest = z.object({
 export type OauthCallbackRequest = z.infer<typeof oauthCallbackRequest>;
 
 /**
+ * Which of the three channels one Meta grant is being pointed at (contract §2).
+ * This is what makes a SINGLE `channel_auth` connection serve WhatsApp,
+ * Instagram and Messenger: each names its own asset, so binding one never
+ * unbinds another.
+ */
+export const metaChannel = z.enum(['whatsapp', 'instagram', 'messenger']);
+export type MetaChannel = z.infer<typeof metaChannel>;
+
+/**
  * Bind the Meta destination a `channel_auth` connection answers on (contract §2):
  * the WhatsApp `phone_number_id` or the Instagram/Messenger Page id. Inbound
  * routing resolves a tenant SOLELY by this id, so a connected channel without one
- * receives nothing.
+ * receives nothing. `channel` is omitted only by the single-destination senders.
  */
 export const bindDestinationRequest = z.object({
   destination: z.string().min(1).max(128),
+  channel: metaChannel.optional(),
 });
 export type BindDestinationRequest = z.infer<typeof bindDestinationRequest>;
+
+/**
+ * The values for a `credential_form` provider's `credentialFields` (contract
+ * §1a) — the customer's OWN credential, e.g. their Twilio Account SID + Auth
+ * Token. Fields the registry marks `secret` go to Secrets Manager and are never
+ * echoed back; the rest land in `nonSecretConfig`.
+ */
+export const submitCredentialsRequest = z.object({
+  fields: z.record(z.string()),
+});
+export type SubmitCredentialsRequest = z.infer<typeof submitCredentialsRequest>;
 
 /**
  * Result of an on-demand A2P 10DLC re-verify of the BYO SMS/Voice number

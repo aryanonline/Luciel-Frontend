@@ -124,10 +124,13 @@ export const seedConnections: Connection[] = [
 
 /**
  * The provider registry the mock serves for GET /connections/providers
- * (contract §1). Mirrors the registered choices, including the two states the UI
- * has to render honestly: a provider the platform has no OAuth client for
- * (`configured: false` → disabled, not hidden) and a `credential_form` provider
- * whose secret field must be masked.
+ * (contract §1). Each connection type offers ONLY its own providers, and the
+ * `configured` flags mirror what dev actually holds today, so the UI is
+ * exercised against the two states it must render honestly: a provider the
+ * platform has no OAuth app for (`configured: false` → a disabled "Not
+ * available yet" row, never a connect button that dead-ends) and a
+ * `credential_form` provider taking the customer's OWN credential, which is
+ * always available because the platform is not in that path.
  */
 export const seedConnectionProviders: ConnectionProviders[] = [
   {
@@ -138,7 +141,7 @@ export const seedConnectionProviders: ConnectionProviders[] = [
         displayName: 'Google Calendar',
         authKind: 'oauth',
         helpText: 'Offer and book real times from your Google Calendar.',
-        configured: true,
+        configured: false,
         credentialFields: [],
         scopeKind: null,
       },
@@ -154,23 +157,19 @@ export const seedConnectionProviders: ConnectionProviders[] = [
     ],
   },
   {
+    // ONE Meta grant authorizes WhatsApp, Instagram DMs and Messenger; each
+    // channel then names its own destination (contract §2). The old
+    // meta_whatsapp/meta_instagram pair shared this single-active type, so
+    // connecting the second silently disconnected the first.
     connectionType: 'channel_auth',
     providers: [
       {
-        provider: 'meta_whatsapp',
-        displayName: 'WhatsApp Business',
+        provider: 'meta',
+        displayName: 'Meta',
         authKind: 'oauth',
-        helpText: 'Answer the WhatsApp number your business already messages from.',
-        configured: true,
-        credentialFields: [],
-        scopeKind: null,
-      },
-      {
-        provider: 'meta_instagram',
-        displayName: 'Instagram / Messenger',
-        authKind: 'oauth',
-        helpText: 'Answer direct messages sent to your Instagram or Facebook Page.',
-        configured: true,
+        helpText:
+          'One sign-in to your Meta Business account covers WhatsApp, Instagram DMs and Messenger.',
+        configured: false,
         credentialFields: [],
         scopeKind: null,
       },
@@ -256,6 +255,28 @@ export const seedConnectionProviders: ConnectionProviders[] = [
         helpText: 'Look records up in a CSV you upload under Knowledge.',
         configured: true,
         credentialFields: [],
+        scopeKind: null,
+      },
+    ],
+  },
+  {
+    // BYO: the CUSTOMER's own Twilio account (§3.1.4). The platform is never in
+    // the telephony billing path, so this is always available — nothing here is
+    // gated on a platform OAuth app.
+    connectionType: 'sms_sender',
+    providers: [
+      {
+        provider: 'twilio',
+        displayName: 'Your Twilio account',
+        authKind: 'credential_form',
+        helpText: 'Luciel texts and calls from your own business number, on your own Twilio account.',
+        configured: true,
+        credentialFields: [
+          { name: 'accountSid', label: 'Twilio Account SID (AC…)', secret: false, required: true },
+          { name: 'authToken', label: 'Twilio Auth Token', secret: true, required: false },
+          { name: 'apiKeySid', label: 'API Key SID (SK…)', secret: false, required: false },
+          { name: 'apiKeySecret', label: 'API Key Secret', secret: true, required: false },
+        ],
         scopeKind: null,
       },
     ],

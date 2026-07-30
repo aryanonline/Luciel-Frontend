@@ -12,6 +12,7 @@ import type {
   CreateLucielRequest,
   ProvisionEmailRequest,
   ConnectionType,
+  MetaChannel,
   StartConnectionResult,
 } from '@luciel/api-client';
 
@@ -150,9 +151,38 @@ export function useConnectionLifecycle() {
       mutationFn: ({ connectionId }) => api.connections.disconnect(connectionId),
       onSuccess: invalidate,
     }),
-    bindDestination: useMutation<Connection, Error, { connectionId: string; destination: string }>({
-      mutationFn: ({ connectionId, destination }) =>
-        api.connections.bindDestination(connectionId, destination),
+    bindDestination: useMutation<
+      Connection,
+      Error,
+      { connectionId: string; destination: string; channels?: MetaChannel[] }
+    >({
+      // A Meta grant can serve more than one channel from the same asset (an
+      // Instagram account and its Page are the same Page id), so a row may bind
+      // several — each named, so none unbinds another (contract §2).
+      mutationFn: async ({ connectionId, destination, channels }) => {
+        if (!channels || channels.length === 0) {
+          return api.connections.bindDestination(connectionId, destination);
+        }
+        let last: Connection | undefined;
+        for (const channel of channels) {
+          last = await api.connections.bindDestination(connectionId, destination, channel);
+        }
+        return last as Connection;
+      },
+      onSuccess: invalidate,
+    }),
+    /**
+     * The second half of a non-OAuth connect (contract §1a): the customer's own
+     * credential for the row a `connect`/`switch` just started. A started row
+     * with no credential is a dead end, so the two are always run together.
+     */
+    submitCredentials: useMutation<
+      Connection,
+      Error,
+      { connectionId: string; fields: Record<string, string> }
+    >({
+      mutationFn: ({ connectionId, fields }) =>
+        api.connections.submitCredentials(connectionId, fields),
       onSuccess: invalidate,
     }),
   };

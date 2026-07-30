@@ -30,6 +30,7 @@ import type {
   ConnectionProviders,
   ConnectionType,
   DisconnectResult,
+  MetaChannel,
   StartConnectionResult,
   ReverifySmsResult,
   EmailProvisioning,
@@ -213,8 +214,24 @@ export interface LucielApiClient {
      * (contract §2) — WhatsApp `phone_number_id` or Instagram/Messenger Page id.
      * A connected Meta channel without one is NOT live: inbound routing resolves
      * the tenant by this id alone, so messages are dropped as unresolvable.
+     *
+     * `channel` names which of the three channels the ONE Meta grant is being
+     * pointed at, which is what lets WhatsApp stay bound while Messenger is
+     * bound too. Omitted only by the single-destination senders.
      */
-    bindDestination(connectionId: string, destination: string): Promise<Connection>;
+    bindDestination(
+      connectionId: string,
+      destination: string,
+      channel?: MetaChannel,
+    ): Promise<Connection>;
+    /**
+     * The non-OAuth half of a connect (contract §1a): the values for the
+     * provider's advertised `credentialFields`. This is how the customer's OWN
+     * account is attached — their Twilio, their webhook endpoint — so nothing
+     * ever runs on platform credentials. Secret fields go to Secrets Manager and
+     * are never echoed back.
+     */
+    submitCredentials(connectionId: string, fields: Record<string, string>): Promise<Connection>;
     /** Terminal teardown — drives the row to `revoked` (distinct from disconnect). */
     revoke(connectionId: string): Promise<void>;
     /**

@@ -14,6 +14,7 @@ import type {
   KnowledgeSyncProvider,
   KnowledgeScope,
   KnowledgeScopeKind,
+  MetaChannel,
   ScopeCandidate,
   Message,
 } from '../schemas';
@@ -108,10 +109,25 @@ const CHANNELS_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, ChannelId[]>> 
   email_sender: ['email'],
 };
 
-/** WhatsApp and Instagram share the single `channel_auth` connection (§3.8.2). */
-const META_CHANNEL_BY_PROVIDER: Record<string, ChannelId> = {
-  meta_whatsapp: 'whatsapp',
-  meta_instagram: 'instagram_messenger',
+/**
+ * WhatsApp, Instagram and Messenger all ride the ONE Meta `channel_auth`
+ * connection (contract §2), so disconnecting it takes every Meta channel down
+ * with it — not just the one the owner happened to be looking at.
+ */
+const META_CHANNELS: ChannelId[] = ['whatsapp', 'instagram_messenger'];
+
+/**
+ * What a BYO Twilio account with no designated number reports (contract §1a).
+ * It is an actionable next step in the same flow, not a failure.
+ */
+const ACTION_ADD_NUMBER =
+  'Action needed: add your number. Your Twilio account is connected; tell us which of its numbers Luciel uses.';
+
+/** Which UI channel each per-channel Meta destination belongs to (contract §2). */
+const CHANNEL_BY_META_CHANNEL: Record<MetaChannel, ChannelId> = {
+  whatsapp: 'whatsapp',
+  instagram: 'instagram_messenger',
+  messenger: 'instagram_messenger',
 };
 
 const toolsForConnectionType = (connectionType: ConnectionType): AddonToolId[] => [
@@ -122,10 +138,9 @@ const toolsForConnectionType = (connectionType: ConnectionType): AddonToolId[] =
 ];
 
 const channelsForConnection = (connection: Connection): ChannelId[] => {
-  const meta = META_CHANNEL_BY_PROVIDER[connection.provider];
   return [
     ...(CHANNELS_BY_CONNECTION_TYPE[connection.connectionType] ?? []),
-    ...(connection.connectionType === 'channel_auth' && meta ? [meta] : []),
+    ...(connection.connectionType === 'channel_auth' ? META_CHANNELS : []),
   ];
 };
 
@@ -582,12 +597,41 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async start(connectionType, provider, opts) {
         guardVerified();
-        // BYO SMS/Voice number (Arch §3.1.4/§3.1.6, Decision #48): the tenant supplies
-        // their OWN E.164 number — no OAuth redirect. A supplied number enters carrier
-        // registration (pending_carrier_registration); with no number the sender stays
-        // 'unconfigured' → "Action needed: add your number". SMS + Voice share one number.
+        // One active connection per type (§3.8.2): the row is created here so the
+        // OAuth callback (or the credentials POST) has an id, exactly as the
+        // backend does.
+        const existing = state.connections.find((x) => x.connectionType === connectionType);
+        const row: Connection = existing ?? {
+          connectionId: nextId(),
+          connectionType,
+          provider,
+          status: 'unconfigured',
+          createdAt: new Date().toISOString(),
+        };
+        if (existing) {
+          existing.provider = provider;
+          if (existing.status !== 'connected') existing.statusDetail = null;
+        } else {
+          state.connections.push(row);
+        }
+
+        // BYO SMS/Voice (Arch §3.1.4/§3.1.6, Decision #48) is two steps on ONE
+        // row: the customer's own Twilio credential first, then the number they
+        // designate. Neither is an OAuth redirect, and an account with no
+        // designated number cannot text anyone, so it stays 'unconfigured' with
+        // an actionable next step rather than reading as connected.
         if (connectionType === 'sms_sender') {
-          if (opts?.phoneNumber && state.luciel) {
+          if (!opts?.phoneNumber) {
+            row.statusDetail = ACTION_ADD_NUMBER;
+            return ok({ requiresClientForm: true, statusDetail: row.statusDetail });
+          }
+          row.status = 'pending_carrier_registration';
+          row.statusDetail = null;
+          row.nonSecretConfig = {
+            ...(row.nonSecretConfig ?? {}),
+            destination: opts.phoneNumber,
+          };
+          if (state.luciel) {
             for (const ch of state.luciel.channels) {
               if (ch.id === 'sms' || ch.id === 'voice') {
                 ch.connectionStatus = 'pending_carrier_registration';
@@ -596,20 +640,18 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           }
           return ok({});
         }
-        // One active connection per type (§3.8.2): the row is created here so the
-        // OAuth callback has an id to complete, exactly as the backend does.
-        const existing = state.connections.find((x) => x.connectionType === connectionType);
-        if (existing) {
-          existing.provider = provider;
-          if (existing.status !== 'connected') existing.statusDetail = null;
-        } else {
-          state.connections.push({
-            connectionId: nextId(),
-            connectionType,
-            provider,
-            status: 'unconfigured',
-            createdAt: new Date().toISOString(),
-          });
+
+        const option = seed.seedConnectionProviders
+          .find((p) => p.connectionType === connectionType)
+          ?.providers.find((p) => p.provider === provider);
+        // A provider the platform has no OAuth app for cannot start a flow —
+        // the honest answer, never a URL that dead-ends (contract §1).
+        if (option && !option.configured) {
+          row.statusDetail = `Action needed: ${option.displayName} is not available yet.`;
+          return ok({ authorizeUrl: null, statusDetail: row.statusDetail });
+        }
+        if (option?.authKind === 'credential_form') {
+          return ok({ requiresClientForm: true });
         }
         return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
       },
@@ -738,7 +780,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         delete c.nonSecretConfig;
         return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
       },
-      async bindDestination(connectionId, destination) {
+      async bindDestination(connectionId, destination, channel) {
         guardVerified();
         const c = state.connections.find((x) => x.connectionId === connectionId);
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
@@ -755,11 +797,69 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             message: 'Enter the id Luciel should answer on (1–128 characters).',
           });
         }
-        c.nonSecretConfig = { ...(c.nonSecretConfig ?? {}), destination: value };
-        const channel = META_CHANNEL_BY_PROVIDER[c.provider];
-        if (state.luciel && channel) {
-          const ch = state.luciel.channels.find((x) => x.id === channel);
+        if (channel) {
+          // Per-channel: one Meta grant serves three channels, so binding one
+          // never unbinds another (contract §2).
+          const destinations = {
+            ...((c.nonSecretConfig?.destinations as Record<string, string> | undefined) ?? {}),
+            [channel]: value,
+          };
+          c.nonSecretConfig = { ...(c.nonSecretConfig ?? {}), destinations };
+        } else {
+          c.nonSecretConfig = { ...(c.nonSecretConfig ?? {}), destination: value };
+        }
+        const uiChannel = channel ? CHANNEL_BY_META_CHANNEL[channel] : undefined;
+        if (state.luciel && uiChannel) {
+          const ch = state.luciel.channels.find((x) => x.id === uiChannel);
           if (ch) ch.connectionStatus = c.status;
+        }
+        return ok(c);
+      },
+      async submitCredentials(connectionId, fields) {
+        guardVerified();
+        const c = state.connections.find((x) => x.connectionId === connectionId);
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        const option = seed.seedConnectionProviders
+          .find((p) => p.connectionType === c.connectionType)
+          ?.providers.find((p) => p.provider === c.provider);
+        if (!option || option.authKind !== 'credential_form') {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'This connection is completed with a sign-in, not typed details.',
+          });
+        }
+        for (const field of option.credentialFields) {
+          if (field.required && !fields[field.name]?.trim()) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: `${field.label} is required.`,
+            });
+          }
+        }
+        // The customer's own Twilio needs an Account SID plus EITHER an auth
+        // token OR an API key pair — neither is a 422 (contract §1a).
+        if (c.provider === 'twilio' && !fields.authToken?.trim() && !fields.apiKeySecret?.trim()) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Add either your Auth Token or an API Key SID and secret.',
+          });
+        }
+        // Secret fields go to the vault and are never echoed back (§3.8.3);
+        // only the non-secret ones are readable afterwards.
+        const nonSecret: Record<string, string> = {};
+        for (const field of option.credentialFields) {
+          const value = fields[field.name]?.trim();
+          if (!field.secret && value) nonSecret[field.name] = value;
+        }
+        c.nonSecretConfig = { ...(c.nonSecretConfig ?? {}), ...nonSecret };
+        if (c.connectionType === 'sms_sender') {
+          // An account with no designated number cannot text anyone yet.
+          c.status = 'unconfigured';
+          c.statusDetail = ACTION_ADD_NUMBER;
+        } else {
+          c.status = 'connected';
+          c.statusDetail = null;
+          c.lastHealthCheckAt = new Date().toISOString();
         }
         return ok(c);
       },
