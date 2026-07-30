@@ -44,6 +44,23 @@ export const widgetStyles = `
   }
   .vm-body { padding: ${space[4]}; }
   .vm-msg { margin: 0 0 ${space[3]}; }
+  /* Rendered markdown in assistant bubbles. The first paragraph goes inline so
+     it continues the "Luciel: " label instead of dropping to its own line. */
+  .vm-msg > p { margin: 0 0 ${space[2]}; }
+  .vm-msg > p:first-of-type { display: inline; }
+  .vm-msg > :last-child { margin-bottom: 0; }
+  .vm-msg ul, .vm-msg ol { margin: ${space[2]} 0; padding-left: ${space[4]}; }
+  .vm-msg li { margin: 0 0 2px; }
+  .vm-msg code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    background: ${color.surface};
+    border: 1px solid ${color.border};
+    border-radius: ${radius.control};
+    padding: 0 4px;
+  }
+  .vm-msg a { color: ${color.accent}; text-decoration: underline; }
+  .vm-msg a:focus-visible { outline: 2px solid ${color.focusRing}; outline-offset: 2px; }
   .vm-footer {
     padding: ${space[2]} ${space[4]};
     border-top: 1px solid ${color.border};

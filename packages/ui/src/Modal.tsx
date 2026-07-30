@@ -46,17 +46,24 @@ export function Modal({
         <Dialog.Content
           className={cn(
             'fixed left-1/2 top-1/2 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2',
-            'rounded-vm-card border border-vm-border bg-vm-bg p-vm-5 shadow-vm',
+            'flex max-h-[85vh] flex-col',
+            'rounded-vm-card border border-vm-border bg-vm-bg shadow-vm',
           )}
         >
-          <Dialog.Title className="font-heading text-vm-4">{title}</Dialog.Title>
-          {description && (
-            <Dialog.Description className="mt-vm-2 text-vm-1 text-vm-text-muted">
-              {description}
-            </Dialog.Description>
-          )}
-          {children && <div className="mt-vm-4">{children}</div>}
-          <div className="mt-vm-5 flex justify-end gap-vm-2">
+          <Dialog.Title className="shrink-0 px-vm-5 pt-vm-5 font-heading text-vm-4">
+            {title}
+          </Dialog.Title>
+          {/* Body scrolls; title and action row stay visible so long copy (the
+              A2P consent gate) is readable and confirmable on small screens. */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-vm-5">
+            {description && (
+              <Dialog.Description className="mt-vm-2 text-vm-1 text-vm-text-muted">
+                {description}
+              </Dialog.Description>
+            )}
+            {children && <div className="mt-vm-4">{children}</div>}
+          </div>
+          <div className="mt-vm-5 flex shrink-0 justify-end gap-vm-2 px-vm-5 pb-vm-5">
             <Dialog.Close asChild>
               <Button variant="ghost">{cancelLabel}</Button>
             </Dialog.Close>
