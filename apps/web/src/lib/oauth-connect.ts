@@ -18,12 +18,27 @@ import { isHttpAdapter } from './api';
  */
 
 /** The only hosts we hand the browser to (Wave 1 contract §2 provider table). */
-const PROVIDER_AUTHORIZE_HOSTS = ['accounts.google.com', 'login.salesforce.com', 'app.hubspot.com'];
+const PROVIDER_AUTHORIZE_HOSTS = [
+  'accounts.google.com',
+  'login.salesforce.com',
+  'app.hubspot.com',
+  'auth.calendly.com',
+  // Meta channel connect — WhatsApp and Instagram/Messenger (Decision #7).
+  'www.facebook.com',
+];
 
 const ACTION_NEEDED = 'Action needed:';
 
 /** Survives the round-trip to the provider; the callback needs the connection id. */
 const PENDING_KEY = 'luciel.pendingOauthConnection';
+
+/**
+ * Which callback route completes this flow. `knowledge` is the knowledge-sync
+ * route (unchanged, and the one that reports a failed exchange only in its 409
+ * body); `connection` is the GENERIC route that serves every other connection
+ * type and persists the failure reason on the row (contract §2).
+ */
+export type OauthCallbackKind = 'knowledge' | 'connection';
 
 export interface AuthorizeStart {
   /** Provider consent URL, or null for non-OAuth / unconfigured providers. */
@@ -35,6 +50,19 @@ export interface AuthorizeStart {
   connectionId?: string;
   /** Customer-facing name of the thing being connected. */
   label: string;
+  /** Defaults to the knowledge-sync route, which is where connectionIds came from first. */
+  callbackKind?: OauthCallbackKind;
+}
+
+export interface PendingConnection {
+  provider: string;
+  connectionId: string;
+  callbackKind: OauthCallbackKind;
+  /**
+   * The `state` read off the authorize URL. Providers echo `state` back on the
+   * redirect, so this is only a fallback for one that does not.
+   */
+  state?: string;
 }
 
 function isProviderAuthorizeUrl(url: string): boolean {
@@ -64,26 +92,53 @@ export function authorizeOrExplain(start: AuthorizeStart): string | null {
   if (!start.authorizeUrl || !isProviderAuthorizeUrl(start.authorizeUrl)) {
     return `We could not start a secure sign-in for ${start.label}. Please try again.`;
   }
-  if (start.connectionId) rememberPendingConnection(start.provider, start.connectionId);
+  if (start.connectionId) {
+    rememberPendingConnection({
+      provider: start.provider,
+      connectionId: start.connectionId,
+      callbackKind: start.callbackKind ?? 'knowledge',
+      state: stateFrom(start.authorizeUrl) ?? undefined,
+    });
+  }
   window.location.assign(start.authorizeUrl);
   return null;
 }
 
-export function rememberPendingConnection(provider: string, connectionId: string): void {
+/** The signed single-use CSRF proof the backend minted for this attempt. */
+function stateFrom(authorizeUrl: string): string | null {
   try {
-    sessionStorage.setItem(PENDING_KEY, JSON.stringify({ provider, connectionId }));
+    return new URL(authorizeUrl).searchParams.get('state');
+  } catch {
+    return null;
+  }
+}
+
+export function rememberPendingConnection(pending: PendingConnection): void {
+  try {
+    sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
   } catch {
     /* private mode / storage disabled — the callback falls back to the query. */
   }
 }
 
-/** The connection id stashed when this provider's connect flow started. */
-export function recallPendingConnection(provider: string): string | null {
+/**
+ * The flow stashed when this provider's connect started. A provider mismatch
+ * falls back to whatever single flow is pending: the redirect path segment is
+ * the backend's choice, and `state` is bound to (admin, instance, connection,
+ * provider) server-side, so a wrong guess is rejected there rather than here.
+ */
+export function recallPendingConnection(provider: string): PendingConnection | null {
   try {
     const raw = sessionStorage.getItem(PENDING_KEY);
     if (!raw) return null;
-    const pending = JSON.parse(raw) as { provider?: string; connectionId?: string };
-    return pending.provider === provider ? (pending.connectionId ?? null) : null;
+    const pending = JSON.parse(raw) as Partial<PendingConnection>;
+    if (!pending.connectionId) return null;
+    return {
+      provider: pending.provider ?? provider,
+      connectionId: pending.connectionId,
+      callbackKind: pending.callbackKind === 'connection' ? 'connection' : 'knowledge',
+      state: pending.state,
+    };
   } catch {
     return null;
   }

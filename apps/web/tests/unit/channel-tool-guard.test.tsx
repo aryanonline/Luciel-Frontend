@@ -99,9 +99,11 @@ describe('Axis5-F02: send_email tool blocked when Email channel is off', () => {
 });
 
 describe('Axis5-F02: tools without a channel dependency are never blocked', () => {
-  it('book_appointment toggle is enabled regardless of channel state', () => {
+  // schedule_callback belongs to no capability group, so it keeps its own toggle
+  // whatever GET /luciel/capabilities returns (Decision #8).
+  it('schedule_callback toggle is enabled regardless of channel state', () => {
     renderWithQuery(<ToolsPillar luciel={lucielSmsChannelOff} />);
-    const toggle = screen.getByRole('switch', { name: /Enable Book an appointment/i });
+    const toggle = screen.getByRole('switch', { name: /Enable Schedule a callback/i });
     expect(toggle).not.toBeDisabled();
   });
 });

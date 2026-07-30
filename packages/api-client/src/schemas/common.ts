@@ -21,6 +21,11 @@ export const connectionStatus = z.enum([
   'error', // -> "Action needed: [X] is having trouble"
   'expired', // -> "Reconnect needed"
   'revoked', // not shown to broker; lifecycle teardown
+  // Handed back by the admin via POST /connections/{id}/disconnect: the stored
+  // credential is destroyed but the row is still listed and RECONNECTABLE, which
+  // is what separates it from terminal `revoked` and from never-connected
+  // `unconfigured` (contract §1).
+  'not_connected',
   'dormant', // downgrade grace; restored on re-upgrade
   // SMS/Voice number supplied but the tenant's own A2P 10DLC Brand+Campaign
   // registration is not yet verified — NOT live; shown as "Action needed:

@@ -11,6 +11,7 @@ import type {
   CreateLucielRequest,
   ChannelConfig,
   AddonTool,
+  CapabilityGroup,
   EscalationContact,
   PersonalityConfig,
   KnowledgeSource,
@@ -26,6 +27,9 @@ import type {
   BillingInfo,
   CheckoutSession,
   Connection,
+  ConnectionProviders,
+  ConnectionType,
+  DisconnectResult,
   StartConnectionResult,
   ReverifySmsResult,
   EmailProvisioning,
@@ -75,6 +79,12 @@ export interface LucielApiClient {
     create(req: CreateLucielRequest): Promise<Luciel>;
     updateChannels(channels: ChannelConfig[]): Promise<Luciel>;
     updateTools(tools: AddonTool[]): Promise<Luciel>;
+    /**
+     * The owner-facing capability groups (contract §3, Decision #8). Read-only.
+     * Render the scheduling control from THIS, never from a hardcoded tool-id
+     * list — a baked-in member list silently keeps rendering yesterday's tools.
+     */
+    capabilities(): Promise<CapabilityGroup[]>;
     updateEscalation(contact: EscalationContact): Promise<Luciel>;
     updatePersonality(config: PersonalityConfig): Promise<Luciel>;
     /**
@@ -132,6 +142,12 @@ export interface LucielApiClient {
   connections: {
     list(): Promise<Connection[]>;
     /**
+     * The provider CHOICES to render per connection type (contract §1,
+     * Decision #6). `configured: false` means the platform cannot start that
+     * flow yet — render the option disabled, never hide it.
+     */
+    listProviders(connectionType?: ConnectionType): Promise<ConnectionProviders[]>;
+    /**
      * Start a connect flow. `opts.phoneNumber` carries the tenant's OWN E.164
      * number for the BYO SMS/Voice sender (Arch §3.1.4/§3.1.6, Decision #48) —
      * ADDITIVE and optional, so existing OAuth/credential callers are unchanged.
@@ -166,7 +182,41 @@ export interface LucielApiClient {
       code: string,
       state: string,
     ): Promise<KnowledgeSyncConnection>;
-    disconnect(connectionId: string): Promise<void>;
+    /**
+     * Complete an OAuth flow for a NON-knowledge connection (contract §2). One
+     * generic route serves every provider and every connection type. Same
+     * single-use `state` rule as completeOauth, plus: a `conflict` here is
+     * PERSISTED on the row, so re-read the connection and show its
+     * `statusDetail` rather than leaving the reason in a toast.
+     */
+    completeConnectionOauth(
+      connectionId: string,
+      code: string,
+      state: string,
+    ): Promise<Connection>;
+    /**
+     * Hand a connection back (contract §1): the stored credential is destroyed
+     * and the row returns to a reconnectable `not_connected`. The returned
+     * `disabledTools` / `disabledChannels` are what went off as a consequence —
+     * tell the owner at confirmation time ("Scheduling was switched off too").
+     */
+    disconnect(connectionId: string): Promise<DisconnectResult>;
+    /**
+     * "This account is wrong." Disconnect, THEN start a fresh connect flow, so
+     * nothing keeps serving from the account being left behind. Omit `provider`
+     * to switch accounts within the same provider. For re-credentialing an
+     * account that currently WORKS use `swap` (proven-before-cutover) instead.
+     */
+    switchAccount(connectionId: string, provider?: string | null): Promise<StartConnectionResult>;
+    /**
+     * Bind the Meta destination this `channel_auth` connection answers on
+     * (contract §2) — WhatsApp `phone_number_id` or Instagram/Messenger Page id.
+     * A connected Meta channel without one is NOT live: inbound routing resolves
+     * the tenant by this id alone, so messages are dropped as unresolvable.
+     */
+    bindDestination(connectionId: string, destination: string): Promise<Connection>;
+    /** Terminal teardown — drives the row to `revoked` (distinct from disconnect). */
+    revoke(connectionId: string): Promise<void>;
     /**
      * Email-address provisioning (Arch §3.1.6a, Decision #49). Returns the current
      * provisioning, or null if the admin has not provisioned an address yet.

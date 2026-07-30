@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { uuid, isoTimestamp, connectionStatus } from './common';
+import { connectionType } from './connections';
 
 /**
  * The Luciel instance + the five configuration pillars (Vision §3). Five
@@ -52,6 +53,10 @@ export type BuiltinCognition = z.infer<typeof builtinCognition>;
 export const addonToolId = z.enum([
   'check_availability',
   'book_appointment',
+  // Move/cancel a booking Luciel already made (Decision #8). Read-before-write,
+  // so they can come back `ambiguous` with candidates rather than guessing.
+  'reschedule_appointment',
+  'cancel_appointment',
   'send_email',
   'send_sms',
   'lookup_record',
@@ -66,8 +71,32 @@ export const addonTool = z.object({
   enabled: z.boolean(),
   /** Second gate: tool usable only when enabled AND connection healthy (Arch §3.8.7). */
   connectionStatus: connectionStatus.optional(),
+  /**
+   * Why the server is holding this tool off, e.g. `connection_disconnected:calendar`.
+   * SERVER-DERIVED and read-only — accepted and ignored on PUT so a client can send
+   * back a list it just read (contract §3).
+   */
+  disabledReason: z.string().nullable().optional(),
 });
 export type AddonTool = z.infer<typeof addonTool>;
+
+/**
+ * One owner-facing capability rolling several tool ids up (contract §3,
+ * Decision #8). Read-before-write is an internal mechanic, not two toggles, so
+ * "Appointment scheduling" is ONE control with ONE connect affordance for its
+ * `connectionType`. The member list is SERVED, never baked into the UI: that is
+ * how `reschedule_appointment` / `cancel_appointment` appear without a frontend
+ * change. Tools named by no group keep their individual toggles.
+ */
+export const capabilityGroup = z.object({
+  capability: z.string(),
+  label: z.string(),
+  helpText: z.string(),
+  toolIds: z.array(addonToolId),
+  /** The single connection the whole group is gated on; null = needs none. */
+  connectionType: connectionType.nullable(),
+});
+export type CapabilityGroup = z.infer<typeof capabilityGroup>;
 
 // --- Knowledge (Vision §3.3, Arch §3.2) --------------------------------------
 export const knowledgeSourceOrigin = z.enum([

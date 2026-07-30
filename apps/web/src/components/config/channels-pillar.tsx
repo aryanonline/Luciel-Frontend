@@ -12,8 +12,9 @@ import {
   Input,
   Button,
 } from '@luciel/ui';
-import type { Luciel, ChannelConfig } from '@luciel/api-client';
-import { useLucielMutations } from '@/lib/hooks';
+import type { ChannelId, Luciel, ChannelConfig } from '@luciel/api-client';
+import { useConnections, useLucielMutations } from '@/lib/hooks';
+import { ConnectionControl } from './connection-control';
 import { channelLabel, chipKind } from './labels';
 
 /**
@@ -42,12 +43,45 @@ import { channelLabel, chipKind } from './labels';
  * Channel-→tool cascade (Arch §3.3 / Decision §43): disabling the SMS channel
  * force-disables send_sms; disabling the Email channel force-disables send_email.
  * The tools-pillar UI also shows the tool toggle as blocked (see tools-pillar.tsx).
+ *
+ * WhatsApp and Instagram/Messenger are REAL Meta connections (Decision #7,
+ * contract §2): the same connection control every other pillar uses, with the
+ * provider pinned because the row already names it. Two things are specific to
+ * Meta and both are enforced by the control, not here — authorization alone does
+ * not make the channel live (the owner must supply the WhatsApp
+ * `phone_number_id` / Page id inbound routing resolves them by), and the two
+ * rows share ONE `channel_auth` connection, so connecting the second replaces
+ * the first.
  */
 
 /** Channel IDs whose disable cascades to a dependent send tool. */
 const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], string>> = {
   sms: 'send_sms',
   email: 'send_email',
+};
+
+/**
+ * The Meta channels and the destination each one answers on (contract §2). The
+ * owner pastes the id — there is no asset picker route, and guessing which of
+ * their numbers or Pages Luciel should answer on is not ours to guess.
+ */
+const META_CHANNEL: Partial<
+  Record<ChannelId, { provider: string; destination: { label: string; hint: string } }>
+> = {
+  whatsapp: {
+    provider: 'meta_whatsapp',
+    destination: {
+      label: 'WhatsApp phone number ID',
+      hint: 'In Meta Business Suite → WhatsApp Manager → API Setup, the "Phone number ID" (digits, not the phone number itself).',
+    },
+  },
+  instagram_messenger: {
+    provider: 'meta_instagram',
+    destination: {
+      label: 'Facebook Page ID',
+      hint: 'In your Facebook Page settings → About → Page ID. This is the Page your Instagram account is linked to.',
+    },
+  },
 };
 
 /** UX-only E.164 shape check (client validation is never a security control). */
@@ -64,6 +98,9 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     startConnection,
     reverifySmsNumber,
   } = useLucielMutations();
+  const connections = useConnections();
+  // One row per type (§3.8.2), so both Meta channels read the same one.
+  const metaConnection = connections.data?.find((c) => c.connectionType === 'channel_auth');
   const [voiceModalOpen, setVoiceModalOpen] = React.useState(false);
   const [consentChecked, setConsentChecked] = React.useState(false);
   const [smsModalOpen, setSmsModalOpen] = React.useState(false);
@@ -152,18 +189,39 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
           // SMS/Voice share the BYO number; their status is surfaced in the number
           // block below, so we don't render a duplicate per-row chip for them.
           const isPhoneChannel = c.id === 'sms' || c.id === 'voice';
-          const chip = isPhoneChannel ? null : chipKind(c.connectionStatus);
+          const meta = META_CHANNEL[c.id];
+          // A Meta row's status comes from the connection control, which knows
+          // that authorized-without-a-destination is not live (contract §2).
+          const showControl = Boolean(meta) && c.enabled;
+          const chip = isPhoneChannel || showControl ? null : chipKind(c.connectionStatus);
           return (
-            <li key={c.id} className="flex items-center justify-between py-vm-3">
-              <div className="flex items-center gap-vm-3">
-                <Toggle
-                  checked={c.enabled}
-                  onChange={(next) => setEnabled(c.id, next)}
-                  label={`Enable ${channelLabel[c.id]}`}
-                />
-                <span className="text-vm-2">{channelLabel[c.id]}</span>
+            <li key={c.id} className="py-vm-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-vm-3">
+                  <Toggle
+                    checked={c.enabled}
+                    onChange={(next) => setEnabled(c.id, next)}
+                    label={`Enable ${channelLabel[c.id]}`}
+                  />
+                  <span className="text-vm-2">{channelLabel[c.id]}</span>
+                </div>
+                {chip && c.enabled && <StatusChip kind={chip} />}
               </div>
-              {chip && c.enabled && <StatusChip kind={chip} />}
+              {showControl && meta && (
+                <div className="mt-vm-3 pl-[3.5rem]">
+                  <ConnectionControl
+                    connectionType="channel_auth"
+                    label={channelLabel[c.id]}
+                    connection={metaConnection}
+                    provider={meta.provider}
+                    destinationField={meta.destination}
+                  />
+                  <p className="mt-vm-2 text-vm-0 text-vm-text-muted" role="note">
+                    WhatsApp and Instagram / Messenger run on one Meta connection — connecting one
+                    of them replaces the other.
+                  </p>
+                </div>
+              )}
             </li>
           );
         })}

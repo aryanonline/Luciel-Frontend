@@ -29,8 +29,8 @@ export const connection = z.object({
   /** Provider-specific NON-secret config only (calendar id, field mappings, etc.). */
   nonSecretConfig: z.record(z.unknown()).optional(),
   /** Human-readable detail for error/expired states (never a secret). */
-  statusDetail: z.string().optional(),
-  lastHealthCheckAt: isoTimestamp.optional(),
+  statusDetail: z.string().nullable().optional(),
+  lastHealthCheckAt: isoTimestamp.nullable().optional(),
   createdAt: isoTimestamp,
 });
 export type Connection = z.infer<typeof connection>;
@@ -65,6 +65,86 @@ export const startConnectionResult = z.object({
   statusDetail: z.string().nullable().optional(),
 });
 export type StartConnectionResult = z.infer<typeof startConnectionResult>;
+
+/**
+ * Provider CHOICE per connection type (contract §1, Decision #6). The registry
+ * is served, never hardcoded in the UI: a customer on a different CRM is not
+ * stuck with whichever vendor we happened to render first.
+ */
+export const providerAuthKind = z.enum(['oauth', 'credential_form']);
+export type ProviderAuthKind = z.infer<typeof providerAuthKind>;
+
+/** Non-null means the connection supports the knowledge scope endpoints (§4). */
+export const providerScopeKind = z.enum(['drive_folders', 'notion_pages']);
+export type ProviderScopeKind = z.infer<typeof providerScopeKind>;
+
+/** One field of a `credential_form` provider's form. `secret` is never echoed back. */
+export const providerCredentialField = z.object({
+  name: z.string(),
+  label: z.string(),
+  secret: z.boolean(),
+  required: z.boolean(),
+});
+export type ProviderCredentialField = z.infer<typeof providerCredentialField>;
+
+export const providerOption = z.object({
+  provider: z.string(),
+  displayName: z.string(),
+  authKind: providerAuthKind,
+  helpText: z.string(),
+  /**
+   * Whether the PLATFORM holds the OAuth app credential for this provider.
+   * `false` means we cannot start the flow yet — render the option DISABLED
+   * rather than hiding it, so the choice stays visible (contract §1).
+   */
+  configured: z.boolean(),
+  credentialFields: z.array(providerCredentialField),
+  scopeKind: providerScopeKind.nullable(),
+});
+export type ProviderOption = z.infer<typeof providerOption>;
+
+export const connectionProviders = z.object({
+  connectionType,
+  providers: z.array(providerOption),
+});
+export type ConnectionProviders = z.infer<typeof connectionProviders>;
+
+/** `provider` omitted/null = switch ACCOUNTS within the same provider (§1). */
+export const switchConnectionRequest = z.object({
+  provider: z.string().nullable().optional(),
+});
+export type SwitchConnectionRequest = z.infer<typeof switchConnectionRequest>;
+
+/**
+ * What "hand this connection back" actually did (contract §1). The disabled
+ * lists are a consequence the owner must be TOLD about at confirmation time —
+ * discovering it from a failed booking is the failure mode this replaces.
+ */
+export const disconnectResult = z.object({
+  connection,
+  secretDeleted: z.boolean(),
+  disabledTools: z.array(z.string()),
+  disabledChannels: z.array(z.string()),
+});
+export type DisconnectResult = z.infer<typeof disconnectResult>;
+
+/** Generic OAuth completion — one route for every provider/type (contract §2). */
+export const oauthCallbackRequest = z.object({
+  code: z.string().min(1),
+  state: z.string().min(1),
+});
+export type OauthCallbackRequest = z.infer<typeof oauthCallbackRequest>;
+
+/**
+ * Bind the Meta destination a `channel_auth` connection answers on (contract §2):
+ * the WhatsApp `phone_number_id` or the Instagram/Messenger Page id. Inbound
+ * routing resolves a tenant SOLELY by this id, so a connected channel without one
+ * receives nothing.
+ */
+export const bindDestinationRequest = z.object({
+  destination: z.string().min(1).max(128),
+});
+export type BindDestinationRequest = z.infer<typeof bindDestinationRequest>;
 
 /**
  * Result of an on-demand A2P 10DLC re-verify of the BYO SMS/Voice number
