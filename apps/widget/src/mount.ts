@@ -79,10 +79,19 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   options.host.appendChild(shadowHost);
 
   // Paused → render an EMPTY <div>. No error, no "offline" (Arch §3.6.2).
+  // Checked before positioning so a paused Luciel leaves no floating chrome.
   if (boot.renderState === 'paused') {
     shadow.appendChild(document.createElement('div'));
     return;
   }
+
+  // Pin the host out of the page's normal flow (P0-1). Set inline rather than
+  // through `:host`, because a host page's own rules outrank a `:host` rule for
+  // this element and an embed a customer's CSS can un-pin is a broken embed.
+  shadowHost.style.position = 'fixed';
+  shadowHost.style.bottom = '16px';
+  shadowHost.style.right = '16px';
+  shadowHost.style.zIndex = '2147483000';
 
   const style = document.createElement('style');
   style.textContent = widgetStyles;
@@ -92,12 +101,15 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   root.className = 'vm-root';
   root.setAttribute('role', 'region');
   root.setAttribute('aria-label', `${boot.businessName} chat assistant`);
+  root.setAttribute('data-open', 'false');
 
   // Session state for the chat loop.
   let sessionId: string | undefined;
   let renderState: WidgetBootstrap['renderState'] = boot.renderState;
 
-  // Header carries the persistent "AI assistant" label (Arch §3.4.16).
+  // Header carries the persistent "AI assistant" label (Arch §3.4.16) and the
+  // close affordance. The label sits before the close button so it stays
+  // visible whenever the panel is open.
   const header = document.createElement('div');
   header.className = 'vm-header';
   const title = document.createElement('span');
@@ -106,10 +118,16 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   const aiLabel = document.createElement('span');
   aiLabel.className = 'vm-ai-label';
   aiLabel.textContent = boot.aiAssistantLabel; // "AI assistant"
-  header.append(title, aiLabel);
+  const closeButton = document.createElement('button');
+  closeButton.className = 'vm-close';
+  closeButton.type = 'button';
+  closeButton.setAttribute('aria-label', 'Close chat');
+  closeButton.textContent = '✕';
+  header.append(title, aiLabel, closeButton);
 
   const panel = document.createElement('div');
   panel.className = 'vm-panel';
+  panel.id = 'vm-panel';
 
   const body = document.createElement('div');
   body.className = 'vm-body';
@@ -155,25 +173,47 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   send.textContent = 'Send';
   inputRow.append(input, send);
 
+  // Typing bubble shown between the visitor's message and the reply, so a slow
+  // answer reads as "working on it" rather than dead air (P1-20).
+  const showTyping = () => {
+    const typing = document.createElement('div');
+    typing.className = 'vm-typing';
+    typing.setAttribute('data-vm-typing', '');
+    typing.setAttribute('aria-label', `${boot.assistantName} is typing`);
+    for (let i = 0; i < 3; i += 1) typing.appendChild(document.createElement('span'));
+    body.appendChild(typing);
+    body.scrollTop = body.scrollHeight;
+    return typing;
+  };
+
+  let sending = false;
   const doSend = async () => {
     const text = input.value.trim();
-    if (!text || renderState !== 'active') return;
+    // The in-flight guard is what stops a second Enter duplicating the message.
+    if (sending || !text || renderState !== 'active') return;
+    sending = true;
+    input.disabled = true;
+    send.disabled = true;
     appendMessage('visitor', text);
     input.value = '';
+    const typing = showTyping();
     try {
       const res = await client.send(options.embedKey, { sessionId, text });
       sessionId = res.sessionId;
       renderState = res.renderState;
       appendMessage('assistant', res.reply.text);
       live.textContent = markdownToPlainText(res.reply.text); // announce incoming (Arch §5.16)
-      // At-cap is server-driven: the widget just renders the graceful reply
-      // it receives, then disables further input (Arch §3.4.1b).
-      if (renderState === 'at_cap') {
-        input.disabled = true;
-        send.disabled = true;
-      }
     } catch {
       appendMessage('assistant', 'Sorry — something went wrong. Please try again.');
+    } finally {
+      typing.remove();
+      sending = false;
+      // At-cap is server-driven: the widget just renders the graceful reply
+      // it receives, then leaves the input disabled (Arch §3.4.1b).
+      const atCap = renderState === 'at_cap';
+      input.disabled = atCap;
+      send.disabled = atCap;
+      if (!atCap) input.focus();
     }
   };
   send.addEventListener('click', () => void doSend());
@@ -186,7 +226,42 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   footer.className = 'vm-footer';
   footer.textContent = boot.poweredByVantageMind ? 'Powered by VantageMind' : '';
 
+  // Circular launcher — closed by default, so the embed never rearranges the
+  // customer's page (P0-1).
+  const launcher = document.createElement('button');
+  launcher.className = 'vm-launcher';
+  launcher.type = 'button';
+  launcher.setAttribute('aria-expanded', 'false');
+  launcher.setAttribute('aria-controls', panel.id);
+  launcher.setAttribute('aria-label', `Chat with ${boot.businessName}`);
+  launcher.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    '<path d="M12 3C6.94 3 3 6.36 3 10.5c0 2.3 1.23 4.35 3.18 5.72V21l3.4-2.05c.78.17 1.6.26 2.42.26 5.06 0 9-3.36 9-7.5S17.06 3 12 3z"/>' +
+    '</svg>';
+
+  const setOpen = (open: boolean) => {
+    root.setAttribute('data-open', String(open));
+    launcher.setAttribute('aria-expanded', String(open));
+    launcher.setAttribute(
+      'aria-label',
+      open ? 'Close chat' : `Chat with ${boot.businessName}`,
+    );
+    if (open && !input.disabled) input.focus();
+    else if (!open) launcher.focus();
+  };
+
+  launcher.addEventListener('click', () => {
+    setOpen(root.getAttribute('data-open') !== 'true');
+  });
+  closeButton.addEventListener('click', () => setOpen(false));
+  // Escape closes the panel, but must not fight the host page when closed.
+  root.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Escape' && root.getAttribute('data-open') === 'true') {
+      setOpen(false);
+    }
+  });
+
   panel.append(header, body, inputRow, footer);
-  root.appendChild(panel);
+  root.append(panel, launcher);
   shadow.appendChild(root);
 }
