@@ -61,6 +61,8 @@ export default function LeadsPage() {
   const [pruneIds, setPruneIds] = React.useState<string[] | null>(null);
   const [exportError, setExportError] = React.useState<string | null>(null);
   const [exporting, setExporting] = React.useState(false);
+  const [archiving, setArchiving] = React.useState<string | null>(null);
+  const [archiveError, setArchiveError] = React.useState<string | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: qk.leads });
 
@@ -84,10 +86,23 @@ export default function LeadsPage() {
     setSelected(checked ? visible.map((l) => l.leadId) : []);
 
   const archive = async (leadId: string) => {
-    await api.leads.archive(leadId);
-    refresh();
+    setArchiveError(null);
+    setArchiving(leadId);
+    try {
+      await api.leads.archive(leadId);
+      refresh();
+    } catch {
+      setArchiveError('We could not archive that lead. It is unchanged — please try again.');
+    } finally {
+      setArchiving(null);
+    }
   };
 
+  /**
+   * Throws on failure ON PURPOSE: the Modal renders the error and stays open, so
+   * a prune that did not happen can never look like one that did (P0-6). The
+   * selection is only cleared once the delete is confirmed.
+   */
   const prune = async () => {
     if (!pruneIds) return;
     await api.leads.prune(pruneIds);
@@ -152,11 +167,11 @@ export default function LeadsPage() {
             </span>
           </label>
           <div className="flex flex-wrap items-center gap-vm-2">
-            <Button variant="ghost" disabled={exporting} onClick={() => exportLeads('csv')}>
-              Export CSV
+            <Button variant="ghost" disabled={exporting} onClick={() => void exportLeads('csv')}>
+              {exporting ? 'Preparing…' : 'Export CSV'}
             </Button>
-            <Button variant="ghost" disabled={exporting} onClick={() => exportLeads('json')}>
-              Export JSON
+            <Button variant="ghost" disabled={exporting} onClick={() => void exportLeads('json')}>
+              {exporting ? 'Preparing…' : 'Export JSON'}
             </Button>
             {selectedVisible.length > 0 && (
               <Button
@@ -172,6 +187,11 @@ export default function LeadsPage() {
         {exportError && (
           <Banner tone="danger" className="mt-vm-3">
             {exportError}
+          </Banner>
+        )}
+        {archiveError && (
+          <Banner tone="danger" className="mt-vm-3">
+            {archiveError}
           </Banner>
         )}
 
@@ -209,8 +229,12 @@ export default function LeadsPage() {
                 {isStale(l) && <span className="text-vm-0 text-vm-text-muted">stale</span>}
                 {l.state === 'archived' && <StatusChip kind="connected" detail="archived (kept)" />}
                 {l.state === 'active' && (
-                  <Button variant="ghost" onClick={() => archive(l.leadId)}>
-                    Archive
+                  <Button
+                    variant="ghost"
+                    disabled={archiving === l.leadId}
+                    onClick={() => void archive(l.leadId)}
+                  >
+                    {archiving === l.leadId ? 'Archiving…' : 'Archive'}
                   </Button>
                 )}
                 <Button variant="ghost" onClick={() => setPruneIds([l.leadId])}>
@@ -219,13 +243,29 @@ export default function LeadsPage() {
               </div>
             </li>
           ))}
-          {visible.length === 0 && (
-            <li className="py-vm-4 text-vm-1 text-vm-text-muted">
-              {staleOnly && all.length > 0
-                ? `No leads have been inactive for over ${STALE_AFTER_MONTHS} months.`
-                : 'No leads yet.'}
-            </li>
-          )}
+          {/* "Still loading", "we could not load" and "genuinely none" are three
+              different things; only the last is good news (P1-9). */}
+          {visible.length === 0 &&
+            (leads.isPending ? (
+              <li className="py-vm-4 text-vm-1 text-vm-text-muted" role="status">
+                Loading your leads…
+              </li>
+            ) : leads.isError ? (
+              <li className="py-vm-4">
+                <Banner tone="danger">
+                  We could not load your leads.{' '}
+                  <button className="underline" onClick={() => void leads.refetch()}>
+                    Try again
+                  </button>
+                </Banner>
+              </li>
+            ) : (
+              <li className="py-vm-4 text-vm-1 text-vm-text-muted">
+                {staleOnly && all.length > 0
+                  ? `No leads have been inactive for over ${STALE_AFTER_MONTHS} months.`
+                  : 'No leads yet.'}
+              </li>
+            ))}
         </ul>
       </Card>
 
@@ -286,6 +326,7 @@ export default function LeadsPage() {
         }
         confirmLabel={pruneCount > 1 ? `Prune ${pruneCount} permanently` : 'Prune permanently'}
         confirmVariant="danger"
+        confirmPendingLabel={pruneCount > 1 ? `Pruning ${pruneCount}…` : 'Pruning…'}
         onConfirm={prune}
       />
     </div>
