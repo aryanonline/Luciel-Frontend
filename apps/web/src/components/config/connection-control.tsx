@@ -51,17 +51,17 @@ export interface ConnectionControlProps {
   /** The row backing this connection today, if there is one. */
   connection?: Connection;
   /**
-   * Pins the provider instead of letting the owner pick — a channel row implies
-   * its provider (every Meta channel is the one Meta grant). The pinned option
-   * is still read from the registry, so `configured: false` still disables it.
+   * Pins the provider instead of letting the owner pick — a messaging surface
+   * implies its provider. The pinned option is still read from the registry, so
+   * `configured: false`, or the registry not carrying it, still disables it.
    */
   provider?: string;
   /** Used when the registry offers no choice for this type (email sender, webhook). */
   fallbackProvider?: string;
   /**
-   * Collect the destination this surface answers on once connected — Meta
-   * `channel_auth` (contract §2). `channels` names which of the one Meta
-   * grant's channels this row binds, so binding one never unbinds another.
+   * Collect the destination this surface answers on once connected (contract
+   * §2). `channels` names which of the grant's channels this row binds, so
+   * binding one never unbinds another.
    */
   destinationField?: { label: string; hint: string; channels?: MetaChannel[] };
   /** Plain reason shown when nothing here can be connected yet (honest-disabled). */
@@ -129,7 +129,12 @@ export function ConnectionControl({
   const pinned = provider ? options.find((o) => o.provider === provider) : undefined;
   const choices = pinned ? [pinned] : options;
   const connectable = choices.filter((o) => o.configured);
-  const nothingAvailable = choices.length > 0 && connectable.length === 0;
+  // A pinned provider the registry does not carry at all cannot be started
+  // either, so it is the same honest-disabled case as `configured: false` — not
+  // a connect button that dead-ends on "Action needed" after the click. Waits
+  // for the read to settle, so a loading registry does not read as unavailable.
+  const pinnedMissing = Boolean(provider) && providers.isSuccess && !pinned;
+  const nothingAvailable = connectable.length === 0 && (choices.length > 0 || pinnedMissing);
 
   const [chosen, setChosen] = React.useState<string | null>(null);
   /** Failures were rendered in the same calm info tone as successes, so "we
@@ -284,7 +289,7 @@ export function ConnectionControl({
 
       <div className="flex flex-wrap items-center gap-vm-3">
         {needsDestination ? (
-          <StatusChip kind="action_needed" detail="choose the number Luciel answers on" />
+          <StatusChip kind="action_needed" detail="name the id Luciel answers on" />
         ) : (
           <StatusChip
             kind={chipKind(status) ?? 'action_needed'}
@@ -418,11 +423,11 @@ export function ConnectionControl({
         </div>
       )}
 
-      {/* Meta destination step: connected is not live until this is bound (§2). */}
+      {/* Destination step: connected is not live until this is bound (§2). */}
       {needsDestination && destinationField && (
         <div className="rounded-vm-card border border-vm-border p-vm-3">
           <p className="text-vm-1">
-            Your Meta account is authorized. Tell us which one {label} answers on — messages to any
+            {providerName} is authorized. Tell us which one {label} answers on — messages to any
             other one are dropped, because that id is how we route them to you.
           </p>
           <div className="mt-vm-3 flex items-end gap-vm-2">

@@ -23,8 +23,11 @@ const PROVIDER_AUTHORIZE_HOSTS = [
   'login.salesforce.com',
   'app.hubspot.com',
   'auth.calendly.com',
-  // Meta channel connect — WhatsApp and Instagram/Messenger (Decision #7).
+  // Meta channel connect — WhatsApp and Messenger (Decision #7).
   'www.facebook.com',
+  // Instagram DMs sign in on Business Login for Instagram, which is a different
+  // consent host from Facebook's — a Meta connection is two hosts, not one.
+  'www.instagram.com',
 ];
 
 const ACTION_NEEDED = 'Action needed:';

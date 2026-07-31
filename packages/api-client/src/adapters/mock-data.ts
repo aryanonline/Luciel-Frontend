@@ -157,18 +157,32 @@ export const seedConnectionProviders: ConnectionProviders[] = [
     ],
   },
   {
-    // ONE Meta grant authorizes WhatsApp, Instagram DMs and Messenger; each
-    // channel then names its own destination (contract §2). The old
-    // meta_whatsapp/meta_instagram pair shared this single-active type, so
-    // connecting the second silently disconnected the first.
+    // ONE Facebook grant authorizes WhatsApp and Messenger; each channel then
+    // names its own destination (contract §2). Instagram is NOT on this grant —
+    // Facebook rejects the instagram_* scopes and fails the whole dialog, so it
+    // has its own client and its own connection type below.
     connectionType: 'channel_auth',
     providers: [
       {
         provider: 'meta',
-        displayName: 'Meta',
+        displayName: 'Meta (WhatsApp & Messenger)',
         authKind: 'oauth',
         helpText:
-          'One sign-in to your Meta Business account covers WhatsApp, Instagram DMs and Messenger.',
+          'One sign-in to your Meta Business account covers WhatsApp and Facebook Messenger.',
+        configured: false,
+        credentialFields: [],
+        scopeKind: null,
+      },
+    ],
+  },
+  {
+    connectionType: 'instagram_auth',
+    providers: [
+      {
+        provider: 'instagram',
+        displayName: 'Instagram',
+        authKind: 'oauth',
+        helpText: 'Sign in to the Instagram professional account Luciel answers DMs on.',
         configured: false,
         credentialFields: [],
         scopeKind: null,
