@@ -19,15 +19,27 @@ type FormValues = z.infer<typeof schema>;
 
 export default function ForgotPage() {
   const [sent, setSent] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
+  /**
+   * Non-enumeration means we don't say whether the address is registered — it
+   * does not mean we claim to have sent a link we never sent. A rejected
+   * request has to say so, or the admin waits on an email that isn't coming
+   * (P1-17).
+   */
   const onSubmit = handleSubmit(async (values) => {
-    await api.auth.forgotPassword(values);
-    setSent(true);
+    setFailed(false);
+    try {
+      await api.auth.forgotPassword(values);
+      setSent(true);
+    } catch {
+      setFailed(true);
+    }
   });
 
   return (
@@ -43,6 +55,11 @@ export default function ForgotPage() {
         </Banner>
       ) : (
         <form onSubmit={onSubmit} className="mt-vm-5" noValidate>
+          {failed && (
+            <Banner tone="danger" className="mb-vm-4">
+              We could not send the reset link just now. No email has gone out — please try again.
+            </Banner>
+          )}
           <Field id="email" label="Email" error={errors.email?.message} required>
             {(p) => <Input type="email" autoComplete="email" {...p} {...register('email')} />}
           </Field>
