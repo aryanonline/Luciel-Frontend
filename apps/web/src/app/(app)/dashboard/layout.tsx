@@ -12,7 +12,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <AuthGuard>
       <AccountNotices />
-      <div className="flex gap-vm-6">
+      {/* Stacked below `lg` so the nav does not compete with the page for width
+          on a phone (P0-9). */}
+      <div className="flex flex-col gap-vm-4 lg:flex-row lg:gap-vm-6">
         <DashboardNav />
         <div className="min-w-0 flex-1">{children}</div>
       </div>
