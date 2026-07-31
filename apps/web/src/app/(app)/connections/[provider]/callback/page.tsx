@@ -95,7 +95,7 @@ function CallbackInner() {
   }, [provider, code, oauthState, connectionId, callbackKind, providerError, router]);
 
   return (
-    <div style={{ maxWidth: 460, margin: '96px auto' }}>
+    <div className="mx-auto max-w-md px-vm-5 py-vm-8">
       <Card>
         <CardTitle>
           {status === 'working' && 'Connecting…'}
@@ -105,8 +105,11 @@ function CallbackInner() {
         <CardDescription>{message}</CardDescription>
         {status === 'error' && (
           <>
+            {/* The conflict path above exists because the backend PERSISTED the
+                failure on the connection row, so "nothing was changed" was not
+                true on the one path most likely to reach it (P2-12). */}
             <Banner tone="danger">
-              The connection was not completed. Nothing was changed, and this link cannot be reused.
+              The connection was not completed, and this link cannot be reused.
             </Banner>
             <Button onClick={() => router.replace('/dashboard/configure')}>
               Start the connection again

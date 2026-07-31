@@ -14,7 +14,10 @@ import {
  */
 export type WidgetAdapterKind = CreateWidgetClientConfig['adapter'];
 
-const envAdapter = (process.env.NEXT_PUBLIC_API_ADAPTER ?? 'mock') as WidgetAdapterKind;
+// Same default as lib/api.ts: the mock is opt-in, never the production
+// fallback (P2-15).
+const envAdapter = (process.env.NEXT_PUBLIC_API_ADAPTER ??
+  (process.env.NODE_ENV === 'production' ? 'http' : 'mock')) as WidgetAdapterKind;
 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 /** Defaults to the deployed adapter; pass 'mock' for a canned demo surface. */
