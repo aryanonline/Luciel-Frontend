@@ -18,9 +18,15 @@ export interface BannerProps {
   tone?: BannerTone;
   children: React.ReactNode;
   className?: string;
+  /**
+   * Adds a close control. Only for a notice the owner is finished with once
+   * they have read it — a standing disclosure must not be dismissable, or it
+   * stops being a disclosure.
+   */
+  onDismiss?: () => void;
 }
 
-export function Banner({ tone = 'info', children, className }: BannerProps) {
+export function Banner({ tone = 'info', children, className, onDismiss }: BannerProps) {
   const c = config[tone];
   return (
     <div
@@ -34,7 +40,17 @@ export function Banner({ tone = 'info', children, className }: BannerProps) {
       <span aria-hidden="true" className="mt-0.5">
         {c.glyph}
       </span>
-      <div>{children}</div>
+      <div className="flex-1">{children}</div>
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss this message"
+          className="-mr-vm-1 -mt-vm-1 rounded-vm-card px-vm-2 py-vm-1 text-vm-1 leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vm-focus focus-visible:ring-offset-2"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      )}
     </div>
   );
 }

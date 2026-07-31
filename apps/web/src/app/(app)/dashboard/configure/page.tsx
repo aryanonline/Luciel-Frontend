@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Banner, Button, PageHeader } from '@luciel/ui';
 import { useLuciel } from '@/lib/hooks';
+import { ConsentLanding } from '@/components/config/consent-landing';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
 import { ToolsPillar } from '@/components/config/tools-pillar';
 import { KnowledgePillar } from '@/components/config/knowledge-pillar';
@@ -16,6 +17,18 @@ import { PersonalityPillar } from '@/components/config/personality-pillar';
  * (Vision §3). All five stay editable at any time (Arch §3.7.1).
  */
 export default function ConfigurePage() {
+  return (
+    <div className="space-y-vm-5">
+      {/* Ahead of the configuration itself: this is where a provider's consent
+          screen sends the owner back to, and they are owed that outcome even
+          when the read behind it is still loading — or failed. */}
+      <ConsentLanding />
+      <ConfigureBody />
+    </div>
+  );
+}
+
+function ConfigureBody() {
   const { data: luciel, isPending, isError, refetch } = useLuciel();
 
   if (isPending) {
@@ -49,7 +62,7 @@ export default function ConfigurePage() {
   }
 
   return (
-    <div className="space-y-vm-5">
+    <>
       <PageHeader
         title={`Configure ${luciel.name}`}
         description="Five things to set. You can change any of them at any time — you adjust the role, you don't re-hire."
@@ -80,6 +93,6 @@ export default function ConfigurePage() {
           <Link href="/dashboard/embed">Go to embed &amp; launch</Link>
         </Button>
       </div>
-    </div>
+    </>
   );
 }
