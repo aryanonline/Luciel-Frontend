@@ -16,13 +16,24 @@ import { PersonalityPillar } from '@/components/config/personality-pillar';
  * (Vision §3). All five stay editable at any time (Arch §3.7.1).
  */
 export default function ConfigurePage() {
-  const { data: luciel, isLoading } = useLuciel();
+  const { data: luciel, isPending, isError, refetch } = useLuciel();
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <p className="text-vm-1 text-vm-text-muted" role="status">
         Loading your configuration…
       </p>
+    );
+  }
+  if (isError) {
+    // "You don't have a Luciel yet" is a claim we cannot make while the read failed.
+    return (
+      <Banner tone="danger">
+        We could not load your configuration.{' '}
+        <button className="underline" onClick={() => void refetch()}>
+          Try again
+        </button>
+      </Banner>
     );
   }
   if (!luciel) {
@@ -58,9 +69,15 @@ export default function ConfigurePage() {
       <EscalationPillar luciel={luciel} />
       <PersonalityPillar luciel={luciel} />
 
-      <div className="flex justify-end">
+      {/* Each pillar saves itself, so this link saves nothing — calling it "Save"
+          promised a write that never happened (P1-1). It is navigation, and it
+          says so. */}
+      <div className="flex flex-wrap items-center justify-end gap-vm-3">
+        <span className="text-vm-0 text-vm-text-muted">
+          Each section above saves on its own — there is nothing left to save here.
+        </span>
         <Button asChild variant="primary">
-          <Link href="/dashboard/embed">Save and go to embed</Link>
+          <Link href="/dashboard/embed">Go to embed &amp; launch</Link>
         </Button>
       </div>
     </div>

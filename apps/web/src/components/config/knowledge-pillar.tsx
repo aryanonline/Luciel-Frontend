@@ -31,6 +31,11 @@ import { KnowledgeScopeSections } from './knowledge-scope';
  */
 const fmtBytes = (n: number) => `${(n / 1_000_000).toFixed(1)} MB`;
 
+/** Quota figures are whatever the server says they are, so they must be shown
+ *  that way rather than as the hardcoded 5 GB / 50 MB of the current plan. */
+const fmtLimit = (n: number) =>
+  n >= 1_000_000_000 ? `${+(n / 1_000_000_000).toFixed(1)} GB` : `${+(n / 1_000_000).toFixed(1)} MB`;
+
 const UPLOAD_ACCEPT = '.pdf,.docx,.txt,.csv';
 /** Fallback only — the live limit comes from the quota endpoint. */
 const PER_FILE_MAX_BYTES = 50_000_000;
@@ -160,10 +165,18 @@ export function KnowledgePillar() {
       return `Re-synced “${source.name}”.`;
     });
 
+  /**
+   * Throws on failure on purpose. The audit suggested routing this through
+   * `run()`, but `run()` reports into a Banner behind the dialog, so a failed
+   * delete would still close the modal and read as a successful one; since P0-4
+   * the Modal owns pending and error itself and stays open (P2-7).
+   */
   const onDelete = async () => {
     if (!toDelete) return;
+    const name = toDelete.name;
     await api.knowledge.deleteSource(toDelete.sourceId);
     setToDelete(null);
+    setNotice({ tone: 'info', text: `Deleted “${name}” from your knowledge base.` });
     qc.invalidateQueries({ queryKey: qk.knowledge });
     qc.invalidateQueries({ queryKey: qk.quota });
   };
@@ -241,7 +254,7 @@ export function KnowledgePillar() {
           className="mt-vm-4"
           value={quota.data.usedBytes}
           max={quota.data.totalBytes}
-          label={`${fmtBytes(quota.data.usedBytes)} / 5 GB used (50 MB per file)`}
+          label={`${fmtBytes(quota.data.usedBytes)} / ${fmtLimit(quota.data.totalBytes)} used (${fmtLimit(quota.data.perFileMaxBytes)} per file)`}
         />
       )}
 
@@ -285,6 +298,30 @@ export function KnowledgePillar() {
             </div>
           </li>
         ))}
+        {/* "Still loading", "we could not load" and "you have not added anything
+            yet" are three different things; only the last invites an upload
+            (P2-4). */}
+        {!sources.data?.length &&
+          (sources.isPending ? (
+            <li className="py-vm-3 text-vm-1 text-vm-text-muted" role="status">
+              Loading your sources…
+            </li>
+          ) : sources.isError ? (
+            <li className="py-vm-3">
+              <Banner tone="danger">
+                We could not load your knowledge sources, so this list is not shown rather than
+                shown empty.{' '}
+                <button className="underline" onClick={() => void sources.refetch()}>
+                  Try again
+                </button>
+              </Banner>
+            </li>
+          ) : (
+            <li className="py-vm-3 text-vm-1 text-vm-text-muted">
+              Nothing here yet — upload a file, paste text, or crawl a page above, and your Luciel
+              will start answering from it.
+            </li>
+          ))}
       </ul>
 
       {/* Scope selection for connected Drive/Notion sources (Decision #9). */}
@@ -394,6 +431,7 @@ export function KnowledgePillar() {
           </>
         }
         confirmLabel="Delete source"
+        confirmPendingLabel="Deleting…"
         confirmVariant="danger"
         onConfirm={onDelete}
       />

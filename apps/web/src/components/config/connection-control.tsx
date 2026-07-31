@@ -18,6 +18,7 @@ import {
   type StartedConnectFlow,
 } from '@/lib/hooks';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
+import type { ActionNotice } from '@/lib/use-action-notice';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { channelLabel, chipKind, toolMeta } from './labels';
 
@@ -131,7 +132,10 @@ export function ConnectionControl({
   const nothingAvailable = choices.length > 0 && connectable.length === 0;
 
   const [chosen, setChosen] = React.useState<string | null>(null);
-  const [notice, setNotice] = React.useState<string | null>(null);
+  /** Failures were rendered in the same calm info tone as successes, so "we
+   *  could not connect" looked like "connected" (P2-8). */
+  const [notice, setNotice] = React.useState<ActionNotice | null>(null);
+  const say = (tone: ActionNotice['tone'], text: string) => setNotice({ tone, text });
   const [switching, setSwitching] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [credentials, setCredentials] = React.useState<Record<string, string>>({});
@@ -176,7 +180,7 @@ export function ConnectionControl({
     submitCredentials.isPending;
 
   const failed = (err: unknown, fallbackMessage: string) =>
-    setNotice(err instanceof LucielApiError ? err.message : fallbackMessage);
+    say('danger', err instanceof LucielApiError ? err.message : fallbackMessage);
 
   /**
    * One connect action for both classes. An OAuth provider is handed to the
@@ -191,13 +195,13 @@ export function ConnectionControl({
       if (start.requiresClientForm || isCredentialForm) {
         const connectionId = start.connectionId ?? connection?.connectionId;
         if (!connectionId) {
-          setNotice(`We could not start the connection for ${providerName}. Please try again.`);
+          say('danger', `We could not start the connection for ${providerName}. Please try again.`);
           return;
         }
         await submitCredentials.mutateAsync({ connectionId, fields: credentials });
         setCredentials({});
         setSwitching(false);
-        setNotice(`${providerName} is connected. Your details are stored in the secrets vault.`);
+        say('info', `${providerName} is connected. Your details are stored in the secrets vault.`);
         return;
       }
       const explanation = authorizeOrExplain({
@@ -206,7 +210,7 @@ export function ConnectionControl({
         label: providerName,
         callbackKind: 'connection',
       });
-      if (explanation) setNotice(explanation);
+      if (explanation) say('danger', explanation);
     } catch (err) {
       failed(err, `We could not connect ${providerName}. Please try again.`);
     }
@@ -239,7 +243,8 @@ export function ConnectionControl({
     try {
       const result = await disconnect.mutateAsync({ connectionId: connection.connectionId });
       const consequence = disabledSummary(result.disabledTools, result.disabledChannels);
-      setNotice(
+      say(
+        'info',
         [`${providerName} is disconnected and its saved credentials were deleted.`, consequence]
           .filter(Boolean)
           .join(' '),
@@ -307,7 +312,7 @@ export function ConnectionControl({
         </p>
       )}
 
-      {notice && <Banner tone="info">{notice}</Banner>}
+      {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
 
       {providers.isError && (
         <Banner tone="warning">
