@@ -13,6 +13,8 @@ import {
 } from '@luciel/ui';
 import type { Luciel, PersonalityConfig, PersonalityPreset } from '@luciel/api-client';
 import { useLucielMutations } from '@/lib/hooks';
+import { useServerDraft } from '@/lib/use-server-draft';
+import { useActionNotice } from '@/lib/use-action-notice';
 
 /**
  * Personality pillar (Vision §3.5, Customer Journey §4.5). 4 named presets +
@@ -28,15 +30,33 @@ const PRESETS: { id: PersonalityPreset; label: string }[] = [
   { id: 'custom', label: 'Custom — set the four axes yourself' },
 ];
 
-const AXES = ['tone', 'verbosity', 'formality', 'pace'] as const;
+/** A bare 0–1 range announces "0.6" and nothing else; the ends have to be named
+ *  for the control to mean anything, in the UI and to a screen reader (P2-10). */
+const AXES: { id: 'tone' | 'verbosity' | 'formality' | 'pace'; low: string; high: string }[] = [
+  { id: 'tone', low: 'Neutral', high: 'Warm' },
+  { id: 'verbosity', low: 'Brief', high: 'Detailed' },
+  { id: 'formality', low: 'Casual', high: 'Formal' },
+  { id: 'pace', low: 'Measured', high: 'Brisk' },
+];
+
+const axisValueText = (pct: number, low: string, high: string) =>
+  pct === 50 ? 'Balanced' : pct > 50 ? `${pct}% ${high}` : `${100 - pct}% ${low}`;
 
 export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
   const { updatePersonality } = useLucielMutations();
-  const [draft, setDraft] = React.useState<PersonalityConfig>(luciel.personality);
-
-  React.useEffect(() => setDraft(luciel.personality), [luciel.personality]);
+  const { draft, dirty, edit, discard, saved } = useServerDraft<PersonalityConfig>(
+    luciel.personality,
+  );
+  const { busy, notice, run } = useActionNotice();
 
   const ctxLen = draft.businessContext?.length ?? 0;
+
+  const save = () =>
+    void run(async () => {
+      await updatePersonality.mutateAsync(draft);
+      saved();
+      return 'Saved. Your Luciel sounds like this from its next reply on.';
+    }, 'We could not save your personality settings. Nothing was changed — please try again.');
 
   return (
     <Card>
@@ -49,7 +69,7 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
         {(p) => (
           <Select
             value={draft.preset}
-            onChange={(e) => setDraft({ ...draft, preset: e.target.value as PersonalityPreset })}
+            onChange={(e) => edit({ ...draft, preset: e.target.value as PersonalityPreset })}
             {...p}
           >
             {PRESETS.map((x) => (
@@ -63,38 +83,45 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
 
       {draft.preset === 'custom' && (
         <div className="mb-vm-4 grid gap-vm-3 sm:grid-cols-2">
-          {AXES.map((axis) => (
-            <div key={axis}>
-              <label
-                className="mb-vm-1 block text-vm-1 font-label capitalize"
-                htmlFor={`axis-${axis}`}
-              >
-                {axis}
-              </label>
-              <input
-                id={`axis-${axis}`}
-                type="range"
-                min={0}
-                max={1}
-                step={0.1}
-                value={draft.axes?.[axis] ?? 0.5}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    axes: {
-                      tone: 0.5,
-                      verbosity: 0.5,
-                      formality: 0.5,
-                      pace: 0.5,
-                      ...draft.axes,
-                      [axis]: Number(e.target.value),
-                    },
-                  })
-                }
-                className="w-full"
-              />
-            </div>
-          ))}
+          {AXES.map(({ id, low, high }) => {
+            const value = draft.axes?.[id] ?? 0.5;
+            const pct = Math.round(value * 100);
+            return (
+              <div key={id}>
+                <label className="mb-vm-1 block text-vm-1 font-label capitalize" htmlFor={`axis-${id}`}>
+                  {id}
+                </label>
+                <input
+                  id={`axis-${id}`}
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.1}
+                  value={value}
+                  aria-valuetext={axisValueText(pct, low, high)}
+                  onChange={(e) =>
+                    edit({
+                      ...draft,
+                      axes: {
+                        tone: 0.5,
+                        verbosity: 0.5,
+                        formality: 0.5,
+                        pace: 0.5,
+                        ...draft.axes,
+                        [id]: Number(e.target.value),
+                      },
+                    })
+                  }
+                  className="w-full"
+                />
+                <div className="flex justify-between text-vm-0 text-vm-text-muted">
+                  <span>{low}</span>
+                  <span>{axisValueText(pct, low, high)}</span>
+                  <span>{high}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -107,7 +134,7 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
           <Textarea
             maxLength={280}
             value={draft.businessContext ?? ''}
-            onChange={(e) => setDraft({ ...draft, businessContext: e.target.value })}
+            onChange={(e) => edit({ ...draft, businessContext: e.target.value })}
             {...p}
           />
         )}
@@ -122,14 +149,26 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
         Model selection is handled by the platform — there&apos;s no model to pick.
       </Banner>
 
-      <div className="mt-vm-4">
-        <Button
-          variant="primary"
-          onClick={() => updatePersonality.mutate(draft)}
-          disabled={updatePersonality.isPending}
-        >
-          {updatePersonality.isPending ? 'Saving…' : 'Save personality'}
+      {notice && (
+        <Banner className="mt-vm-3" tone={notice.tone}>
+          {notice.text}
+        </Banner>
+      )}
+
+      <div className="mt-vm-4 flex flex-wrap items-center gap-vm-3">
+        <Button variant="primary" onClick={save} disabled={busy}>
+          {busy ? 'Saving…' : 'Save personality'}
         </Button>
+        {dirty && (
+          <>
+            <Button variant="ghost" onClick={discard} disabled={busy}>
+              Discard changes
+            </Button>
+            <span className="text-vm-0 text-vm-text-muted">
+              Unsaved changes — your Luciel still sounds the way it did before.
+            </span>
+          </>
+        )}
       </div>
     </Card>
   );

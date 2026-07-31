@@ -19,6 +19,8 @@ import type {
   NotificationChannel,
 } from '@luciel/api-client';
 import { useLucielMutations } from '@/lib/hooks';
+import { useServerDraft } from '@/lib/use-server-draft';
+import { useActionNotice } from '@/lib/use-action-notice';
 
 /**
  * Escalation pillar (Vision §3.4, Customer Journey §4.4/§7). The admin sets
@@ -40,9 +42,14 @@ const orUndefined = (value: string) => (value.trim() === '' ? undefined : value.
 
 export function EscalationPillar({ luciel }: { luciel: Luciel }) {
   const { updateEscalation } = useLucielMutations();
-  const [draft, setDraft] = React.useState<EscalationContact>(luciel.escalation);
-
-  React.useEffect(() => setDraft(luciel.escalation), [luciel.escalation]);
+  const {
+    draft,
+    dirty,
+    edit: setDraft,
+    discard,
+    saved,
+  } = useServerDraft<EscalationContact>(luciel.escalation);
+  const { busy, notice, run } = useActionNotice();
 
   const ruleFor = (signal: EscalationSignal): RoutingRule | undefined =>
     draft.routing?.find((r) => r.signal === signal);
@@ -60,13 +67,17 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
   };
 
   const save = () =>
-    updateEscalation.mutate({
-      ...draft,
-      primaryEmail: orUndefined(draft.primaryEmail ?? ''),
-      primarySms: orUndefined(draft.primarySms ?? ''),
-      secondaryEmail: orUndefined(draft.secondaryEmail ?? ''),
-      secondarySms: orUndefined(draft.secondarySms ?? ''),
-    });
+    void run(async () => {
+      await updateEscalation.mutateAsync({
+        ...draft,
+        primaryEmail: orUndefined(draft.primaryEmail ?? ''),
+        primarySms: orUndefined(draft.primarySms ?? ''),
+        secondaryEmail: orUndefined(draft.secondaryEmail ?? ''),
+        secondarySms: orUndefined(draft.secondarySms ?? ''),
+      });
+      saved();
+      return 'Saved. Escalations route to these contacts from now on.';
+    }, 'We could not save your escalation settings. Your existing routing is unchanged — please try again.');
 
   return (
     <Card>
@@ -181,10 +192,26 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
         ))}
       </ul>
 
-      <div className="mt-vm-4">
-        <Button variant="primary" onClick={save} disabled={updateEscalation.isPending}>
-          {updateEscalation.isPending ? 'Saving…' : 'Save escalation settings'}
+      {notice && (
+        <Banner className="mt-vm-3" tone={notice.tone}>
+          {notice.text}
+        </Banner>
+      )}
+
+      <div className="mt-vm-4 flex flex-wrap items-center gap-vm-3">
+        <Button variant="primary" onClick={save} disabled={busy}>
+          {busy ? 'Saving…' : 'Save escalation settings'}
         </Button>
+        {dirty && (
+          <>
+            <Button variant="ghost" onClick={discard} disabled={busy}>
+              Discard changes
+            </Button>
+            <span className="text-vm-0 text-vm-text-muted">
+              Unsaved changes — escalations still go to the contacts you saved last.
+            </span>
+          </>
+        )}
       </div>
     </Card>
   );

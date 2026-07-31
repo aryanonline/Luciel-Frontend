@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, CardTitle, CardDescription, Toggle, StatusChip } from '@luciel/ui';
+import { Card, CardTitle, CardDescription, Toggle, StatusChip, Banner } from '@luciel/ui';
 import type {
   Luciel,
   AddonTool,
@@ -11,6 +11,7 @@ import type {
   ConnectionType,
 } from '@luciel/api-client';
 import { useCapabilities, useConnections, useLucielMutations } from '@/lib/hooks';
+import { useActionNotice } from '@/lib/use-action-notice';
 import { ConnectionControl } from './connection-control';
 import { toolMeta, chipKind, channelLabel } from './labels';
 
@@ -110,6 +111,8 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
   const capabilities = useCapabilities();
   const connections = useConnections();
 
+  const action = useActionNotice();
+
   const groups = capabilities.data ?? [];
   const groupedIds = new Set(groups.flatMap((g) => g.toolIds));
   const ungrouped = luciel.tools.filter((t) => !groupedIds.has(t.id));
@@ -131,15 +134,23 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
   };
 
   /** One PUT of the FULL tools array, whatever the owner touched (contract §3). */
-  const writeEnabled = (ids: AddonToolId[], enabled: boolean) => {
+  const writeEnabled = (ids: AddonToolId[], enabled: boolean, what: string) => {
     const changing = new Set<AddonToolId>(ids);
-    updateTools.mutate(luciel.tools.map((t) => (changing.has(t.id) ? { ...t, enabled } : t)));
+    void action.run(
+      async () => {
+        await updateTools.mutateAsync(
+          luciel.tools.map((t) => (changing.has(t.id) ? { ...t, enabled } : t)),
+        );
+        return `${what} is ${enabled ? 'on' : 'off'}.`;
+      },
+      `We could not turn ${what} ${enabled ? 'on' : 'off'}. Nothing was changed — please try again.`,
+    );
   };
 
   const setTool = (id: AddonToolId, enabled: boolean) => {
     // Hard-block: cannot enable a send tool when its channel is off (Arch §3.3).
     if (enabled && !isChannelEnabled(id)) return;
-    writeEnabled([id], enabled);
+    writeEnabled([id], enabled, toolMeta[id].label);
   };
 
   return (
@@ -163,6 +174,35 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
       <CardDescription className="mt-vm-5">
         Add-on tools — switch one on, then connect the account it works through.
       </CardDescription>
+
+      {action.busy && (
+        <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
+          Saving…
+        </p>
+      )}
+      {action.notice && !action.busy && (
+        <Banner className="mt-vm-3" tone={action.notice.tone}>
+          {action.notice.text}
+        </Banner>
+      )}
+
+      {/* Without the capability list we cannot tell a grouped tool from a
+          standalone one, so falling back to an empty list would present every
+          capability as a bare tool id with the wrong connect affordance. Say the
+          list is missing instead of quietly showing a wrong one (P1-5). */}
+      {capabilities.isPending ? (
+        <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
+          Loading your tools…
+        </p>
+      ) : capabilities.isError ? (
+        <Banner tone="danger" className="mt-vm-3">
+          We could not load your tools, so they are not shown rather than shown wrong. Nothing has
+          changed about what your Luciel can do.{' '}
+          <button className="underline" onClick={() => void capabilities.refetch()}>
+            Try again
+          </button>
+        </Banner>
+      ) : (
       <ul className="mt-vm-3 divide-y divide-vm-border">
         {groups.map((group) => (
           <CapabilityRow
@@ -170,7 +210,7 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
             group={group}
             tools={luciel.tools.filter((t) => group.toolIds.includes(t.id))}
             connection={connectionFor(group.connectionType)}
-            onToggle={(enabled) => writeEnabled(group.toolIds, enabled)}
+            onToggle={(enabled) => writeEnabled(group.toolIds, enabled, group.label)}
           />
         ))}
 
@@ -231,6 +271,7 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
           );
         })}
       </ul>
+      )}
     </Card>
   );
 }

@@ -26,6 +26,7 @@ import {
   useConnections,
   useLucielMutations,
 } from '@/lib/hooks';
+import { useActionNotice } from '@/lib/use-action-notice';
 import { ConnectionControl } from './connection-control';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
@@ -143,6 +144,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const [changingNumber, setChangingNumber] = React.useState(false);
   const [twilioValues, setTwilioValues] = React.useState<Record<string, string>>({});
   const [twilioNotice, setTwilioNotice] = React.useState<string | null>(null);
+  const channelAction = useActionNotice();
 
   // One BYO number backs both SMS and Voice (Arch §3.1.4/§3.1.6). Derive the shared
   // number status from whichever of the two carries a connectionStatus.
@@ -199,15 +201,25 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     }
   };
 
-  const submitNumber = () => {
+  /** The number is only cleared from the field once the write is confirmed — a
+   *  cleared input is the admin's only record of what they typed (P1-4). */
+  const submitNumber = async () => {
     if (!phoneValid) return;
-    startConnection.mutate({
-      connectionType: 'sms_sender',
-      provider: 'twilio',
-      phoneNumber: phoneNumber.trim(),
-    });
-    setPhoneNumber('');
-    setChangingNumber(false);
+    const number = phoneNumber.trim();
+    const ok = await channelAction.run(async () => {
+      await startConnection.mutateAsync({
+        connectionType: 'sms_sender',
+        provider: 'twilio',
+        phoneNumber: number,
+      });
+      return `${number} is on file. SMS and Voice answer on it once its carrier registration verifies.`;
+    }, 'We could not save that number. It has not been added — please check it and try again.');
+    // Both the field and the editing state survive a failure: collapsing back to
+    // the old number would hide what they typed and imply the change took.
+    if (ok) {
+      setPhoneNumber('');
+      setChangingNumber(false);
+    }
   };
 
   const setEnabled = (id: ChannelConfig['id'], enabled: boolean) => {
@@ -224,19 +236,23 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
       setSmsModalOpen(true);
       return;
     }
-    const nextChannels = luciel.channels.map((c) => (c.id === id ? { ...c, enabled } : c));
-    updateChannels.mutate(nextChannels);
+    // A toggle that silently fails snaps back on the next refetch with no
+    // explanation, which reads as the UI ignoring the click (P1-4).
+    void channelAction.run(async () => {
+      const nextChannels = luciel.channels.map((c) => (c.id === id ? { ...c, enabled } : c));
+      await updateChannels.mutateAsync(nextChannels);
 
-    // Cascade: disabling a channel force-disables its dependent send tool (Arch §3.3).
-    if (!enabled) {
-      const dependentToolId = CHANNEL_TOOL_CASCADE[id];
+      // Cascade: disabling a channel force-disables its dependent send tool (Arch §3.3).
+      const dependentToolId = enabled ? undefined : CHANNEL_TOOL_CASCADE[id];
       if (dependentToolId) {
         const nextTools = luciel.tools.map((t) =>
           t.id === dependentToolId ? { ...t, enabled: false } : t,
         );
-        updateTools.mutate(nextTools);
+        await updateTools.mutateAsync(nextTools);
+        return `${channelLabel[id]} is off, and ${dependentToolId.replace(/_/g, ' ')} was switched off with it.`;
       }
-    }
+      return `${channelLabel[id]} is ${enabled ? 'on' : 'off'}.`;
+    }, `We could not turn ${channelLabel[id]} ${enabled ? 'on' : 'off'}. Nothing was changed — please try again.`);
   };
 
   const confirmVoiceConsent = async () => {
@@ -262,6 +278,16 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         your business brings its own phone number — one number backs both. Connect your Twilio
         account below and name the number to turn them on.
       </CardDescription>
+      {channelAction.busy && (
+        <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
+          Saving…
+        </p>
+      )}
+      {channelAction.notice && !channelAction.busy && (
+        <Banner className="mt-vm-3" tone={channelAction.notice.tone}>
+          {channelAction.notice.text}
+        </Banner>
+      )}
       <ul className="mt-vm-4 divide-y divide-vm-border">
         {luciel.channels.map((c) => {
           // SMS/Voice share the BYO number; their status is surfaced in the number
@@ -478,11 +504,15 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                 </div>
                 <Button
                   variant="primary"
-                  onClick={submitNumber}
-                  disabled={!phoneValid || startConnection.isPending}
+                  onClick={() => void submitNumber()}
+                  disabled={!phoneValid || channelAction.busy}
                   className="mb-vm-4"
                 >
-                  {changingNumber ? 'Save number' : 'Add number'}
+                  {channelAction.busy
+                    ? 'Saving…'
+                    : changingNumber
+                      ? 'Save number'
+                      : 'Add number'}
                 </Button>
                 {changingNumber && (
                   <Button
@@ -523,6 +553,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         title="Enable SMS — carrier registration and consent"
         description="SMS is sent in your business's name, not ours. Please read this before turning it on."
         confirmLabel="Acknowledge and enable SMS"
+        confirmPendingLabel="Enabling SMS…"
         confirmDisabled={!smsAckChecked}
         onConfirm={confirmSmsAck}
       >
@@ -591,6 +622,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         title="Enable Voice — one-time acknowledgment"
         description="Before Voice activates, please confirm you understand the recording disclosure."
         confirmLabel="Acknowledge and enable Voice"
+        confirmPendingLabel="Enabling Voice…"
         confirmDisabled={!consentChecked}
         onConfirm={confirmVoiceConsent}
       >
