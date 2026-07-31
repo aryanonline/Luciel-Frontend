@@ -1,11 +1,13 @@
 'use client';
 
+import * as React from 'react';
 import {
   Card,
   CardTitle,
   CardDescription,
   Button,
   Banner,
+  Modal,
   ProgressBar,
   PageHeader,
 } from '@luciel/ui';
@@ -25,16 +27,36 @@ export default function BillingPage() {
   const luciel = useLuciel();
   const qc = useQueryClient();
   const b = billing.data?.budget;
+  const [checkoutError, setCheckoutError] = React.useState<string | null>(null);
+  const [redirecting, setRedirecting] = React.useState(false);
+  const [confirmRemove, setConfirmRemove] = React.useState(false);
 
   const addCard = async () => {
-    const session = await api.billing.startCheckout();
-    // Stripe Checkout, hosted by Stripe — card details never touch our origin.
-    window.open(session.url, '_blank', 'noopener,noreferrer');
+    setCheckoutError(null);
+    setRedirecting(true);
+    try {
+      const session = await api.billing.startCheckout();
+      // Same-tab navigation, the standard Stripe Checkout pattern: a popup opened
+      // after an await is blocked by the browser, which is indistinguishable from
+      // a dead button. Card details still never touch our origin.
+      window.location.assign(session.url);
+    } catch {
+      setCheckoutError('We could not open secure checkout just now. Please try again.');
+      setRedirecting(false);
+    }
+    // No `finally`: on success the page is navigating away, and re-enabling the
+    // button would invite a second checkout session on the way out.
   };
+
+  /** Throws on failure on purpose — the Modal reports it and stays open. */
   const removeCard = async () => {
     await api.billing.removePaymentMethod();
     qc.invalidateQueries({ queryKey: qk.billing });
+    setConfirmRemove(false);
   };
+
+  const loading = billing.isPending || luciel.isPending;
+  const failed = billing.isError || luciel.isError;
 
   return (
     <div className="space-y-vm-5">
@@ -60,7 +82,26 @@ export default function BillingPage() {
 
       <Card>
         <CardTitle>This month</CardTitle>
-        {b && luciel.data && (
+        {/* A blank card reads as "nothing to bill"; say which of the three it is (P1-11). */}
+        {loading ? (
+          <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
+            Loading your usage…
+          </p>
+        ) : failed ? (
+          <Banner tone="danger" className="mt-vm-3">
+            We could not load your usage, so the figures below are not shown rather than shown
+            wrong.{' '}
+            <button
+              className="underline"
+              onClick={() => {
+                void billing.refetch();
+                void luciel.refetch();
+              }}
+            >
+              Try again
+            </button>
+          </Banner>
+        ) : b && luciel.data ? (
           <>
             <ProgressBar
               className="mt-vm-3"
@@ -77,12 +118,33 @@ export default function BillingPage() {
                 }.`}
             </p>
           </>
+        ) : (
+          <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
+            No usage to show yet — you have no Luciel answering conversations.
+          </p>
         )}
       </Card>
 
       <Card>
         <CardTitle>Payment method</CardTitle>
-        {b?.billingState === 'payg_enabled' && billing.data?.paymentMethod ? (
+        {checkoutError && (
+          <Banner tone="danger" className="mt-vm-3">
+            {checkoutError}
+          </Banner>
+        )}
+        {billing.isPending ? (
+          <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
+            Loading your payment method…
+          </p>
+        ) : billing.isError ? (
+          /* "No card on file" would be a claim we can't make while the read failed. */
+          <Banner tone="danger" className="mt-vm-3">
+            We could not load your payment method.{' '}
+            <button className="underline" onClick={() => void billing.refetch()}>
+              Try again
+            </button>
+          </Banner>
+        ) : b?.billingState === 'payg_enabled' && billing.data?.paymentMethod ? (
           <>
             <CardDescription>
               {billing.data.paymentMethod.brand.toUpperCase()} ending{' '}
@@ -93,7 +155,7 @@ export default function BillingPage() {
               Pay-as-you-go is on. Conversations 1–50 each month stay free; above that bills at $39
               / 100, rounded up per 100-block, at the close of the cycle.
             </Banner>
-            <Button variant="secondary" className="mt-vm-3" onClick={removeCard}>
+            <Button variant="secondary" className="mt-vm-3" onClick={() => setConfirmRemove(true)}>
               Remove payment method
             </Button>
             <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
@@ -111,12 +173,30 @@ export default function BillingPage() {
               name, its knowledge, and its history — paying just means it can keep working past your
               free 50. No charge when you save the card.
             </Banner>
-            <Button variant="primary" className="mt-vm-3" onClick={addCard}>
-              Add payment method
+            <Button
+              variant="primary"
+              className="mt-vm-3"
+              disabled={redirecting}
+              onClick={() => void addCard()}
+            >
+              {redirecting ? 'Opening secure checkout…' : 'Add payment method'}
             </Button>
           </>
         )}
       </Card>
+
+      {/* Removing the card changes what the account can do next month, so it is
+          confirmed and reported like every other consequential action (P1-12). */}
+      <Modal
+        open={confirmRemove}
+        onOpenChange={setConfirmRemove}
+        title="Remove your payment method?"
+        description="Your account reverts to the free 50 conversations a month. Your Luciel, its knowledge, your leads, and your connections all stay exactly as they are — nothing is deleted. You can add a card again at any time, with no re-setup."
+        confirmLabel="Remove card"
+        confirmPendingLabel="Removing…"
+        confirmVariant="danger"
+        onConfirm={removeCard}
+      />
     </div>
   );
 }
