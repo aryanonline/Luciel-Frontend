@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Card, CardTitle, CardDescription, Button } from '@luciel/ui';
+import Link from 'next/link';
+import { Card, CardTitle, CardDescription, Button, Banner } from '@luciel/ui';
 import { useLuciel } from '@/lib/hooks';
 import { WidgetPreview } from '@/components/widget-preview';
 
@@ -16,27 +17,39 @@ import { WidgetPreview } from '@/components/widget-preview';
  * can't disagree.
  */
 
+const snippetFor = (embedKey: string) =>
+  `<script src="https://embed.vantagemind.ai/v1/luciel.js" data-key="${embedKey}"></script>`;
+
 export default function EmbedPage() {
-  const { data: luciel } = useLuciel();
+  const { data: luciel, isPending, isError, refetch } = useLuciel();
   const [copied, setCopied] = React.useState(false);
+  const [copyFailed, setCopyFailed] = React.useState(false);
   const [testing, setTesting] = React.useState(false);
 
-  const embedKey = luciel?.embedKeyPublicId ?? 'vm_live_…';
-  const snippet = `<script src="https://embed.vantagemind.ai/v1/luciel.js" data-key="${embedKey}"></script>`;
+  // No key means no snippet — the placeholder used to be copyable and mailable,
+  // so an owner could send their web developer a line that can never work
+  // (P1-19).
+  const embedKey = luciel?.embedKeyPublicId ?? null;
+  const snippet = embedKey ? snippetFor(embedKey) : null;
 
   const copy = async () => {
+    if (!snippet) return;
+    setCopyFailed(false);
     try {
       await navigator.clipboard.writeText(snippet);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setCopied(false);
+      setCopyFailed(true);
     }
   };
 
-  const mailto = `mailto:?subject=${encodeURIComponent('Add this to our website')}&body=${encodeURIComponent(
-    `Hi — please add this one line just before </body> on our site:\n\n${snippet}\n\nThanks!`,
-  )}`;
+  const mailto = snippet
+    ? `mailto:?subject=${encodeURIComponent('Add this to our website')}&body=${encodeURIComponent(
+        `Hi — please add this one line just before </body> on our site:\n\n${snippet}\n\nThanks!`,
+      )}`
+    : null;
 
   return (
     <div className="space-y-vm-5">
@@ -50,24 +63,52 @@ export default function EmbedPage() {
       <Card>
         <CardTitle>Your embed snippet</CardTitle>
         <CardDescription>Paste it just before the closing &lt;/body&gt; tag.</CardDescription>
-        <pre className="mt-vm-3 overflow-x-auto rounded-vm-control border border-vm-border bg-vm-surface p-vm-3 text-vm-0">
-          <code>{snippet}</code>
-        </pre>
-        <div className="mt-vm-3 flex flex-wrap gap-vm-2">
-          <Button variant="primary" onClick={copy}>
-            {copied ? 'Copied' : 'Copy'}
-          </Button>
-          <Button asChild variant="secondary">
-            <a href={mailto}>Email this to my web person</a>
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => setTesting((t) => !t)}
-            disabled={!luciel?.embedKeyPublicId}
-          >
-            {testing ? 'Close test' : 'Test it here'}
-          </Button>
-        </div>
+
+        {isPending ? (
+          <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
+            Loading your embed snippet…
+          </p>
+        ) : isError ? (
+          <Banner tone="danger" className="mt-vm-3">
+            We could not load your embed key, so the snippet is not shown rather than shown wrong.
+            Your Luciel is unaffected.{' '}
+            <button className="underline" onClick={() => void refetch()}>
+              Try again
+            </button>
+          </Banner>
+        ) : !snippet ? (
+          <Banner tone="info" className="mt-vm-3">
+            You don&apos;t have a Luciel yet, so there is nothing to embed.{' '}
+            <Link href="/first-run" className="underline">
+              Create one
+            </Link>
+            .
+          </Banner>
+        ) : (
+          <>
+            <pre className="mt-vm-3 overflow-x-auto rounded-vm-control border border-vm-border bg-vm-surface p-vm-3 text-vm-0">
+              <code>{snippet}</code>
+            </pre>
+            {copyFailed && (
+              <Banner tone="warning" className="mt-vm-3">
+                Your browser blocked the copy. Select the line above and copy it by hand.
+              </Banner>
+            )}
+            <div className="mt-vm-3 flex flex-wrap gap-vm-2">
+              <Button variant="primary" onClick={() => void copy()}>
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+              {mailto && (
+                <Button asChild variant="secondary">
+                  <a href={mailto}>Email this to my web person</a>
+                </Button>
+              )}
+              <Button variant="ghost" onClick={() => setTesting((t) => !t)}>
+                {testing ? 'Close test' : 'Test it here'}
+              </Button>
+            </div>
+          </>
+        )}
 
         {/* The test runs against THIS Luciel's embed key, signed in, so what the
             admin tries here is the same assistant their visitors get (CJ §5). */}
