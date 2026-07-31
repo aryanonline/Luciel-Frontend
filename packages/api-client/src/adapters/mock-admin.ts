@@ -104,17 +104,18 @@ const TOOLS_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, AddonToolId[]>> =
   outbound_webhook: ['bring_your_own_webhook'],
 };
 
+/**
+ * `instagram_messenger` is one channel id covering two surfaces on two separate
+ * grants, so either grant going away takes it down. Overstating the loss is the
+ * safe direction: the alternative leaves the channel switched on with only half
+ * its senders resolvable.
+ */
 const CHANNELS_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, ChannelId[]>> = {
   sms_sender: ['sms', 'voice'],
   email_sender: ['email'],
+  channel_auth: ['whatsapp', 'instagram_messenger'],
+  instagram_auth: ['instagram_messenger'],
 };
-
-/**
- * WhatsApp, Instagram and Messenger all ride the ONE Meta `channel_auth`
- * connection (contract §2), so disconnecting it takes every Meta channel down
- * with it — not just the one the owner happened to be looking at.
- */
-const META_CHANNELS: ChannelId[] = ['whatsapp', 'instagram_messenger'];
 
 /**
  * What a BYO Twilio account with no designated number reports (contract §1a).
@@ -123,7 +124,7 @@ const META_CHANNELS: ChannelId[] = ['whatsapp', 'instagram_messenger'];
 const ACTION_ADD_NUMBER =
   'Action needed: add your number. Your Twilio account is connected; tell us which of its numbers Luciel uses.';
 
-/** Which UI channel each per-channel Meta destination belongs to (contract §2). */
+/** Which UI channel each per-channel destination belongs to (contract §2). */
 const CHANNEL_BY_META_CHANNEL: Record<MetaChannel, ChannelId> = {
   whatsapp: 'whatsapp',
   instagram: 'instagram_messenger',
@@ -137,12 +138,8 @@ const toolsForConnectionType = (connectionType: ConnectionType): AddonToolId[] =
   ...(TOOLS_BY_CONNECTION_TYPE[connectionType] ?? []),
 ];
 
-const channelsForConnection = (connection: Connection): ChannelId[] => {
-  return [
-    ...(CHANNELS_BY_CONNECTION_TYPE[connection.connectionType] ?? []),
-    ...(connection.connectionType === 'channel_auth' ? META_CHANNELS : []),
-  ];
-};
+const channelsForConnection = (connection: Connection): ChannelId[] =>
+  CHANNELS_BY_CONNECTION_TYPE[connection.connectionType] ?? [];
 
 export function createMockAdminClient(options: MockAdminOptions = {}): LucielApiClient {
   const latency = options.latencyMs ?? 0;

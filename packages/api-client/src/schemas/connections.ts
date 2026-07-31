@@ -16,6 +16,15 @@ export const connectionType = z.enum([
   'sms_sender',
   'outbound_webhook',
   'channel_auth',
+  /**
+   * Instagram messaging is its OWN grant, not a provider under `channel_auth`.
+   * Facebook's dialog rejects an authorize request carrying the `instagram_*`
+   * scopes outright, so Instagram runs on Business Login for Instagram — a
+   * separate app, consent host and token endpoint. It needs a separate type
+   * because one connection is active per type: a second `channel_auth` row
+   * would evict the Facebook grant that WhatsApp and Messenger ride on.
+   */
+  'instagram_auth',
   'knowledge_source',
 ]);
 export type ConnectionType = z.infer<typeof connectionType>;
@@ -136,19 +145,20 @@ export const oauthCallbackRequest = z.object({
 export type OauthCallbackRequest = z.infer<typeof oauthCallbackRequest>;
 
 /**
- * Which of the three channels one Meta grant is being pointed at (contract §2).
- * This is what makes a SINGLE `channel_auth` connection serve WhatsApp,
- * Instagram and Messenger: each names its own asset, so binding one never
- * unbinds another.
+ * Which messaging surface a grant is being pointed at (contract §2). `whatsapp`
+ * and `messenger` ride the one `channel_auth` grant and `instagram` rides the
+ * `instagram_auth` one; in every case each names its own asset, so binding one
+ * never unbinds another.
  */
 export const metaChannel = z.enum(['whatsapp', 'instagram', 'messenger']);
 export type MetaChannel = z.infer<typeof metaChannel>;
 
 /**
- * Bind the Meta destination a `channel_auth` connection answers on (contract §2):
- * the WhatsApp `phone_number_id` or the Instagram/Messenger Page id. Inbound
- * routing resolves a tenant SOLELY by this id, so a connected channel without one
- * receives nothing. `channel` is omitted only by the single-destination senders.
+ * Bind the destination a messaging connection answers on (contract §2): the
+ * WhatsApp `phone_number_id`, the Messenger Page id, or the Instagram
+ * professional account id. Inbound routing resolves a tenant SOLELY by this id,
+ * so a connected channel without one receives nothing. `channel` is omitted only
+ * by the single-destination senders.
  */
 export const bindDestinationRequest = z.object({
   destination: z.string().min(1).max(128),

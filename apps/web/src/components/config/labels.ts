@@ -9,7 +9,9 @@ export const channelLabel: Record<ChannelId, string> = {
   sms: 'SMS',
   voice: 'Voice',
   whatsapp: 'WhatsApp',
-  instagram_messenger: 'Instagram / Messenger',
+  // One switch, two surfaces on two separate grants — "&", not "/": the owner
+  // is turning both on, and each is connected on its own below.
+  instagram_messenger: 'Instagram & Messenger',
 };
 
 /** Add-on tools with one-sentence descriptions (Vision §3.2). */

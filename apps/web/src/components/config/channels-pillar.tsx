@@ -16,6 +16,7 @@ import {
 import {
   LucielApiError,
   type ChannelId,
+  type ConnectionType,
   type Luciel,
   type ChannelConfig,
   type MetaChannel,
@@ -62,13 +63,18 @@ import { channelLabel, chipKind } from './labels';
  * force-disables send_sms; disabling the Email channel force-disables send_email.
  * The tools-pillar UI also shows the tool toggle as blocked (see tools-pillar.tsx).
  *
- * WhatsApp and Instagram/Messenger run on ONE Meta connection (Decision #7,
- * contract §2): a single `channel_auth` grant to the owner's Meta Business
- * account authorizes all three surfaces, and each enabled channel then names the
- * asset it answers on. Authorization alone does not make a channel live — until
- * that id is bound, inbound has nothing to route by — but binding one channel
- * never unbinds another, so turning a second Meta channel on cannot knock the
- * first offline. Both rules are enforced by the shared connection control.
+ * Meta messaging is TWO grants, not one (Decision #7, contract §2). The
+ * Facebook grant (`channel_auth`) covers WhatsApp and Messenger; Instagram DMs
+ * sign in separately on Business Login for Instagram (`instagram_auth`), because
+ * Facebook rejects an authorize request carrying the `instagram_*` scopes and
+ * fails the whole dialog with it — so putting Instagram on the shared grant took
+ * WhatsApp and Messenger down too. Each surface therefore gets its own control,
+ * and the owner is never told that one sign-in covers Instagram.
+ *
+ * Within a grant, authorization alone does not make a channel live — until its
+ * id is bound, inbound has nothing to route by — but binding one channel never
+ * unbinds another, so turning a second surface on cannot knock the first
+ * offline. Both rules are enforced by the shared connection control.
  */
 
 /** Channel IDs whose disable cascades to a dependent send tool. */
@@ -78,36 +84,71 @@ const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], string>> = {
 };
 
 /**
- * The Meta channels each UI row covers and the destination it answers on
- * (contract §2). One row can cover more than one Meta channel: Instagram DMs and
- * Messenger are the same Page, so the one Page id is bound for both. The owner
- * pastes the id — there is no asset picker route, and which of their numbers or
- * Pages Luciel should answer on is not ours to guess.
+ * One messaging surface: the grant it rides, the channel it binds within that
+ * grant, and the id it answers on. The owner pastes the id — there is no asset
+ * picker route, and which of their numbers, Pages or accounts Luciel should
+ * answer on is not ours to guess.
  */
-const META_CHANNEL: Partial<
-  Record<
-    ChannelId,
-    { channels: MetaChannel[]; purpose: string; destination: { label: string; hint: string } }
-  >
-> = {
-  whatsapp: {
-    channels: ['whatsapp'],
-    purpose:
-      'Luciel replies to people who message your business on WhatsApp, from your own WhatsApp Business number — the conversation stays in your Meta account.',
-    destination: {
-      label: 'WhatsApp phone number ID',
-      hint: 'In Meta Business Suite → WhatsApp Manager → API Setup, the "Phone number ID" (digits, not the phone number itself).',
+interface MessagingSurface {
+  label: string;
+  connectionType: ConnectionType;
+  provider: string;
+  channels: MetaChannel[];
+  purpose: string;
+  destination: { label: string; hint: string };
+  unavailableReason: string;
+  /** What connecting this one does, and does not do, to the others. */
+  note: string;
+}
+
+/** The surfaces each channel row covers, in the order they are offered. */
+const MESSAGING_SURFACES: Partial<Record<ChannelId, MessagingSurface[]>> = {
+  whatsapp: [
+    {
+      label: 'WhatsApp',
+      connectionType: 'channel_auth',
+      provider: 'meta',
+      channels: ['whatsapp'],
+      purpose:
+        'Luciel replies to people who message your business on WhatsApp, from your own WhatsApp Business number — the conversation stays in your Meta account.',
+      destination: {
+        label: 'WhatsApp phone number ID',
+        hint: 'In Meta Business Suite → WhatsApp Manager → API Setup, the "Phone number ID" (digits, not the phone number itself).',
+      },
+      unavailableReason: 'Meta app not configured',
+      note: 'This one Meta sign-in covers WhatsApp and Facebook Messenger. Each names its own id, so turning Messenger on never disconnects WhatsApp.',
     },
-  },
-  instagram_messenger: {
-    channels: ['instagram', 'messenger'],
-    purpose:
-      'Luciel replies to Instagram DMs and Facebook Messenger for your Page, from your own Meta account — both run on the same Page, so one id covers them.',
-    destination: {
-      label: 'Facebook Page ID',
-      hint: 'In your Facebook Page settings → About → Page ID. This is the Page your Instagram account is linked to.',
+  ],
+  instagram_messenger: [
+    {
+      label: 'Instagram',
+      connectionType: 'instagram_auth',
+      provider: 'instagram',
+      channels: ['instagram'],
+      purpose:
+        'Luciel replies to the DMs your Instagram professional account receives, from your own account. Instagram signs you in itself, separately from Facebook.',
+      destination: {
+        label: 'Instagram professional account ID',
+        hint: 'In Meta Business Suite, open the Instagram account and read its account ID (digits) — not the @handle.',
+      },
+      unavailableReason: 'Instagram sign-in not configured',
+      note: 'Instagram has its own sign-in, so connecting it leaves WhatsApp and Messenger exactly as they are.',
     },
-  },
+    {
+      label: 'Facebook Messenger',
+      connectionType: 'channel_auth',
+      provider: 'meta',
+      channels: ['messenger'],
+      purpose:
+        'Luciel replies to the Messenger conversations your Facebook Page receives, from your own Meta account.',
+      destination: {
+        label: 'Facebook Page ID',
+        hint: 'In your Facebook Page settings → About → Page ID.',
+      },
+      unavailableReason: 'Meta app not configured',
+      note: 'Messenger rides the same Meta sign-in as WhatsApp, so connecting either one connects both.',
+    },
+  ],
 };
 
 /** UX-only E.164 shape check (client validation is never a security control). */
@@ -126,10 +167,11 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   } = useLucielMutations();
   const connections = useConnections();
   const { connect, submitCredentials } = useConnectionLifecycle();
-  // One row per type (§3.8.2) — and for Meta that is the point: every Meta
-  // channel reads the same grant instead of competing for the slot.
-  const metaConnection = connections.data?.find((c) => c.connectionType === 'channel_auth');
-  const smsConnection = connections.data?.find((c) => c.connectionType === 'sms_sender');
+  // One row per type (§3.8.2), so a surface reads the grant it rides: WhatsApp
+  // and Messenger share the Facebook row, Instagram has its own.
+  const connectionFor = (type: ConnectionType) =>
+    connections.data?.find((c) => c.connectionType === type);
+  const smsConnection = connectionFor('sms_sender');
   const smsProviders = useConnectionProviders('sms_sender');
   const twilioOption = smsProviders.data
     ?.find((group) => group.connectionType === 'sms_sender')
@@ -238,21 +280,24 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     }
     // A toggle that silently fails snaps back on the next refetch with no
     // explanation, which reads as the UI ignoring the click (P1-4).
-    void channelAction.run(async () => {
-      const nextChannels = luciel.channels.map((c) => (c.id === id ? { ...c, enabled } : c));
-      await updateChannels.mutateAsync(nextChannels);
+    void channelAction.run(
+      async () => {
+        const nextChannels = luciel.channels.map((c) => (c.id === id ? { ...c, enabled } : c));
+        await updateChannels.mutateAsync(nextChannels);
 
-      // Cascade: disabling a channel force-disables its dependent send tool (Arch §3.3).
-      const dependentToolId = enabled ? undefined : CHANNEL_TOOL_CASCADE[id];
-      if (dependentToolId) {
-        const nextTools = luciel.tools.map((t) =>
-          t.id === dependentToolId ? { ...t, enabled: false } : t,
-        );
-        await updateTools.mutateAsync(nextTools);
-        return `${channelLabel[id]} is off, and ${dependentToolId.replace(/_/g, ' ')} was switched off with it.`;
-      }
-      return `${channelLabel[id]} is ${enabled ? 'on' : 'off'}.`;
-    }, `We could not turn ${channelLabel[id]} ${enabled ? 'on' : 'off'}. Nothing was changed — please try again.`);
+        // Cascade: disabling a channel force-disables its dependent send tool (Arch §3.3).
+        const dependentToolId = enabled ? undefined : CHANNEL_TOOL_CASCADE[id];
+        if (dependentToolId) {
+          const nextTools = luciel.tools.map((t) =>
+            t.id === dependentToolId ? { ...t, enabled: false } : t,
+          );
+          await updateTools.mutateAsync(nextTools);
+          return `${channelLabel[id]} is off, and ${dependentToolId.replace(/_/g, ' ')} was switched off with it.`;
+        }
+        return `${channelLabel[id]} is ${enabled ? 'on' : 'off'}.`;
+      },
+      `We could not turn ${channelLabel[id]} ${enabled ? 'on' : 'off'}. Nothing was changed — please try again.`,
+    );
   };
 
   const confirmVoiceConsent = async () => {
@@ -274,9 +319,9 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     <Card>
       <CardTitle>Channels your Luciel uses</CardTitle>
       <CardDescription>
-        Pick how customers reach your Luciel. The website widget is on by default. For SMS and Voice,
-        your business brings its own phone number — one number backs both. Connect your Twilio
-        account below and name the number to turn them on.
+        Pick how customers reach your Luciel. The website widget is on by default. For SMS and
+        Voice, your business brings its own phone number — one number backs both. Connect your
+        Twilio account below and name the number to turn them on.
       </CardDescription>
       {channelAction.busy && (
         <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
@@ -293,10 +338,10 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
           // SMS/Voice share the BYO number; their status is surfaced in the number
           // block below, so we don't render a duplicate per-row chip for them.
           const isPhoneChannel = c.id === 'sms' || c.id === 'voice';
-          const meta = META_CHANNEL[c.id];
-          // A Meta row's status comes from the connection control, which knows
-          // that authorized-without-a-destination is not live (contract §2).
-          const showControl = Boolean(meta) && c.enabled;
+          const surfaces = MESSAGING_SURFACES[c.id];
+          // A messaging row's status comes from the connection control, which
+          // knows authorized-without-a-destination is not live (contract §2).
+          const showControl = Boolean(surfaces) && c.enabled;
           const chip = isPhoneChannel || showControl ? null : chipKind(c.connectionStatus);
           return (
             <li key={c.id} className="py-vm-3">
@@ -311,21 +356,30 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                 </div>
                 {chip && c.enabled && <StatusChip kind={chip} />}
               </div>
-              {showControl && meta && (
-                <div className="mt-vm-3 pl-[3.5rem]">
-                  <ConnectionControl
-                    connectionType="channel_auth"
-                    label={channelLabel[c.id]}
-                    purpose={meta.purpose}
-                    connection={metaConnection}
-                    provider="meta"
-                    destinationField={{ ...meta.destination, channels: meta.channels }}
-                    unavailableReason="Meta app not configured"
-                  />
-                  <p className="mt-vm-2 text-vm-0 text-vm-text-muted" role="note">
-                    One Meta sign-in covers WhatsApp, Instagram DMs and Messenger. Each channel
-                    keeps its own id, so turning another one on never disconnects this one.
-                  </p>
+              {showControl && surfaces && (
+                <div className="mt-vm-3 grid gap-vm-4 pl-[3.5rem]">
+                  {surfaces.map((surface) => (
+                    <div key={surface.provider + surface.channels.join()}>
+                      {surfaces.length > 1 && (
+                        <p className="mb-vm-2 text-vm-2 font-label">{surface.label}</p>
+                      )}
+                      <ConnectionControl
+                        connectionType={surface.connectionType}
+                        label={surface.label}
+                        purpose={surface.purpose}
+                        connection={connectionFor(surface.connectionType)}
+                        provider={surface.provider}
+                        destinationField={{
+                          ...surface.destination,
+                          channels: surface.channels,
+                        }}
+                        unavailableReason={surface.unavailableReason}
+                      />
+                      <p className="mt-vm-2 text-vm-0 text-vm-text-muted" role="note">
+                        {surface.note}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               )}
               {/* Luciel's work address is part of the Email channel, so it is set up
@@ -345,7 +399,9 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
       {phoneEnabled && (
         <div className="mt-vm-4 rounded-vm-card border border-vm-border p-vm-4">
           <div className="flex items-center justify-between gap-vm-3">
-            <span className="text-vm-2 font-label">Your business phone number (SMS &amp; Voice)</span>
+            <span className="text-vm-2 font-label">
+              Your business phone number (SMS &amp; Voice)
+            </span>
             {phonePending ? (
               <StatusChip kind="action_needed" detail="complete carrier registration" />
             ) : needsTwilio ? (
@@ -386,9 +442,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   How to register your brand and campaign
                 </a>
               </div>
-              {reverifySmsNumber.data?.statusDetail && (
-                <p>{reverifySmsNumber.data.statusDetail}</p>
-              )}
+              {reverifySmsNumber.data?.statusDetail && <p>{reverifySmsNumber.data.statusDetail}</p>}
               {reverifySmsNumber.isError && (
                 <p className="text-vm-danger">
                   We couldn&apos;t reach the carrier just now. Your number is unchanged — try
@@ -508,11 +562,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   disabled={!phoneValid || channelAction.busy}
                   className="mb-vm-4"
                 >
-                  {channelAction.busy
-                    ? 'Saving…'
-                    : changingNumber
-                      ? 'Save number'
-                      : 'Add number'}
+                  {channelAction.busy ? 'Saving…' : changingNumber ? 'Save number' : 'Add number'}
                 </Button>
                 {changingNumber && (
                   <Button
@@ -534,8 +584,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
               (Legal §A2/§A6, Arch §3.4.2). */}
           {smsChannel?.enabled && (
             <p className="mt-vm-4 border-t border-vm-border pt-vm-3 text-vm-0 text-vm-text-muted">
-              On SMS you are the sender of record: carrier registration and fees are yours, and so is
-              lawful opt-in and honoring opt-out under CASL and, where applicable, the TCPA. The
+              On SMS you are the sender of record: carrier registration and fees are yours, and so
+              is lawful opt-in and honoring opt-out under CASL and, where applicable, the TCPA. The
               platform honors STOP and HELP automatically at the channel layer, and the first
               outbound message to a recipient carries an AI-identity and STOP notice.
             </p>
@@ -561,8 +611,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
           <p>
             <strong>You register with the carriers, not us.</strong> If your number isn&apos;t
             already carrier-registered, you complete the required A2P 10DLC Brand and Campaign
-            registration yourself, in your own carrier account. VantageMind provides the guidance and
-            verifies your number&apos;s status, but does not perform, submit, or operate the
+            registration yourself, in your own carrier account. VantageMind provides the guidance
+            and verifies your number&apos;s status, but does not perform, submit, or operate the
             registration for you.{' '}
             <a
               href={A2P_GUIDE_URL}
@@ -586,8 +636,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
             billing path.
           </p>
           <p>
-            <strong>Consent and opt-out are yours.</strong> You are responsible for the lawfulness of
-            your opt-in and for honoring opt-out — the consent and opt-out obligations of CASL in
+            <strong>Consent and opt-out are yours.</strong> You are responsible for the lawfulness
+            of your opt-in and for honoring opt-out — the consent and opt-out obligations of CASL in
             Canada and, where applicable, the US TCPA. The platform enforces STOP and HELP handling
             at the channel layer and the first outbound message carries an AI-identity and STOP
             notice, but the lawful basis for contacting any given recipient is yours as the sender.
