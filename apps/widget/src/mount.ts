@@ -3,7 +3,7 @@ import {
   type WidgetApiClient,
   type WidgetBootstrap,
 } from '@luciel/api-client/widget';
-import { markdownToPlainText, markdownToSafeHtml } from './markdown';
+import { markdownToPlainText, markdownToSafeHtml } from '@luciel/ui/markdown';
 import { widgetStyles } from './styles';
 
 /**

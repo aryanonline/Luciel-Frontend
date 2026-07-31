@@ -108,6 +108,9 @@ importers:
       '@luciel/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
+      '@luciel/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
     devDependencies:
       jsdom:
         specifier: ^24.1.1

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import type { WidgetMessage, WidgetRenderState } from '@luciel/api-client/widget';
-import { Button } from '@luciel/ui';
+import { AssistantText, Button, markdownToPlainText } from '@luciel/ui';
 import { createPreviewWidgetClient, type WidgetAdapterKind } from '@/lib/widget-api';
 
 /**
@@ -38,6 +38,7 @@ export function WidgetPreview({
   const [input, setInput] = React.useState('');
   const [sending, setSending] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
+  const [sendError, setSendError] = React.useState<string | null>(null);
   const liveRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -72,23 +73,30 @@ export function WidgetPreview({
   }, [client, embedKey]);
 
   const send = async () => {
-    if (!input.trim()) return;
+    const text = input.trim();
+    // The in-flight guard is what stops a second Enter duplicating the message.
+    if (sending || !text) return;
     const visitor: WidgetMessage = {
       messageId: `v-${Date.now()}`,
       role: 'visitor',
-      text: input,
+      text,
       at: new Date().toISOString(),
     };
     setMessages((m) => [...m, visitor]);
     setInput('');
     setSending(true);
+    setSendError(null);
     try {
       const res = await client.send(embedKey, { text: visitor.text });
       setMessages((m) => [...m, res.reply]);
       // Announce the incoming assistant message (a11y live region, Arch §5.16).
-      if (liveRef.current) liveRef.current.textContent = res.reply.text;
+      if (liveRef.current) liveRef.current.textContent = markdownToPlainText(res.reply.text);
     } catch {
-      setFailed(true);
+      // A failed send costs the admin their typed message and the transcript if
+      // we swap the whole preview out, so put the text back and stay in place.
+      setMessages((m) => m.filter((msg) => msg.messageId !== visitor.messageId));
+      setInput(visitor.text);
+      setSendError('That message did not go through. Try again in a moment.');
     } finally {
       setSending(false);
     }
@@ -122,23 +130,36 @@ export function WidgetPreview({
       </div>
       <div className="max-h-72 space-y-vm-3 overflow-y-auto p-vm-4" aria-label="Conversation">
         {messages.map((m) => (
-          <p
+          <div
             key={m.messageId}
             className={m.role === 'visitor' ? 'text-right text-vm-2' : 'text-vm-2'}
           >
-            <span
+            <div
               className={
                 m.role === 'visitor'
-                  ? 'inline-block rounded-vm-card bg-vm-accent-weak px-vm-3 py-vm-2'
-                  : 'inline-block rounded-vm-card bg-vm-surface px-vm-3 py-vm-2'
+                  ? 'inline-block rounded-vm-card bg-vm-accent-weak px-vm-3 py-vm-2 text-left'
+                  : 'inline-block rounded-vm-card bg-vm-surface px-vm-3 py-vm-2 text-left'
               }
             >
-              {m.text}
-            </span>
-          </p>
+              {/* Assistant replies carry markdown — the admin reads what the
+                  visitor read, not literal `**` (P0-3). */}
+              {m.role === 'assistant' ? <AssistantText text={m.text} /> : m.text}
+            </div>
+          </div>
         ))}
+        {/* A slow answer should read as "working on it", not dead air (P1-20). */}
+        {sending && (
+          <p className="text-vm-1 text-vm-text-muted" role="status">
+            {boot?.assistantName ?? 'Assistant'} is typing…
+          </p>
+        )}
         <div ref={liveRef} role="status" aria-live="polite" className="sr-only" />
       </div>
+      {sendError && (
+        <p className="border-t border-vm-border px-vm-4 py-vm-2 text-vm-1 text-vm-danger" role="alert">
+          {sendError}
+        </p>
+      )}
       <div className="flex gap-vm-2 border-t border-vm-border p-vm-3">
         <input
           aria-label="Type your message"
@@ -146,10 +167,13 @@ export function WidgetPreview({
           placeholder="Type your message…"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
+          disabled={sending}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void send();
+          }}
         />
-        <Button variant="primary" onClick={send} disabled={sending}>
-          Send
+        <Button variant="primary" onClick={() => void send()} disabled={sending}>
+          {sending ? 'Sending…' : 'Send'}
         </Button>
       </div>
       <div className="border-t border-vm-border px-vm-4 py-vm-2 text-vm-0 text-vm-text-muted">

@@ -27,6 +27,44 @@
   }
 }
 
+/* Rendered assistant markdown (<AssistantText>). Tailwind's preflight strips
+   list markers and block margins, so the tags markdownToSafeHtml emits need
+   their meaning restored — otherwise a bulleted answer reads as a run-on. */
+.vm-assistant-text > :first-child {
+  margin-top: 0;
+}
+.vm-assistant-text > :last-child {
+  margin-bottom: 0;
+}
+.vm-assistant-text p {
+  margin: var(--vm-space-2) 0;
+}
+.vm-assistant-text ul,
+.vm-assistant-text ol {
+  margin: var(--vm-space-2) 0;
+  padding-left: var(--vm-space-5);
+}
+.vm-assistant-text ul {
+  list-style: disc;
+}
+.vm-assistant-text ol {
+  list-style: decimal;
+}
+.vm-assistant-text li {
+  margin: var(--vm-space-1) 0;
+}
+.vm-assistant-text code {
+  border-radius: var(--vm-radius-control);
+  background: var(--vm-surface);
+  padding: 0 var(--vm-space-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+.vm-assistant-text a {
+  color: var(--vm-accent);
+  text-decoration: underline;
+}
+
 /* Hero-demo animations. Gentle, on-brand (150–200ms ease-out family, §5).
    All collapse to no motion under prefers-reduced-motion. */
 @keyframes vm-msg-in {
