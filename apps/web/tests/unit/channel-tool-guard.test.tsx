@@ -10,6 +10,10 @@ import type { Luciel } from '@luciel/api-client';
  * send_sms requires the SMS channel enabled.
  * send_email requires the Email channel enabled.
  * The toggle must be DISABLED (not just no-op) when the channel is off.
+ *
+ * These await the toggles because the pillar withholds the whole add-on list
+ * until GET /luciel/capabilities settles — without the grouping it cannot tell
+ * a capability from a standalone tool (P1-5).
  */
 
 /** Base Luciel with SMS channel explicitly disabled. */
@@ -57,43 +61,43 @@ const lucielBothChannelsOn: Luciel = {
 };
 
 describe('Axis5-F02: send_sms tool blocked when SMS channel is off', () => {
-  it('the Send SMS toggle is disabled when the SMS channel is off', () => {
+  it('the Send SMS toggle is disabled when the SMS channel is off', async () => {
     renderWithQuery(<ToolsPillar luciel={lucielSmsChannelOff} />);
-    const toggle = screen.getByRole('switch', { name: /Enable Send SMS/i });
+    const toggle = await screen.findByRole('switch', { name: /Enable Send SMS/i });
     expect(toggle).toBeDisabled();
   });
 
-  it('shows the explanatory copy when SMS channel is off', () => {
+  it('shows the explanatory copy when SMS channel is off', async () => {
     renderWithQuery(<ToolsPillar luciel={lucielSmsChannelOff} />);
     expect(
-      screen.getByText(/Enable the SMS channel to use Send SMS/i),
+      await screen.findByText(/Enable the SMS channel to use Send SMS/i),
     ).toBeInTheDocument();
   });
 
-  it('the Send SMS toggle is NOT disabled when the SMS channel is on', () => {
+  it('the Send SMS toggle is NOT disabled when the SMS channel is on', async () => {
     renderWithQuery(<ToolsPillar luciel={lucielBothChannelsOn} />);
-    const toggle = screen.getByRole('switch', { name: /Enable Send SMS/i });
+    const toggle = await screen.findByRole('switch', { name: /Enable Send SMS/i });
     expect(toggle).not.toBeDisabled();
   });
 });
 
 describe('Axis5-F02: send_email tool blocked when Email channel is off', () => {
-  it('the Send email toggle is disabled when the Email channel is off', () => {
+  it('the Send email toggle is disabled when the Email channel is off', async () => {
     renderWithQuery(<ToolsPillar luciel={lucielEmailChannelOff} />);
-    const toggle = screen.getByRole('switch', { name: /Enable Send email/i });
+    const toggle = await screen.findByRole('switch', { name: /Enable Send email/i });
     expect(toggle).toBeDisabled();
   });
 
-  it('shows the explanatory copy when Email channel is off', () => {
+  it('shows the explanatory copy when Email channel is off', async () => {
     renderWithQuery(<ToolsPillar luciel={lucielEmailChannelOff} />);
     expect(
-      screen.getByText(/Enable the Email channel to use Send email/i),
+      await screen.findByText(/Enable the Email channel to use Send email/i),
     ).toBeInTheDocument();
   });
 
-  it('the Send email toggle is NOT disabled when the Email channel is on', () => {
+  it('the Send email toggle is NOT disabled when the Email channel is on', async () => {
     renderWithQuery(<ToolsPillar luciel={lucielBothChannelsOn} />);
-    const toggle = screen.getByRole('switch', { name: /Enable Send email/i });
+    const toggle = await screen.findByRole('switch', { name: /Enable Send email/i });
     expect(toggle).not.toBeDisabled();
   });
 });
@@ -101,9 +105,9 @@ describe('Axis5-F02: send_email tool blocked when Email channel is off', () => {
 describe('Axis5-F02: tools without a channel dependency are never blocked', () => {
   // schedule_callback belongs to no capability group, so it keeps its own toggle
   // whatever GET /luciel/capabilities returns (Decision #8).
-  it('schedule_callback toggle is enabled regardless of channel state', () => {
+  it('schedule_callback toggle is enabled regardless of channel state', async () => {
     renderWithQuery(<ToolsPillar luciel={lucielSmsChannelOff} />);
-    const toggle = screen.getByRole('switch', { name: /Enable Schedule a callback/i });
+    const toggle = await screen.findByRole('switch', { name: /Enable Schedule a callback/i });
     expect(toggle).not.toBeDisabled();
   });
 });
