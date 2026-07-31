@@ -9,3 +9,5 @@ export { Toggle, type ToggleProps } from './Toggle';
 export { ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { Modal, type ModalProps } from './Modal';
 export { Banner, type BannerProps, type BannerTone } from './Banner';
+export { AssistantText, type AssistantTextProps } from './AssistantText';
+export { markdownToSafeHtml, markdownToPlainText } from './markdown';

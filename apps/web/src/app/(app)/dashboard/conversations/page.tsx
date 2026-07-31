@@ -2,7 +2,16 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Card, CardTitle, Button, Banner, Textarea, PageHeader, cn } from '@luciel/ui';
+import {
+  Card,
+  CardTitle,
+  Button,
+  Banner,
+  Textarea,
+  PageHeader,
+  AssistantText,
+  cn,
+} from '@luciel/ui';
 import type {
   Message,
   AnswerEvidence,
@@ -122,6 +131,13 @@ export default function ConversationsPage() {
   const [sending, setSending] = React.useState(false);
   const [delivery, setDelivery] = React.useState<Delivery | null>(null);
   const [replyError, setReplyError] = React.useState<string | null>(null);
+  const [transcriptLoading, setTranscriptLoading] = React.useState(false);
+  const [transcriptError, setTranscriptError] = React.useState<string | null>(null);
+  /** Session whose take-over / hand-back is in flight, so only that row disables. */
+  const [modeBusy, setModeBusy] = React.useState<string | null>(null);
+  const [modeError, setModeError] = React.useState<string | null>(null);
+  const [flagBusy, setFlagBusy] = React.useState<string | null>(null);
+  const [flagError, setFlagError] = React.useState<Record<string, string>>({});
   /** Which transcript the in-flight fetches belong to, so a fast switch can't cross-fill. */
   const openedSession = React.useRef<string | null>(null);
 
@@ -153,11 +169,22 @@ export default function ConversationsPage() {
     setExpanded({});
     setDelivery(null);
     setReplyError(null);
+    setFlagError({});
     setReply('');
-    const transcript = await api.conversations.getMessages(sessionId);
-    if (openedSession.current !== sessionId) return;
-    setMessages(transcript);
-    void loadEvidence(sessionId, transcript);
+    setMessages([]);
+    setTranscriptError(null);
+    setTranscriptLoading(true);
+    try {
+      const transcript = await api.conversations.getMessages(sessionId);
+      if (openedSession.current !== sessionId) return;
+      setMessages(transcript);
+      void loadEvidence(sessionId, transcript);
+    } catch {
+      if (openedSession.current !== sessionId) return;
+      setTranscriptError('We could not load this conversation. Please try again.');
+    } finally {
+      if (openedSession.current === sessionId) setTranscriptLoading(false);
+    }
   };
 
   const send = async () => {
@@ -185,22 +212,51 @@ export default function ConversationsPage() {
     }
   };
 
-  const takeOver = async (sessionId: string) => {
-    await api.conversations.takeOver(sessionId);
-    qc.invalidateQueries({ queryKey: qk.conversations });
-  };
-  const handBack = async (sessionId: string) => {
-    await api.conversations.handBack(sessionId);
-    qc.invalidateQueries({ queryKey: qk.conversations });
+  /**
+   * Take-over and hand-back change who is answering a live visitor, so a failure
+   * that looks like a success is the worst outcome on this screen: the admin
+   * would type into a conversation Luciel still owns. Both report.
+   */
+  const setMode = async (sessionId: string, next: 'take_over' | 'hand_back') => {
+    if (modeBusy) return;
+    setModeBusy(sessionId);
+    setModeError(null);
+    try {
+      if (next === 'take_over') await api.conversations.takeOver(sessionId);
+      else await api.conversations.handBack(sessionId);
+      qc.invalidateQueries({ queryKey: qk.conversations });
+    } catch {
+      setModeError(
+        next === 'take_over'
+          ? 'We could not take over that conversation. Luciel is still answering it.'
+          : 'We could not hand that conversation back. You are still holding it.',
+      );
+    } finally {
+      setModeBusy(null);
+    }
   };
 
   const flag = async (sessionId: string, messageId: string) => {
-    await api.conversations.flagAnswer(sessionId, messageId);
-    setEvidence((prev) => {
-      const current = prev[messageId];
-      if (!current || current === 'unavailable') return prev;
-      return { ...prev, [messageId]: { ...current, flaggedByAdmin: true } };
+    setFlagBusy(messageId);
+    setFlagError((prev) => {
+      const { [messageId]: _removed, ...rest } = prev;
+      return rest;
     });
+    try {
+      await api.conversations.flagAnswer(sessionId, messageId);
+      setEvidence((prev) => {
+        const current = prev[messageId];
+        if (!current || current === 'unavailable') return prev;
+        return { ...prev, [messageId]: { ...current, flaggedByAdmin: true } };
+      });
+    } catch {
+      setFlagError((prev) => ({
+        ...prev,
+        [messageId]: 'We could not flag that answer. Please try again.',
+      }));
+    } finally {
+      setFlagBusy(null);
+    }
   };
 
   return (
@@ -213,38 +269,82 @@ export default function ConversationsPage() {
       <div className="grid gap-vm-4 lg:grid-cols-2">
         <Card>
           <CardTitle>Recent</CardTitle>
-          <ul className="mt-vm-3 divide-y divide-vm-border">
-            {conversations.data?.map((c) => (
-              <li key={c.sessionId} className="py-vm-3">
-                <div className="flex items-center justify-between gap-vm-3">
-                  <button
-                    className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vm-focus"
-                    onClick={() => open(c.sessionId)}
-                  >
-                    <div className="truncate text-vm-2">{c.summary ?? 'Conversation'}</div>
-                    <div className="text-vm-0 text-vm-text-muted">
-                      {c.channel} · {new Date(c.startedAt).toLocaleString()}
+          {modeError && (
+            <Banner tone="danger" className="mt-vm-3">
+              {modeError}
+            </Banner>
+          )}
+          {/* Loading, failure and "genuinely none yet" read differently (P1-6). */}
+          {conversations.isPending ? (
+            <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
+              Loading conversations…
+            </p>
+          ) : conversations.isError ? (
+            <Banner tone="danger" className="mt-vm-3">
+              We could not load your conversations.{' '}
+              <button className="underline" onClick={() => void conversations.refetch()}>
+                Try again
+              </button>
+            </Banner>
+          ) : (conversations.data?.length ?? 0) === 0 ? (
+            <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
+              No conversations yet. They appear here as soon as a visitor talks to your Luciel.
+            </p>
+          ) : (
+            <ul className="mt-vm-3 divide-y divide-vm-border">
+              {conversations.data?.map((c) => {
+                const busy = modeBusy === c.sessionId;
+                const held = c.mode === 'human_controlled';
+                return (
+                  <li key={c.sessionId} className="py-vm-3">
+                    <div className="flex items-center justify-between gap-vm-3">
+                      <button
+                        className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vm-focus"
+                        onClick={() => void open(c.sessionId)}
+                      >
+                        <div className="truncate text-vm-2">{c.summary ?? 'Conversation'}</div>
+                        <div className="text-vm-0 text-vm-text-muted">
+                          {c.channel} · {new Date(c.startedAt).toLocaleString()}
+                        </div>
+                      </button>
+                      <Button
+                        variant="secondary"
+                        disabled={modeBusy !== null}
+                        onClick={() => void setMode(c.sessionId, held ? 'hand_back' : 'take_over')}
+                      >
+                        {busy
+                          ? held
+                            ? 'Handing back…'
+                            : 'Taking over…'
+                          : held
+                            ? 'Hand back'
+                            : 'Take over'}
+                      </Button>
                     </div>
-                  </button>
-                  {c.mode === 'human_controlled' ? (
-                    <Button variant="secondary" onClick={() => handBack(c.sessionId)}>
-                      Hand back
-                    </Button>
-                  ) : (
-                    <Button variant="secondary" onClick={() => takeOver(c.sessionId)}>
-                      Take over
-                    </Button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </Card>
 
         <Card>
           <CardTitle>{openSession ? 'Transcript' : 'Select a conversation'}</CardTitle>
           {openSession && (
             <div className="mt-vm-3 space-y-vm-3">
+              {transcriptLoading && (
+                <p className="text-vm-1 text-vm-text-muted" role="status">
+                  Loading the transcript…
+                </p>
+              )}
+              {transcriptError && (
+                <Banner tone="danger">
+                  {transcriptError}{' '}
+                  <button className="underline" onClick={() => void open(openSession)}>
+                    Try again
+                  </button>
+                </Banner>
+              )}
               {messages.map((m) => {
                 const answer = m.role === 'luciel' ? evidence[m.messageId] : undefined;
                 const isOpen = Boolean(expanded[m.messageId]);
@@ -260,7 +360,14 @@ export default function ConversationsPage() {
                       >
                         {ROLE_LABEL[m.role]}:{' '}
                       </span>
-                      <span>{m.text}</span>
+                      {/* Luciel's answers carry markdown; the owner reads the same
+                          rendering the visitor got, never literal `**` (P0-3).
+                          Visitor and human-agent text stays a plain text node. */}
+                      {m.role === 'luciel' ? (
+                        <AssistantText text={m.text} className="inline-block align-top" />
+                      ) : (
+                        <span>{m.text}</span>
+                      )}
                     </div>
 
                     {/* Evidence sits under the answer it belongs to (Decision #10). */}
@@ -326,13 +433,21 @@ export default function ConversationsPage() {
                                 answers — the fix stays within your account.
                               </Banner>
                             ) : (
-                              <Button
-                                variant="ghost"
-                                className="mt-vm-2"
-                                onClick={() => flag(openSession, m.messageId)}
-                              >
-                                Flag this answer
-                              </Button>
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  className="mt-vm-2"
+                                  disabled={flagBusy === m.messageId}
+                                  onClick={() => void flag(openSession, m.messageId)}
+                                >
+                                  {flagBusy === m.messageId ? 'Flagging…' : 'Flag this answer'}
+                                </Button>
+                                {flagError[m.messageId] && (
+                                  <Banner tone="danger" className="mt-vm-2">
+                                    {flagError[m.messageId]}
+                                  </Banner>
+                                )}
+                              </>
                             )}
                           </>
                         )}

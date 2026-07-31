@@ -1,7 +1,13 @@
 /**
- * Minimal, dependency-free markdown renderer for assistant replies in the
- * widget bubble (Product-review decision 1 — answers rendered raw showed
- * literal `**` and `-` markers).
+ * Minimal, dependency-free markdown renderer for assistant replies
+ * (Product-review decision 1 — answers rendered raw showed literal `**` and `-`
+ * markers).
+ *
+ * Shared by every surface that shows an assistant answer: the embedded widget
+ * bubble, the Conversations transcript, and the "Test it here" preview. It is
+ * importable as `@luciel/ui/markdown` — a pure string function with ZERO React
+ * and zero dependencies — so the widget bundle can use it without pulling a
+ * framework onto a customer's page.
  *
  * Security posture: this runs INSIDE A THIRD-PARTY HOST PAGE, so model output is
  * treated as untrusted. The renderer escapes the input FIRST and then only ever
