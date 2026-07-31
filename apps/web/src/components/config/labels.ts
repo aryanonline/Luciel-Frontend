@@ -61,9 +61,15 @@ export const toolMeta: Record<AddonToolId, { label: string; desc: string; connec
       desc: 'Write captured leads into your external CRM.',
       connectLabel: 'your CRM',
     },
+    // NOT "Custom webhook": the served CRM registry already offers a provider by
+    // that name, and the two rendered side by side under Tools with the same
+    // words are different things — that one is where captured leads go INSTEAD
+    // of a CRM, this one is an endpoint Luciel calls as a tool of its own. The
+    // provider's name is the backend's to set (Decision #6), so the one we own
+    // is the one that moves.
     bring_your_own_webhook: {
-      label: 'Custom webhook',
-      desc: 'Register your own HTTP endpoint as a tool.',
+      label: 'Post to my own endpoint',
+      desc: 'Luciel calls an HTTP endpoint you run, as a tool in its own right — not the webhook you can pick as the destination for captured leads.',
       connectLabel: 'your endpoint',
     },
   };
