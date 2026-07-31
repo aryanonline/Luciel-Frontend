@@ -24,6 +24,7 @@ describe('adapter selection (one flag)', () => {
       'billing',
       'analytics',
       'account',
+      'contact',
     ];
     for (const ns of namespaces) {
       expect(Object.keys(mock[ns]).sort()).toEqual(Object.keys(http[ns]).sort());
@@ -86,6 +87,34 @@ describe('mock models the required states', () => {
     const statuses = conns.map((c) => c.status);
     expect(statuses).toContain('connected');
     expect(statuses).toContain('expired');
+  });
+});
+
+describe('contact form (public, unauthenticated)', () => {
+  it('accepts a captcha-backed message without a session', async () => {
+    const client = createLucielClient({ adapter: 'mock', mock: { scenario: 'expired_session' } });
+    await expect(
+      client.contact.submit({
+        name: 'Ada',
+        email: 'ada@example.com',
+        message: 'I have a question about pricing.',
+        captchaToken: 'valid',
+      }),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  it('rejects a captcha the server will not accept', async () => {
+    const client = createLucielClient({ adapter: 'mock' });
+    await client.contact
+      .submit({
+        name: 'Ada',
+        email: 'ada@example.com',
+        message: 'I have a question about pricing.',
+        captchaToken: 'invalid',
+      })
+      .catch((e: LucielApiError) => {
+        expect(e.code).toBe('validation_error');
+      });
   });
 });
 

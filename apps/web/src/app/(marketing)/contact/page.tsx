@@ -17,7 +17,9 @@ import {
   Button,
   Banner,
 } from '@luciel/ui';
+import { LucielApiError } from '@luciel/api-client';
 import { HCaptcha } from '@/components/marketing/hcaptcha';
+import { api } from '@/lib/api';
 
 /**
  * Contact page (user request #6). Anti-spam is layered:
@@ -27,12 +29,11 @@ import { HCaptcha } from '@/components/marketing/hcaptcha';
  *     honeypot is silently dropped.
  *  3. Server-side rate limiting (backend) once wired.
  *
- * EMAIL PRIVACY: the destination inbox (info@vantagemind.ai) is intentionally
- * NOT present anywhere in this client bundle — no mailto:, no rendered address.
- * The form POSTs to a backend endpoint that holds the destination address and
- * relays the message, so the inbox is never harvestable from the page source.
- * For this mock build, submission is simulated; the real POST wires in with the
- * backend (see the TODO in onSubmit).
+ * EMAIL PRIVACY: the destination inbox is intentionally NOT present anywhere in
+ * this client bundle — no mailto:, no rendered address. The form POSTs to
+ * /api/v1/contact through the typed client; the backend holds the destination
+ * address and relays the message, so the inbox is never harvestable from the
+ * page source.
  */
 const schema = z.object({
   name: z.string().min(1, 'Please tell us your name.'),
@@ -45,6 +46,7 @@ type FormValues = z.infer<typeof schema>;
 
 export default function ContactPage() {
   const [captchaToken, setCaptchaToken] = React.useState<string | null>(null);
+  const [captchaResets, setCaptchaResets] = React.useState(0);
   const [sent, setSent] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const {
@@ -65,14 +67,25 @@ export default function ContactPage() {
       return;
     }
     try {
-      // TODO(backend): POST { name, email, message, captchaToken } to
-      // /api/v1/contact, which verifies the hCaptcha token server-side and
-      // relays to the internal inbox. The inbox address lives only on the
-      // server — never in this bundle. For the mock, simulate success:
-      await new Promise((r) => setTimeout(r, 500));
+      await api.contact.submit({
+        name: values.name,
+        email: values.email,
+        message: values.message,
+        captchaToken,
+      });
       setSent(true);
-    } catch {
-      setError('Something went wrong sending your message. Please try again.');
+    } catch (err) {
+      // The server's own words for a refusal it can explain (expired challenge,
+      // rate limit) beat a generic apology the sender can't act on.
+      setError(
+        err instanceof LucielApiError &&
+          (err.code === 'validation_error' || err.code === 'rate_limited')
+          ? err.message
+          : 'Something went wrong sending your message. Please try again.',
+      );
+      // The token is spent either way, so re-issue the challenge before a retry.
+      setCaptchaToken(null);
+      setCaptchaResets((n) => n + 1);
     }
   });
 
@@ -118,7 +131,7 @@ export default function ContactPage() {
                 </div>
 
                 <div className="mb-vm-4">
-                  <HCaptcha onVerify={setCaptchaToken} />
+                  <HCaptcha onVerify={setCaptchaToken} resetSignal={captchaResets} />
                 </div>
 
                 <Button type="submit" variant="primary" disabled={isSubmitting} className="w-full">

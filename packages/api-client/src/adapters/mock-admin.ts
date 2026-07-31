@@ -221,6 +221,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     return clone(value);
   };
 
+  /** Drives the mock contact form's anti-spam rate limit. */
+  let contactSubmissions = 0;
+
   // Deterministic ids for anything the mock creates at runtime.
   let seq = 0;
   const nextId = () => `aaaaaaaa-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
@@ -1084,6 +1087,29 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         state.account.state = 'closed';
         state.luciel = null;
         await delay();
+      },
+    },
+    contact: {
+      /**
+       * Public and unauthenticated, so no session guard. Reproduces the two
+       * refusals the form must render: a captcha the server rejects, and the
+       * anti-spam rate limit after repeated sends.
+       */
+      async submit(req) {
+        if (req.captchaToken === 'invalid') {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'That spam-protection challenge expired. Please try it again.',
+          });
+        }
+        contactSubmissions += 1;
+        if (contactSubmissions > 3) {
+          throw new LucielApiError({
+            code: 'rate_limited',
+            message: 'Too many messages just now. Please try again in a few minutes.',
+          });
+        }
+        return ok({ ok: true });
       },
     },
   };

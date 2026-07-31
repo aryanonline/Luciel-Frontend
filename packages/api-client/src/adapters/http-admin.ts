@@ -161,5 +161,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       requestExport: () => t.post('/api/v1/admin/account/export'),
       close: () => t.post('/api/v1/admin/account/close'),
     },
+    contact: {
+      submit: (req) => t.post('/api/v1/contact', req),
+    },
   };
 }
