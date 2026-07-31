@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import Link from 'next/link';
 import {
   Card,
@@ -20,6 +21,7 @@ import {
   useConnections,
   useSwapConnection,
 } from '@/lib/hooks';
+import { authorizeOrExplain } from '@/lib/oauth-connect';
 
 /**
  * Dashboard overview. Imports ONLY the typed client hooks (§7). Renders the
@@ -43,12 +45,41 @@ export default function DashboardPage() {
   const connections = useConnections();
 
   const swap = useSwapConnection();
+  const [swapNotice, setSwapNotice] = React.useState<string | null>(null);
+  const [swapping, setSwapping] = React.useState<string | null>(null);
   const b = billing.data?.budget;
   const nearCap = b && b.billingState === 'free_cap' && b.conversationsThisPeriod >= 40 && !b.atCap;
   const nearNextBlock = b && b.billingState === 'payg_enabled' && b.nearNextBlock;
   const largeLeadStore = (leads.data?.length ?? 0) >= LARGE_LEAD_STORE;
   const needsAttention = connections.data?.filter((c) => c.status !== 'connected') ?? [];
   const hasConnected = (connections.data ?? []).some((c) => c.status === 'connected');
+
+  /**
+   * Swapping mints a single-use consent URL that must actually be navigated to.
+   * Firing the mutation and discarding its result leaves the admin on a page
+   * that silently did nothing (P0-8, hooks.ts startConnection).
+   */
+  const beginSwap = async (connectionId: string, provider: string) => {
+    setSwapNotice(null);
+    setSwapping(connectionId);
+    try {
+      const start = await swap.mutateAsync({ connectionId, provider });
+      const explanation = authorizeOrExplain({
+        ...start,
+        provider,
+        connectionId,
+        label: provider,
+        callbackKind: 'connection',
+      });
+      if (explanation) setSwapNotice(explanation);
+    } catch {
+      setSwapNotice(
+        `We could not start a sign-in to change the ${provider} account. Your current connection is untouched — please try again.`,
+      );
+    } finally {
+      setSwapping(null);
+    }
+  };
 
   return (
     <div className="space-y-vm-5">
@@ -109,7 +140,25 @@ export default function DashboardPage() {
       <div className="grid gap-vm-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardTitle>Conversation budget</CardTitle>
-          {b && luciel.data && (
+          {/* An empty card is indistinguishable from "no usage" (P1-11). */}
+          {billing.isPending || luciel.isPending ? (
+            <p className="mt-vm-4 text-vm-1 text-vm-text-muted" role="status">
+              Loading your budget…
+            </p>
+          ) : billing.isError || luciel.isError ? (
+            <Banner tone="danger" className="mt-vm-4">
+              We could not load your budget.{' '}
+              <button
+                className="underline"
+                onClick={() => {
+                  void billing.refetch();
+                  void luciel.refetch();
+                }}
+              >
+                Try again
+              </button>
+            </Banner>
+          ) : b && luciel.data ? (
             <>
               {/* Budget bar copy — verbatim (Arch §3.4.1b). */}
               <ProgressBar
@@ -129,16 +178,40 @@ export default function DashboardPage() {
                 <Stat label="Leads captured" value={leads.data?.length ?? '—'} />
               </div>
             </>
+          ) : (
+            <p className="mt-vm-4 text-vm-1 text-vm-text-muted">
+              No budget to show yet — you haven&apos;t built a Luciel.
+            </p>
           )}
         </Card>
 
         <Card>
           <CardTitle>Connections</CardTitle>
+          {/* "All connected and healthy" must never be said about a list we do
+              not have, or about an account with no connections at all (P1-10). */}
           <CardDescription>
-            {needsAttention.length === 0
-              ? 'All connected and healthy.'
-              : `${needsAttention.length} need${needsAttention.length === 1 ? 's' : ''} attention.`}
+            {connections.isPending
+              ? 'Checking your connections…'
+              : connections.isError
+                ? 'We could not check your connections.'
+                : (connections.data?.length ?? 0) === 0
+                  ? 'Nothing connected yet.'
+                  : needsAttention.length === 0
+                    ? 'All connected and healthy.'
+                    : `${needsAttention.length} need${needsAttention.length === 1 ? 's' : ''} attention.`}
           </CardDescription>
+          {connections.isError && (
+            <Banner tone="danger" className="mt-vm-3">
+              <button className="underline" onClick={() => void connections.refetch()}>
+                Try again
+              </button>
+            </Banner>
+          )}
+          {swapNotice && (
+            <Banner tone="danger" className="mt-vm-3">
+              {swapNotice}
+            </Banner>
+          )}
           <ul className="mt-vm-3 space-y-vm-3">
             {connections.data?.map((c) => (
               <li key={c.connectionId} className="text-vm-1">
@@ -154,10 +227,12 @@ export default function DashboardPage() {
                   <div className="mt-vm-1">
                     <Button
                       variant="ghost"
-                      onClick={() => swap.mutate({ connectionId: c.connectionId, provider: c.provider })}
+                      onClick={() => void beginSwap(c.connectionId, c.provider)}
                       disabled={swap.isPending}
                     >
-                      Change connected account
+                      {swapping === c.connectionId
+                        ? 'Opening sign-in…'
+                        : 'Change connected account'}
                     </Button>
                   </div>
                 )}
