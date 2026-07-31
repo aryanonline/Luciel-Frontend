@@ -81,7 +81,7 @@ async function downloadAnalyticsCsv(view: string) {
 }
 
 export default function AnalyticsPage() {
-  const { data: raw, isLoading } = useAnalytics();
+  const { data: raw, isPending, isError, refetch } = useAnalytics();
   const a = raw as AnalyticsOverviewExtended | undefined;
   const [exportError, setExportError] = React.useState<string | null>(null);
 
@@ -106,9 +106,23 @@ export default function AnalyticsPage() {
 
       {exportError && <Banner tone="danger">{exportError}</Banner>}
 
-      {isLoading || !a ? (
+      {/* `isLoading || !a` left a failed read spinning on "Loading…" forever,
+          because a query that has errored is no longer loading and still has no
+          data (P1-13). */}
+      {isPending ? (
         <p className="text-vm-1 text-vm-text-muted" role="status">
-          Loading…
+          Loading your analytics…
+        </p>
+      ) : isError ? (
+        <Banner tone="danger">
+          We could not load your analytics, so no figures are shown rather than shown wrong.{' '}
+          <button className="underline" onClick={() => void refetch()}>
+            Try again
+          </button>
+        </Banner>
+      ) : !a ? (
+        <p className="text-vm-1 text-vm-text-muted">
+          No analytics yet — they appear once your Luciel has handled its first conversation.
         </p>
       ) : (
         <>
@@ -133,8 +147,13 @@ export default function AnalyticsPage() {
 
           <Card>
             <CardTitle>Escalations by signal</CardTitle>
+            {/* Six reasons are reported, not four: the four escalation signals
+                Luciel decides on, plus the two operational reasons it hands over
+                for. Claiming four while listing six was simply wrong (P2-2). */}
             <CardDescription>
-              The four signals are fixed; this is how often each fired.
+              Luciel decides when to escalate on four fixed signals — you never configure them. It
+              also hands over when the conversation budget is exhausted or the model is unavailable.
+              This is how often each fired.
             </CardDescription>
             <ul className="mt-vm-3 space-y-vm-2">
               {a.escalationsBySignal.map((s) => (
@@ -220,8 +239,8 @@ export default function AnalyticsPage() {
                               style={{
                                 backgroundColor:
                                   count === 0
-                                    ? 'var(--vm-color-surface-muted, #eee)'
-                                    : `color-mix(in srgb, var(--vm-color-primary, #4338ca) ${Math.min(100, 20 + count * 15)}%, transparent)`,
+                                    ? 'var(--vm-surface)'
+                                    : `color-mix(in srgb, var(--vm-accent) ${Math.min(100, 20 + count * 15)}%, transparent)`,
                               }}
                             />
                           </td>
