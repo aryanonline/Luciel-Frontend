@@ -27,7 +27,18 @@ declare global {
   }
 }
 
-export function HCaptcha({ onVerify }: { onVerify: (token: string | null) => void }) {
+/**
+ * `resetSignal` — increment it after a failed submit. An hCaptcha token is
+ * single-use, so a form that keeps the spent token can only fail again; the
+ * challenge has to be re-issued before a retry can succeed.
+ */
+export function HCaptcha({
+  onVerify,
+  resetSignal = 0,
+}: {
+  onVerify: (token: string | null) => void;
+  resetSignal?: number;
+}) {
   const ref = React.useRef<HTMLDivElement>(null);
   const widgetId = React.useRef<string | null>(null);
 
@@ -69,6 +80,11 @@ export function HCaptcha({ onVerify }: { onVerify: (token: string | null) => voi
       cancelled = true;
     };
   }, [onVerify]);
+
+  React.useEffect(() => {
+    if (resetSignal === 0 || !window.hcaptcha || !widgetId.current) return;
+    window.hcaptcha.reset(widgetId.current);
+  }, [resetSignal]);
 
   // role="group" so the aria-label is allowed: ARIA prohibits naming a bare div
   // (axe aria-prohibited-attr / WCAG 4.1.2), and hCaptcha injects its iframe here.

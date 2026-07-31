@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card, CardTitle, CardDescription, Field, Input, Banner } from '@luciel/ui';
+import { LucielApiError } from '@luciel/api-client';
 import { api } from '@/lib/api';
 import { HCaptcha } from '@/components/marketing/hcaptcha';
 
@@ -30,6 +31,7 @@ export default function SignupPage() {
   const router = useRouter();
   const [serverError, setServerError] = React.useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = React.useState<string | null>(null);
+  const [captchaResets, setCaptchaResets] = React.useState(0);
   const {
     register,
     handleSubmit,
@@ -48,8 +50,17 @@ export default function SignupPage() {
       // The verification mail did not make it onto the wire — the verify wall
       // must offer a resend and a support path, not "check your inbox" (§1).
       router.push(result.emailDeliveryDegraded ? '/verify?delivery=degraded' : '/verify');
-    } catch {
-      setServerError('Something went wrong creating your account. Please try again.');
+    } catch (err) {
+      setServerError(
+        err instanceof LucielApiError &&
+          (err.code === 'validation_error' || err.code === 'conflict' || err.code === 'rate_limited')
+          ? err.message
+          : 'Something went wrong creating your account. Please try again.',
+      );
+      // An hCaptcha token is single-use: keeping the spent one leaves Submit
+      // enabled but guaranteed to fail again (P1-16). Re-issue the challenge.
+      setCaptchaToken(null);
+      setCaptchaResets((n) => n + 1);
     }
   });
 
@@ -82,7 +93,7 @@ export default function SignupPage() {
         {/* hCaptcha bot-protection (§3.7.1a). The token is verified server-side
             before the account is created. */}
         <div className="mt-vm-4">
-          <HCaptcha onVerify={setCaptchaToken} />
+          <HCaptcha onVerify={setCaptchaToken} resetSignal={captchaResets} />
         </div>
         <Button
           type="submit"

@@ -5,4 +5,5 @@ export * from './billing';
 export * from './conversations';
 export * from './connections';
 export * from './analytics';
+export * from './contact';
 export * from './widget';

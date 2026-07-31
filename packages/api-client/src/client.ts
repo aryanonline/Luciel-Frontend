@@ -45,6 +45,8 @@ import type {
   LeadExportFile,
   AnalyticsOverview,
   AuditEvent,
+  ContactRequest,
+  ContactResult,
 } from './schemas';
 
 /**
@@ -301,5 +303,15 @@ export interface LucielApiClient {
     /** Close account — requires Luciel deleted first; export-first (Arch §3.6.6). */
     requestExport(): Promise<{ ok: boolean }>;
     close(): Promise<void>;
+  };
+
+  contact: {
+    /**
+     * Public marketing contact form — unauthenticated. The server verifies the
+     * hCaptcha token and relays to an inbox whose address exists only there, so
+     * it is never harvestable from the page source. `validation_error` (bad
+     * captcha) and `rate_limited` are both expected outcomes to surface.
+     */
+    submit(req: ContactRequest): Promise<ContactResult>;
   };
 }
