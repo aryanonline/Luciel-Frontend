@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import type { ChannelConfig, Connection } from '@luciel/api-client';
 import { renderWithQuery } from './test-utils';
 import ConfigurePage from '@/app/(app)/dashboard/configure/page';
 
@@ -29,9 +30,53 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({}),
 }));
 
+/** Overridden per test so the landing can be driven against a real channel state. */
+const served = vi.hoisted(() => ({
+  channels: null as ChannelConfig[] | null,
+  connections: null as Connection[] | null,
+}));
+
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      luciel: {
+        ...actual.api.luciel,
+        get: async () => {
+          const luciel = await actual.api.luciel.get();
+          if (!luciel || !served.channels) return luciel;
+          return { ...luciel, channels: served.channels };
+        },
+      },
+      connections: {
+        ...actual.api.connections,
+        list: async () => served.connections ?? actual.api.connections.list(),
+      },
+    },
+  };
+});
+
 beforeEach(() => {
   nav.replace.mockClear();
+  served.channels = null;
+  served.connections = null;
 });
+
+const metaGrant = (destinations?: Record<string, string>): Connection => ({
+  connectionId: '66666666-6666-4666-8666-666666666666',
+  connectionType: 'channel_auth',
+  provider: 'meta',
+  status: 'connected',
+  createdAt: '2026-02-01T10:00:00Z',
+  nonSecretConfig: destinations ? { destinations } : {},
+});
+
+const withWhatsApp = (): ChannelConfig[] => [
+  { id: 'widget', enabled: true },
+  { id: 'whatsapp', enabled: true },
+];
 
 describe('consent landing — success', () => {
   it("names the provider from the served registry and clears the params", async () => {
@@ -56,6 +101,55 @@ describe('consent landing — success', () => {
     const notice = await screen.findByText(/Google Calendar is connected\./);
     fireEvent.click(screen.getByRole('button', { name: /Dismiss this message/i }));
     expect(notice).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * A grant is not a live channel. Meta authorization lands the channel at
+ * "action needed: name the id Luciel answers on", so a banner claiming
+ * "connected" contradicts the card directly below it — and the owner cannot
+ * tell which one to believe.
+ */
+describe('consent landing — a grant that still owes a step', () => {
+  it('says one step is left when the channel has no id bound yet', async () => {
+    nav.params = new URLSearchParams({ status: 'connected', provider: 'meta' });
+    served.channels = withWhatsApp();
+    served.connections = [metaGrant()];
+    renderWithQuery(<ConfigurePage />);
+
+    expect(
+      await screen.findByText(/Meta \(WhatsApp & Messenger\) is authorized — one step left\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Meta .* is connected\./)).not.toBeInTheDocument();
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/dashboard/configure'));
+  });
+
+  it('says connected once the id is bound', async () => {
+    nav.params = new URLSearchParams({ status: 'connected', provider: 'meta' });
+    served.channels = withWhatsApp();
+    served.connections = [metaGrant({ whatsapp: '1234567890' })];
+    renderWithQuery(<ConfigurePage />);
+
+    expect(
+      await screen.findByText(
+        /Meta \(WhatsApp & Messenger\) is connected\. Luciel can use it from the next conversation on\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('claims only the authorization while the channel state is still unread', async () => {
+    nav.params = new URLSearchParams({ status: 'connected', provider: 'meta' });
+    served.channels = withWhatsApp();
+    // No grant row served: the reads have not caught up with the redirect, so
+    // neither "connected" nor "one step left" is a claim we can make.
+    served.connections = [];
+    renderWithQuery(<ConfigurePage />);
+
+    expect(
+      await screen.findByText(
+        /Meta \(WhatsApp & Messenger\) is authorized\. If the channel below asks for an id/,
+      ),
+    ).toBeInTheDocument();
   });
 });
 

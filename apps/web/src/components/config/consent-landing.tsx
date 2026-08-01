@@ -5,8 +5,9 @@ import { Suspense } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Banner } from '@luciel/ui';
 import type { ConnectionProviders } from '@luciel/api-client';
-import { useConnectionProviders } from '@/lib/hooks';
+import { useConnectionProviders, useConnections, useLuciel } from '@/lib/hooks';
 import type { ActionNotice } from '@/lib/use-action-notice';
+import { messagingReadiness, type MessagingReadiness } from './messaging-surfaces';
 
 /**
  * What the owner is told when a provider's consent screen sends them back
@@ -90,6 +91,26 @@ function providerName(groups: ConnectionProviders[] | undefined, slug: string | 
   return served ?? humanize(slug);
 }
 
+/**
+ * A grant is not a live channel. A Meta sign-in lands the channel at "action
+ * needed: name the id Luciel answers on", so announcing "connected" here reads
+ * as a contradiction of the card two inches below it — and the owner has no way
+ * to tell which of the two is lying. Say what the round-trip actually achieved,
+ * and let the state of the channel decide whether anything is still owed.
+ */
+function connectedText(name: string, readiness: MessagingReadiness): string {
+  switch (readiness) {
+    case 'ready':
+      return `${name} is connected. Luciel can use it from the next conversation on.`;
+    case 'awaiting_destination':
+      return `${name} is authorized — one step left. The channel below is asking which id Luciel answers on; add it and Luciel starts replying there.`;
+    // The reads behind the answer have not settled. Authorization is the part we
+    // watched happen, so it is the only part claimed.
+    case 'unknown':
+      return `${name} is authorized. If the channel below asks for an id, add it to finish.`;
+  }
+}
+
 function ConsentLandingInner() {
   const router = useRouter();
   const pathname = usePathname();
@@ -97,6 +118,10 @@ function ConsentLandingInner() {
   // Every type's providers: the redirect names a provider, not the connection
   // type it belongs to.
   const providers = useConnectionProviders();
+  // The same two reads the pillars below run, so the banner and the card cannot
+  // disagree; neither is awaited, because an unsettled read is its own wording.
+  const luciel = useLuciel();
+  const connections = useConnections();
 
   const [result, setResult] = React.useState<ConsentResult | null>(() => readConsentResult(params));
 
@@ -114,7 +139,13 @@ function ConsentLandingInner() {
   // a connection landing reads like every other outcome on this screen.
   const name = providerName(providers.data, result.slug);
   const notice: ActionNotice = result.connected
-    ? { tone: 'info', text: `${name} is connected. Luciel can use it from the next conversation on.` }
+    ? {
+        tone: 'info',
+        text: connectedText(
+          name,
+          messagingReadiness(result.slug ?? '', luciel.data?.channels, connections.data),
+        ),
+      }
     : { tone: 'danger', text: `We could not connect ${name}. ${explain(result.reason)}` };
 
   return (
