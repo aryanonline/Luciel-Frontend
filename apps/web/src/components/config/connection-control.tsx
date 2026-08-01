@@ -21,6 +21,7 @@ import { authorizeOrExplain } from '@/lib/oauth-connect';
 import type { ActionNotice } from '@/lib/use-action-notice';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { channelLabel, chipKind, toolMeta } from './labels';
+import { boundDestination } from './messaging-surfaces';
 
 /**
  * THE connection control (Decisions #5 + #6). Every external connection — each
@@ -56,6 +57,13 @@ export interface ConnectionControlProps {
    * `configured: false`, or the registry not carrying it, still disables it.
    */
   provider?: string;
+  /**
+   * What the owner must already have before the provider's sign-in can succeed.
+   * Shown only before it has, since a prerequisite met is not news — and a
+   * prerequisite discovered halfway through someone else's consent screen is
+   * the failure this exists to prevent.
+   */
+  prerequisite?: string;
   /** Used when the registry offers no choice for this type (email sender, webhook). */
   fallbackProvider?: string;
   /**
@@ -96,23 +104,13 @@ function disabledSummary(tools: string[], channels: string[]): string | null {
   return `Switched off too: ${names.join(', ')}. Turn them back on after you reconnect.`;
 }
 
-/** The per-channel Meta ids this row has bound, plus the pre-per-channel one. */
-function readDestinations(connection: Connection | undefined): {
-  perChannel: Record<string, string>;
-  legacy: string | undefined;
-} {
-  const config = connection?.nonSecretConfig;
-  const perChannel = (config?.destinations as Record<string, string> | undefined) ?? {};
-  const legacy = typeof config?.destination === 'string' ? config.destination : undefined;
-  return { perChannel, legacy };
-}
-
 export function ConnectionControl({
   connectionType,
   label,
   purpose,
   connection,
   provider,
+  prerequisite,
   fallbackProvider,
   destinationField,
   unavailableReason,
@@ -168,12 +166,9 @@ export function ConnectionControl({
   const boundElsewhere = Boolean(provider && connection && connection.provider !== provider);
   const status = boundElsewhere ? undefined : connection?.status;
 
-  const { perChannel, legacy } = readDestinations(connection);
   const metaChannels = destinationField?.channels ?? [];
-  const unboundChannels = metaChannels.filter((c) => !perChannel[c] && !legacy);
-  const destination = metaChannels.length
-    ? (metaChannels.map((c) => perChannel[c]).find(Boolean) ?? legacy)
-    : legacy;
+  const unboundChannels = metaChannels.filter((c) => !boundDestination(connection, [c]));
+  const destination = boundDestination(connection, metaChannels);
   // Contract §2 UI rule: connected without a destination is NOT live.
   const needsDestination = Boolean(destinationField) && status === 'connected' && !destination;
   const isLive = status === 'connected' && !needsDestination;
@@ -286,6 +281,12 @@ export function ConnectionControl({
   return (
     <div className="space-y-vm-3">
       {purpose && <p className="text-vm-1 text-vm-text-muted">{purpose}</p>}
+
+      {prerequisite && status !== 'connected' && (
+        <p className="text-vm-0 text-vm-text-muted" role="note">
+          {prerequisite}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-vm-3">
         {needsDestination ? (

@@ -137,6 +137,20 @@ describe('contract §2: Instagram is connected on its own client, Messenger on t
     expect(startConnection).not.toHaveBeenCalledWith('channel_auth', 'instagram');
   });
 
+  it('forewarns that Instagram needs a professional account, before the sign-in', async () => {
+    serve({ meta: true, instagram: true });
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+
+    // Meta's own prerequisite, discovered live: Business Login pushes a personal
+    // account into a conversion flow mid-consent. Saying so here is the whole
+    // point, so it must sit alongside the connect button, not after it.
+    expect(
+      await screen.findByText(/Requires an Instagram professional account/i),
+    ).toBeInTheDocument();
+    // It belongs to Instagram alone — WhatsApp and Messenger have no such gate.
+    expect(screen.getAllByText(/professional account — business or creator/i)).toHaveLength(1);
+  });
+
   it('never tells the owner the shared Meta sign-in covers Instagram', async () => {
     serve({ meta: true, instagram: true });
     renderWithQuery(<ChannelsPillar luciel={base} />);

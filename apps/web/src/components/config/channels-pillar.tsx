@@ -15,11 +15,9 @@ import {
 } from '@luciel/ui';
 import {
   LucielApiError,
-  type ChannelId,
   type ConnectionType,
   type Luciel,
   type ChannelConfig,
-  type MetaChannel,
 } from '@luciel/api-client';
 import {
   useConnectionLifecycle,
@@ -32,6 +30,7 @@ import { ConnectionControl } from './connection-control';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
 import { channelLabel, chipKind } from './labels';
+import { MESSAGING_SURFACES } from './messaging-surfaces';
 
 /**
  * Channels pillar (Vision §3.1, Customer Journey §4.1). Multi-select of channels.
@@ -81,74 +80,6 @@ import { channelLabel, chipKind } from './labels';
 const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], string>> = {
   sms: 'send_sms',
   email: 'send_email',
-};
-
-/**
- * One messaging surface: the grant it rides, the channel it binds within that
- * grant, and the id it answers on. The owner pastes the id — there is no asset
- * picker route, and which of their numbers, Pages or accounts Luciel should
- * answer on is not ours to guess.
- */
-interface MessagingSurface {
-  label: string;
-  connectionType: ConnectionType;
-  provider: string;
-  channels: MetaChannel[];
-  purpose: string;
-  destination: { label: string; hint: string };
-  unavailableReason: string;
-  /** What connecting this one does, and does not do, to the others. */
-  note: string;
-}
-
-/** The surfaces each channel row covers, in the order they are offered. */
-const MESSAGING_SURFACES: Partial<Record<ChannelId, MessagingSurface[]>> = {
-  whatsapp: [
-    {
-      label: 'WhatsApp',
-      connectionType: 'channel_auth',
-      provider: 'meta',
-      channels: ['whatsapp'],
-      purpose:
-        'Luciel replies to people who message your business on WhatsApp, from your own WhatsApp Business number — the conversation stays in your Meta account.',
-      destination: {
-        label: 'WhatsApp phone number ID',
-        hint: 'In Meta Business Suite → WhatsApp Manager → API Setup, the "Phone number ID" (digits, not the phone number itself).',
-      },
-      unavailableReason: 'Meta app not configured',
-      note: 'This one Meta sign-in covers WhatsApp and Facebook Messenger. Each names its own id, so turning Messenger on never disconnects WhatsApp.',
-    },
-  ],
-  instagram_messenger: [
-    {
-      label: 'Instagram',
-      connectionType: 'instagram_auth',
-      provider: 'instagram',
-      channels: ['instagram'],
-      purpose:
-        'Luciel replies to the DMs your Instagram professional account receives, from your own account. Instagram signs you in itself, separately from Facebook.',
-      destination: {
-        label: 'Instagram professional account ID',
-        hint: 'In Meta Business Suite, open the Instagram account and read its account ID (digits) — not the @handle.',
-      },
-      unavailableReason: 'Instagram sign-in not configured',
-      note: 'Instagram has its own sign-in, so connecting it leaves WhatsApp and Messenger exactly as they are.',
-    },
-    {
-      label: 'Facebook Messenger',
-      connectionType: 'channel_auth',
-      provider: 'meta',
-      channels: ['messenger'],
-      purpose:
-        'Luciel replies to the Messenger conversations your Facebook Page receives, from your own Meta account.',
-      destination: {
-        label: 'Facebook Page ID',
-        hint: 'In your Facebook Page settings → About → Page ID.',
-      },
-      unavailableReason: 'Meta app not configured',
-      note: 'Messenger rides the same Meta sign-in as WhatsApp, so connecting either one connects both.',
-    },
-  ],
 };
 
 /** UX-only E.164 shape check (client validation is never a security control). */
@@ -369,6 +300,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                         purpose={surface.purpose}
                         connection={connectionFor(surface.connectionType)}
                         provider={surface.provider}
+                        prerequisite={surface.prerequisite}
                         destinationField={{
                           ...surface.destination,
                           channels: surface.channels,
