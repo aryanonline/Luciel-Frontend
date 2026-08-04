@@ -230,13 +230,26 @@ export default function DashboardPage() {
               // Twilio"). Same word list Configure's pillars use, so a
               // connection reads identically on both pages.
               const typeLabel = connectionTypeLabel[c.connectionType] ?? c.connectionType;
-              const name = providerDisplayName(providers.data, c.connectionType, c.provider);
-              // Configure's honest-disabled rule, restated here (FE-H#7): a
-              // provider the served registry does not hold an OAuth app for is
-              // never offered as an actionable connected account, even if a
-              // stale row says `status: 'connected'` — Overview and Configure
-              // must agree on what "actionable" means for the same provider.
-              const configured = providerConfigured(providers.data, c.connectionType, c.provider);
+              // Harmony wave 2, item 6 (backend_gaps.md §"Harmony wave 2", FE
+              // CONTRACT BLOCK item 4): `ConnectionOut.displayName` is now the
+              // served human label for this row's provider — render it
+              // directly instead of re-deriving one from the separate
+              // providers-registry fetch. Falls back to the old derivation
+              // (registry lookup, then a humanized raw provider code) only for
+              // rows the backend hasn't attached `displayName` to yet.
+              const name =
+                c.displayName ?? providerDisplayName(providers.data, c.connectionType, c.provider);
+              // Configure's honest-disabled rule, restated here (FE-H#7) and
+              // sharpened by item 6a: a provider the served registry does not
+              // hold an OAuth app for is never offered as an actionable
+              // connected account, even if a stale row says `status:
+              // 'connected'` — Overview and Configure must agree on what
+              // "actionable" means for the same provider. `providerAvailable`
+              // (backend_gaps.md §"Harmony wave 2", FE CONTRACT BLOCK item 3)
+              // is the authoritative, payload-carried version of this signal;
+              // the registry-derived `providerConfigured()` lookup remains the
+              // fallback for any row the backend hasn't attached it to yet.
+              const configured = c.providerAvailable ?? providerConfigured(providers.data, c.connectionType, c.provider);
               const canChangeAccount = c.status === 'connected' && configured;
               return (
                 <li key={c.connectionId} className="text-vm-1">
@@ -244,7 +257,15 @@ export default function DashboardPage() {
                     <span className="min-w-0 truncate text-vm-text-muted">
                       {typeLabel} · {name}
                     </span>
-                    <StatusChip kind={chipForConnection(c.status)} />
+                    {/* Harmony wave 2, item 6a: a row whose provider the
+                        registry cannot connect (`providerAvailable: false`)
+                        gets the same non-actionable "Not available yet" chip
+                        Configure uses — never "Action needed", and this wins
+                        REGARDLESS of `status` per the backend contract, so it
+                        overrides even a `connected` row (chipForConnection
+                        short-circuits to not_available before switching on
+                        status when `configured` is false). */}
+                    <StatusChip kind={chipForConnection(c.status, configured)} />
                   </div>
                   {/* Swap a connected account, proven-before-cutover (Arch §3.8.7 B,
                       Decision #39) — distinct from Reconnect (same account re-auth). */}

@@ -35,6 +35,27 @@ export const connection = z.object({
   /** Open-ended provider id (e.g. google_calendar | hubspot | twilio | notion). */
   provider: z.string(),
   status: connectionStatus,
+  /**
+   * `ConnectionOut.providerAvailable` (Harmony wave 2, backend item 3;
+   * backend_gaps.md §"Harmony wave 2", FE CONTRACT BLOCK item 3). `false`
+   * means the registry cannot connect this provider today (dropped from the
+   * catalog, or its platform OAuth client was never configured) — the exact
+   * same truth Configure derives per-provider from
+   * `/connections/providers` → `ProviderOptionOut.configured`. When `false`,
+   * this row must render the non-actionable "Not available yet" chip, never
+   * "Action needed", REGARDLESS of `status`. Defaults to `true` so every
+   * pre-existing healthy row is unaffected.
+   */
+  providerAvailable: z.boolean().optional(),
+  /**
+   * `ConnectionOut.displayName` (Harmony wave 2, backend item 4). The
+   * human-readable provider label (e.g. "Amazon SES"), sourced from the same
+   * catalog `/connections/providers` serves as `ProviderOptionOut.displayName`.
+   * Render THIS instead of deriving a label from the raw `provider` code
+   * (closes the "Email sending · Ses" bug — `provider` stays `"ses"` on the
+   * wire for API calls, `displayName` is `"Amazon SES"` for the UI).
+   */
+  displayName: z.string().optional(),
   /** Provider-specific NON-secret config only (calendar id, field mappings, etc.). */
   nonSecretConfig: z.record(z.unknown()).optional(),
   /** Human-readable detail for error/expired states (never a secret). */
