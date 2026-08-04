@@ -19,9 +19,11 @@ import {
   useConversations,
   useLeads,
   useConnections,
+  useConnectionProviders,
   useSwapConnection,
 } from '@/lib/hooks';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
+import { connectionTypeLabel, providerConfigured, providerDisplayName } from '@/components/config/labels';
 
 /**
  * Dashboard overview. Imports ONLY the typed client hooks (§7). Renders the
@@ -43,6 +45,11 @@ export default function DashboardPage() {
   const conversations = useConversations();
   const leads = useLeads();
   const connections = useConnections();
+  // Same served registry Configure reads (contract §1): a provider it is not
+  // holding an OAuth app for is `configured: false` there, and this page must
+  // agree, never presenting that row as a live, actionable connection
+  // (Harmony fix FE-H#7 — one truth across Overview and Configure).
+  const providers = useConnectionProviders();
 
   const swap = useSwapConnection();
   const [swapNotice, setSwapNotice] = React.useState<string | null>(null);
@@ -213,31 +220,46 @@ export default function DashboardPage() {
             </Banner>
           )}
           <ul className="mt-vm-3 space-y-vm-3">
-            {connections.data?.map((c) => (
-              <li key={c.connectionId} className="text-vm-1">
-                <div className="flex items-center justify-between gap-vm-2">
-                  <span className="min-w-0 truncate capitalize text-vm-text-muted">
-                    {c.connectionType} · {c.provider}
-                  </span>
-                  <StatusChip kind={chipForConnection(c.status)} />
-                </div>
-                {/* Swap a connected account, proven-before-cutover (Arch §3.8.7 B,
-                    Decision #39) — distinct from Reconnect (same account re-auth). */}
-                {c.status === 'connected' && (
-                  <div className="mt-vm-1">
-                    <Button
-                      variant="ghost"
-                      onClick={() => void beginSwap(c.connectionId, c.provider)}
-                      disabled={swap.isPending}
-                    >
-                      {swapping === c.connectionId
-                        ? 'Opening sign-in…'
-                        : 'Change connected account'}
-                    </Button>
+            {connections.data?.map((c) => {
+              // Human labels only (Harmony fix FE-H#6) — never the raw
+              // `connectionType`/`provider` registry enums ("Sms_sender ·
+              // Twilio"). Same word list Configure's pillars use, so a
+              // connection reads identically on both pages.
+              const typeLabel = connectionTypeLabel[c.connectionType] ?? c.connectionType;
+              const name = providerDisplayName(providers.data, c.connectionType, c.provider);
+              // Configure's honest-disabled rule, restated here (FE-H#7): a
+              // provider the served registry does not hold an OAuth app for is
+              // never offered as an actionable connected account, even if a
+              // stale row says `status: 'connected'` — Overview and Configure
+              // must agree on what "actionable" means for the same provider.
+              const configured = providerConfigured(providers.data, c.connectionType, c.provider);
+              const canChangeAccount = c.status === 'connected' && configured;
+              return (
+                <li key={c.connectionId} className="text-vm-1">
+                  <div className="flex items-center justify-between gap-vm-2">
+                    <span className="min-w-0 truncate text-vm-text-muted">
+                      {typeLabel} · {name}
+                    </span>
+                    <StatusChip kind={chipForConnection(c.status)} />
                   </div>
-                )}
-              </li>
-            ))}
+                  {/* Swap a connected account, proven-before-cutover (Arch §3.8.7 B,
+                      Decision #39) — distinct from Reconnect (same account re-auth). */}
+                  {canChangeAccount && (
+                    <div className="mt-vm-1">
+                      <Button
+                        variant="ghost"
+                        onClick={() => void beginSwap(c.connectionId, c.provider)}
+                        disabled={swap.isPending}
+                      >
+                        {swapping === c.connectionId
+                          ? 'Opening sign-in…'
+                          : 'Change connected account'}
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
           {hasConnected && (
             <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
