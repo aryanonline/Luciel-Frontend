@@ -29,7 +29,14 @@ import { KnowledgeScopeSections } from './knowledge-scope';
  * affect your Luciel's answers" confirmation (Vision §3.3). Quota: 5 GB / 50 MB
  * per file, enforced client-side for a fast error and again by the backend.
  */
-const fmtBytes = (n: number) => `${(n / 1_000_000).toFixed(1)} MB`;
+// A short paste or a tiny file rounds to "0.0 MB", which reads as empty/zero
+// rather than small (Harmony fix FE-H#11). Anything under 0.1 MB (100 KB)
+// says "<0.1 MB" instead of a number that implies nothing was added.
+const fmtBytes = (n: number) => {
+  const mb = n / 1_000_000;
+  if (mb > 0 && mb < 0.1) return '<0.1 MB';
+  return `${mb.toFixed(1)} MB`;
+};
 
 /** Quota figures are whatever the server says they are, so they must be shown
  *  that way rather than as the hardcoded 5 GB / 50 MB of the current plan. */
