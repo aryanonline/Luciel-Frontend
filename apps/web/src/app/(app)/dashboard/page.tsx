@@ -173,7 +173,7 @@ export default function DashboardPage() {
                 value={b.conversationsThisPeriod}
                 max={Math.max(b.freeAllowance, b.conversationsThisPeriod)}
                 tone={b.atCap ? 'warning' : 'accent'}
-                label={`${luciel.data.name}: ${b.conversationsThisPeriod} conversations this month (${b.freeAllowance} free + ${b.billedThisPeriod} billed)`}
+                label={`${luciel.data.name}: ${b.conversationsThisPeriod} conversation${b.conversationsThisPeriod === 1 ? '' : 's'} this month (${b.freeAllowance} free + ${b.billedThisPeriod} billed)`}
               />
               <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
                 {b.billingState === 'payg_enabled'
