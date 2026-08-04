@@ -95,11 +95,31 @@ export default function EmbedPage() {
               </Banner>
             )}
             <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
-              <Button variant="primary" onClick={() => void copy()}>
-                {/* Glyph + color echo the StatusChip "connected" treatment
-                    (StatusChip.tsx) so "copied" reads as more than a label
-                    swap — a visible state change, not just different text in
-                    the same button (Harmony fix FE-H#11). */}
+              {/* Wave 2, item 5: the wave-1 fix (36d4087) swapped in a glyph +
+                  text label but kept `variant="primary"` unconditionally, so
+                  the button's own background/text color never actually
+                  changed — despite the comment above claiming a "color echo"
+                  of StatusChip's connected treatment. A same-color button
+                  whose only difference is a small glyph plus a five-letter
+                  text swap reads as unchanged on a quick glance, which is
+                  exactly what "verified live, twice: text stays Copy" was
+                  most likely reporting — not a broken state update (confirmed
+                  working via direct DOM inspection in a real browser: the text
+                  node itself does flip to "Copied" and back), but a signal too
+                  weak to register as a visible state change. Switching the
+                  variant on `copied` — primary (accent) -> the same
+                  bg-vm-surface/text-vm-success/border treatment StatusChip's
+                  "connected" chip uses — makes the change unmistakable, using
+                  `!` (important) modifiers so this override can never lose a
+                  Tailwind cascade-order tie against the variant's own
+                  same-specificity utility classes. */}
+              <Button
+                variant={copied ? 'secondary' : 'primary'}
+                className={
+                  copied ? '!border-vm-success !bg-vm-surface !text-vm-success' : undefined
+                }
+                onClick={() => void copy()}
+              >
                 {copied ? (
                   <>
                     <span aria-hidden="true">✓</span> Copied
@@ -109,8 +129,12 @@ export default function EmbedPage() {
                 )}
               </Button>
               {/* Announced for screen-reader users too — the label swap alone
-                  is silent to anyone not looking at the button. */}
-              <span role="status" className="sr-only">
+                  is silent to anyone not looking at the button. `aria-live`
+                  is set explicitly rather than relying on role="status"'s
+                  implicit mapping, so the announcement is robust across every
+                  screen reader/browser pairing, not just the ones that honor
+                  the implicit role -> live-region mapping. */}
+              <span role="status" aria-live="polite" className="sr-only">
                 {copied ? 'Snippet copied to clipboard.' : ''}
               </span>
               {mailto && (
