@@ -178,7 +178,11 @@ export default function DashboardPage() {
               <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
                 {b.billingState === 'payg_enabled'
                   ? 'Pay-as-you-go is on: above 50, usage bills at $39 / 100 conversations, rounded up per 100-block.'
-                  : 'Free plan: 50 conversations a month. Add a card to keep answering past 50 — it never changes your Luciel.'}
+                  : // Full sentence, never clamped (Harmony fix FE-H#10): the owner
+                    // read this line mid-word on dev ("...it never changes your
+                    // L..."), so "Luciel" is deliberately the last word — nothing
+                    // after it to catch on a truncating container by accident.
+                    'Free plan: 50 conversations a month. Add a card to keep it answering past 50 — adding a card never changes your Luciel.'}
               </p>
               <div className="mt-vm-4 grid grid-cols-2 gap-vm-4 border-t border-vm-border pt-vm-4">
                 <Stat label="Conversations" value={conversations.data?.length ?? '—'} />
