@@ -94,10 +94,25 @@ export default function EmbedPage() {
                 Your browser blocked the copy. Select the line above and copy it by hand.
               </Banner>
             )}
-            <div className="mt-vm-3 flex flex-wrap gap-vm-2">
+            <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
               <Button variant="primary" onClick={() => void copy()}>
-                {copied ? 'Copied' : 'Copy'}
+                {/* Glyph + color echo the StatusChip "connected" treatment
+                    (StatusChip.tsx) so "copied" reads as more than a label
+                    swap — a visible state change, not just different text in
+                    the same button (Harmony fix FE-H#11). */}
+                {copied ? (
+                  <>
+                    <span aria-hidden="true">✓</span> Copied
+                  </>
+                ) : (
+                  'Copy'
+                )}
               </Button>
+              {/* Announced for screen-reader users too — the label swap alone
+                  is silent to anyone not looking at the button. */}
+              <span role="status" className="sr-only">
+                {copied ? 'Snippet copied to clipboard.' : ''}
+              </span>
               {mailto && (
                 <Button asChild variant="secondary">
                   <a href={mailto}>Email this to my web person</a>
