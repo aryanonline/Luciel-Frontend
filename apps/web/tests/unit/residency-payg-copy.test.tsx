@@ -49,6 +49,7 @@ function mockHooks(budget: Record<string, unknown>) {
     useConversations: () => ({ data: [] }),
     useLeads: () => ({ data: [] }),
     useConnections: () => ({ data: [] }),
+    useConnectionProviders: () => ({ data: [] }),
     useSwapConnection: () => ({ mutate: vi.fn(), isPending: false }),
   }));
 }

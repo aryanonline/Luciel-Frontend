@@ -1,4 +1,10 @@
-import type { ChannelId, AddonToolId, ConnectionStatus } from '@luciel/api-client';
+import type {
+  ChannelId,
+  AddonToolId,
+  ConnectionStatus,
+  ConnectionType,
+  ConnectionProviders,
+} from '@luciel/api-client';
 import { chipForConnection } from '@luciel/api-client';
 import type { ChipKind } from '@luciel/ui';
 
@@ -80,4 +86,68 @@ export const toolMeta: Record<AddonToolId, { label: string; desc: string; connec
 export function chipKind(status: ConnectionStatus | undefined): ChipKind | null {
   if (!status) return null;
   return chipForConnection(status);
+}
+
+/**
+ * Human labels for `ConnectionType` — the OTHER half of a Connections row.
+ * These are internal registry enum values (e.g. `sms_sender`, `channel_auth`)
+ * and must never reach an owner-visible surface verbatim (Harmony fix FE-H#6):
+ * a raw "Sms_sender · Twilio" reads as an engineering leak, not a product.
+ * Kept alongside `channelLabel`/`toolMeta` so every pillar and every summary
+ * surface (Overview included) draws from the same one word list.
+ */
+export const connectionTypeLabel: Record<ConnectionType, string> = {
+  calendar: 'Calendar',
+  crm: 'CRM',
+  record_source: 'Record lookup',
+  email_sender: 'Email sending',
+  sms_sender: 'SMS & Voice number',
+  outbound_webhook: 'Webhook',
+  channel_auth: 'Meta sign-in',
+  instagram_auth: 'Instagram sign-in',
+  knowledge_source: 'Knowledge source',
+};
+
+/** `sms_sender` → `Sms sender`, for a connection type the map above does not name. */
+function humanizeEnum(raw: string): string {
+  const words = raw.replace(/[_-]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * The provider's own display name, from the served registry (Decision #6) —
+ * never a hardcoded vendor and never the raw provider slug. Mirrors
+ * `providerName()` in consent-landing.tsx so a provider reads identically
+ * everywhere it is named, including the raw slug fallback while the registry
+ * is still loading or does not carry it.
+ */
+export function providerDisplayName(
+  groups: ConnectionProviders[] | undefined,
+  connectionType: ConnectionType,
+  provider: string,
+): string {
+  const served = groups
+    ?.find((group) => group.connectionType === connectionType)
+    ?.providers.find((option) => option.provider === provider)?.displayName;
+  return served ?? humanizeEnum(provider);
+}
+
+/**
+ * Whether the served registry considers this provider actually usable today.
+ * `undefined` (registry still loading, or the provider is not carried at all)
+ * is treated as "not configured" — an owner-visible surface must never assume
+ * actionable while honesty is unresolved (Harmony fix FE-H#7): Overview and
+ * Configure read the exact same `configured` flag, so neither can call a
+ * provider live while the other calls it honest-disabled.
+ */
+export function providerConfigured(
+  groups: ConnectionProviders[] | undefined,
+  connectionType: ConnectionType,
+  provider: string,
+): boolean {
+  return (
+    groups
+      ?.find((group) => group.connectionType === connectionType)
+      ?.providers.find((option) => option.provider === provider)?.configured === true
+  );
 }
