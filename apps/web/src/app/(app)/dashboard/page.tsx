@@ -12,7 +12,7 @@ import {
   PageHeader,
   StatusChip,
 } from '@luciel/ui';
-import { chipForConnection } from '@luciel/api-client';
+import { chipForConnection, type Connection, type ConnectionProviders } from '@luciel/api-client';
 import {
   useLuciel,
   useBilling,
@@ -39,6 +39,27 @@ const stateLabel: Record<string, string> = {
 /** Soft threshold for the "your lead store is large" nudge (Arch §3.4.10a). */
 const LARGE_LEAD_STORE = 250;
 
+/**
+ * Whether a connection row's provider is actually usable today — the SAME
+ * "is this actionable" truth both the row's own chip (via `chipForConnection`)
+ * and the "N need attention" counter must agree on (Harmony wave 2 follow-up).
+ * Prefers the payload-carried `providerAvailable` (backend contract:
+ * `ConnectionOut.providerAvailable`); falls back to the served
+ * providers-registry lookup for any row the backend hasn't attached it to
+ * yet. One function, reused by both call sites below, so the two can never
+ * drift the way `needsAttention`'s old bare `status !== 'connected'` filter
+ * did from `chipForConnection`'s registry-override rule.
+ */
+function isProviderConfigured(
+  connection: Connection,
+  providers: ConnectionProviders[] | undefined,
+): boolean {
+  return (
+    connection.providerAvailable ??
+    providerConfigured(providers, connection.connectionType, connection.provider)
+  );
+}
+
 export default function DashboardPage() {
   const luciel = useLuciel();
   const billing = useBilling();
@@ -58,7 +79,24 @@ export default function DashboardPage() {
   const nearCap = b && b.billingState === 'free_cap' && b.conversationsThisPeriod >= 40 && !b.atCap;
   const nearNextBlock = b && b.billingState === 'payg_enabled' && b.nearNextBlock;
   const largeLeadStore = (leads.data?.length ?? 0) >= LARGE_LEAD_STORE;
-  const needsAttention = connections.data?.filter((c) => c.status !== 'connected') ?? [];
+  /**
+   * "N need attention" must count exactly the rows the list below renders
+   * with the "Action needed" chip — nothing else. The prior `status !==
+   * 'connected'` filter counted every non-connected row, including ones
+   * whose provider the served registry cannot connect at all
+   * (`providerAvailable`/registry `configured: false`), which render the
+   * non-actionable "Not available yet" chip instead (Harmony wave 2, item
+   * 6a). That let the header say e.g. "4 need attention" while only 3 rows
+   * actually showed "Action needed" — Notion-style rows the registry marked
+   * unavailable were still being counted as if there were something to do.
+   * Reuses `chipForConnection`'s own override rule (registry-unavailable
+   * wins regardless of status) instead of re-deriving "is this actionable"
+   * with separate logic that could drift from what the chip actually shows.
+   */
+  const needsAttention =
+    connections.data?.filter(
+      (c) => chipForConnection(c.status, isProviderConfigured(c, providers.data)) === 'action_needed',
+    ) ?? [];
   const hasConnected = (connections.data ?? []).some((c) => c.status === 'connected');
 
   /**
@@ -249,7 +287,7 @@ export default function DashboardPage() {
               // is the authoritative, payload-carried version of this signal;
               // the registry-derived `providerConfigured()` lookup remains the
               // fallback for any row the backend hasn't attached it to yet.
-              const configured = c.providerAvailable ?? providerConfigured(providers.data, c.connectionType, c.provider);
+              const configured = isProviderConfigured(c, providers.data);
               const canChangeAccount = c.status === 'connected' && configured;
               return (
                 <li key={c.connectionId} className="text-vm-1">
