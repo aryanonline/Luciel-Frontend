@@ -20,11 +20,62 @@ import { WidgetPreview } from '@/components/widget-preview';
 const snippetFor = (embedKey: string) =>
   `<script src="https://embed.vantagemind.ai/v1/luciel.js" data-key="${embedKey}"></script>`;
 
+/**
+ * Legacy execCommand fallback for browsers/environments where
+ * `navigator.clipboard` is absent entirely (locked-down machines, some
+ * embedded webviews, non-HTTPS contexts). Builds an off-screen textarea,
+ * selects its content, and asks the browser to copy the current selection.
+ * Returns whether the browser reports the command as having succeeded —
+ * `execCommand` itself can return `false` or throw when copying is disabled
+ * outright, and both must be treated as a failure, not silently swallowed.
+ */
+function legacyCopy(text: string): boolean {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  // Off-screen but still selectable/focusable — some browsers refuse to copy
+  // from an element that never entered the layout.
+  textarea.style.position = 'fixed';
+  textarea.style.top = '0';
+  textarea.style.left = '0';
+  textarea.style.width = '1px';
+  textarea.style.height = '1px';
+  textarea.style.padding = '0';
+  textarea.style.border = 'none';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+  return ok;
+}
+
+/**
+ * Selects the rendered snippet's own text (the <pre><code> block on the
+ * page) so a customer who hits total copy failure can still copy by hand
+ * with one extra keystroke instead of having to drag-select it themselves.
+ */
+function selectSnippetNode(node: HTMLPreElement | null) {
+  if (!node) return;
+  const selection = window.getSelection?.();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
 export default function EmbedPage() {
   const { data: luciel, isPending, isError, refetch } = useLuciel();
-  const [copied, setCopied] = React.useState(false);
-  const [copyFailed, setCopyFailed] = React.useState(false);
+  const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'failed'>('idle');
   const [testing, setTesting] = React.useState(false);
+  const snippetRef = React.useRef<HTMLPreElement | null>(null);
 
   // No key means no snippet — the placeholder used to be copyable and mailable,
   // so an owner could send their web developer a line that can never work
@@ -32,17 +83,38 @@ export default function EmbedPage() {
   const embedKey = luciel?.embedKeyPublicId ?? null;
   const snippet = embedKey ? snippetFor(embedKey) : null;
 
+  /**
+   * Fallback chain + feedback on EVERY outcome (Harmony wave 2, item 5
+   * follow-up). The 1ac6a30 fix only made the SUCCESS state visually
+   * unmistakable — it never gave any feedback at all when
+   * `navigator.clipboard` is unavailable (locked-down machines,
+   * non-HTTPS/http contexts, some embedded webviews) or when
+   * `writeText` rejects (denied permission). In both cases the button's
+   * text/className never changed, which reads as "nothing happened" on a
+   * real click — exactly what was verified live via 3s of DOM polling.
+   * This tries the modern Clipboard API first, falls back to a
+   * textarea + `document.execCommand('copy')` on absence OR rejection,
+   * and on total failure (both paths fail) selects the on-page snippet
+   * text so the customer can still copy it with one extra keystroke.
+   */
   const copy = async () => {
     if (!snippet) return;
-    setCopyFailed(false);
     try {
+      if (!navigator.clipboard) throw new Error('clipboard API unavailable');
       await navigator.clipboard.writeText(snippet);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopyState('copied');
+      setTimeout(() => setCopyState('idle'), 2000);
+      return;
     } catch {
-      setCopied(false);
-      setCopyFailed(true);
+      // Fall through to the legacy fallback below.
     }
+    if (legacyCopy(snippet)) {
+      setCopyState('copied');
+      setTimeout(() => setCopyState('idle'), 2000);
+      return;
+    }
+    setCopyState('failed');
+    selectSnippetNode(snippetRef.current);
   };
 
   const mailto = snippet
@@ -86,12 +158,24 @@ export default function EmbedPage() {
           </Banner>
         ) : (
           <>
-            <pre className="mt-vm-3 overflow-x-auto rounded-vm-control border border-vm-border bg-vm-surface p-vm-3 text-vm-0">
+            <pre
+              ref={snippetRef}
+              className="mt-vm-3 overflow-x-auto rounded-vm-control border border-vm-border bg-vm-surface p-vm-3 text-vm-0"
+            >
               <code>{snippet}</code>
             </pre>
-            {copyFailed && (
-              <Banner tone="warning" className="mt-vm-3">
-                Your browser blocked the copy. Select the line above and copy it by hand.
+            {/* Total-failure surface (Harmony wave 2, item 5 follow-up): shown
+                only when BOTH the Clipboard API and the execCommand fallback
+                failed. `role="status"` is Banner's own built-in live region,
+                so this is announced to assistive tech without a second
+                aria-live element. The snippet above is also selected
+                programmatically at the moment this appears, so "select the
+                code above" is one keystroke (Cmd/Ctrl+C) away, not a manual
+                drag-select. */}
+            {copyState === 'failed' && (
+              <Banner tone="danger" className="mt-vm-3">
+                Couldn&apos;t copy — select the code above and copy it by hand (it&apos;s already
+                selected for you).
               </Banner>
             )}
             <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
@@ -113,16 +197,29 @@ export default function EmbedPage() {
                   `!` (important) modifiers so this override can never lose a
                   Tailwind cascade-order tie against the variant's own
                   same-specificity utility classes. */}
+              {/* Harmony wave 2, item 5 follow-up: feedback on EVERY click
+                  outcome, not just clipboard success. `copyState === 'failed'`
+                  gets its own (danger-leaning) treatment so a total failure
+                  reads as distinctly as the success state does — neither
+                  looks like the plain idle button. */}
               <Button
-                variant={copied ? 'secondary' : 'primary'}
+                variant={copyState === 'idle' ? 'primary' : 'secondary'}
                 className={
-                  copied ? '!border-vm-success !bg-vm-surface !text-vm-success' : undefined
+                  copyState === 'copied'
+                    ? '!border-vm-success !bg-vm-surface !text-vm-success'
+                    : copyState === 'failed'
+                      ? '!border-vm-danger !bg-vm-surface !text-vm-danger'
+                      : undefined
                 }
                 onClick={() => void copy()}
               >
-                {copied ? (
+                {copyState === 'copied' ? (
                   <>
                     <span aria-hidden="true">✓</span> Copied
+                  </>
+                ) : copyState === 'failed' ? (
+                  <>
+                    <span aria-hidden="true">⚠</span> Couldn&apos;t copy
                   </>
                 ) : (
                   'Copy'
@@ -133,9 +230,16 @@ export default function EmbedPage() {
                   is set explicitly rather than relying on role="status"'s
                   implicit mapping, so the announcement is robust across every
                   screen reader/browser pairing, not just the ones that honor
-                  the implicit role -> live-region mapping. */}
+                  the implicit role -> live-region mapping. Covers BOTH
+                  outcomes now, not just success — a screen-reader user
+                  clicking Copy on a locked-down machine must hear that it
+                  failed, not silence. */}
               <span role="status" aria-live="polite" className="sr-only">
-                {copied ? 'Snippet copied to clipboard.' : ''}
+                {copyState === 'copied'
+                  ? 'Snippet copied to clipboard.'
+                  : copyState === 'failed'
+                    ? "Couldn't copy the snippet. It has been selected above so you can copy it by hand."
+                    : ''}
               </span>
               {mailto && (
                 <Button asChild variant="secondary">
