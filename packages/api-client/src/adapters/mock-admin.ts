@@ -983,6 +983,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         return ok({
           messageId,
           groundingScore: 0.82,
+          scoringStatus: 'scored' as const,
           sourceChunks: [
             {
               sourceId: seed.seedKnowledge[0]!.sourceId,
@@ -990,6 +991,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
               text: 'Starter engagement is $899.',
             },
           ],
+          attributionStatus: 'has_sources' as const,
           flaggedByAdmin: false,
         });
       },

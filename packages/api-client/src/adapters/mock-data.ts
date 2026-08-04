@@ -93,10 +93,18 @@ export const seedBilling: BillingInfo = {
 };
 
 export const seedConnections: Connection[] = [
+  // `providerAvailable` deliberately omitted (Harmony wave 2, item 6a
+  // regression guard: FE-H#7): this row exercises the FALLBACK path — the
+  // backend hasn't attached `providerAvailable` here, so Overview must fall
+  // back to deriving availability from the separate providers-registry fetch
+  // (`seedConnectionProviders` marks every `calendar` provider `configured:
+  // false`), and still correctly hide "Change connected account" for this
+  // `connected`-but-registry-disabled row.
   {
     connectionId: '44444444-4444-4444-8444-444444444444',
     connectionType: 'calendar',
     provider: 'google_calendar',
+    displayName: 'Google Calendar',
     status: 'connected',
     createdAt: '2026-02-01T10:00:00Z',
     lastHealthCheckAt: '2026-06-14T16:00:00Z',
@@ -105,6 +113,8 @@ export const seedConnections: Connection[] = [
     connectionId: '55555555-5555-4555-8555-555555555555',
     connectionType: 'crm',
     provider: 'hubspot',
+    displayName: 'HubSpot',
+    providerAvailable: true,
     status: 'expired',
     statusDetail: 'OAuth refresh token expired — reconnect in dashboard',
     createdAt: '2026-02-01T10:05:00Z',
@@ -116,8 +126,41 @@ export const seedConnections: Connection[] = [
     connectionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     connectionType: 'knowledge_source',
     provider: 'google_drive',
+    displayName: 'Google Drive',
+    providerAvailable: true,
     status: 'connected',
     createdAt: '2026-02-01T10:10:00Z',
+    lastHealthCheckAt: '2026-06-14T16:00:00Z',
+  },
+  // Never connected, and `providerAvailable: false` on the row itself
+  // (Harmony wave 2, item 6a fixture; backend contract: `ConnectionOut.
+  // providerAvailable`) — Overview must show the non-actionable "Not
+  // available yet" chip here, NOT "Action needed" — there is no OAuth app on
+  // this environment for the owner to click through. `displayName` is
+  // deliberately omitted here so the row also exercises the label-fallback
+  // path (derive from the separate providers-registry fetch) alongside the
+  // chip's payload-driven path, both at once.
+  {
+    connectionId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    connectionType: 'channel_auth',
+    provider: 'meta',
+    providerAvailable: false,
+    status: 'unconfigured',
+    createdAt: '2026-02-01T10:15:00Z',
+    lastHealthCheckAt: null,
+  },
+  // Harmony wave 2, item 6 `displayName` fixture (backend contract item 4,
+  // the "Email sending · Ses" bug): `provider` stays the wire code `ses`,
+  // but the served label is the catalog's human name. Overview must render
+  // "Amazon SES", never a titlecased "Ses".
+  {
+    connectionId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    connectionType: 'email_sender',
+    provider: 'ses',
+    displayName: 'Amazon SES',
+    providerAvailable: true,
+    status: 'connected',
+    createdAt: '2026-02-01T10:20:00Z',
     lastHealthCheckAt: '2026-06-14T16:00:00Z',
   },
 ];

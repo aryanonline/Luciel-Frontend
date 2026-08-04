@@ -83,11 +83,49 @@ export const sendMessageResult = z.object({
 });
 export type SendMessageResult = z.infer<typeof sendMessageResult>;
 
-/** Source chunk + grounding score for answer review (Arch §3.4.13). */
+/** `AnswerEvidenceOut.scoringStatus` (Harmony wave 2, item 6b/backend item 2c). */
+export const scoringStatus = z.enum(['scored', 'not_scored_legacy']);
+export type ScoringStatus = z.infer<typeof scoringStatus>;
+
+/** `AnswerEvidenceOut.attributionStatus` (Harmony wave 2, item 6b/backend item 2a) — a
+ * 3-state enum, NOT a boolean: `no_sources_retrieved` (honest empty result) and
+ * `attribution_unavailable` (never captured) are different claims that both
+ * happen to carry an empty `sourceChunks`. */
+export const attributionStatus = z.enum([
+  'has_sources',
+  'no_sources_retrieved',
+  'attribution_unavailable',
+]);
+export type AttributionStatus = z.infer<typeof attributionStatus>;
+
+/**
+ * Source chunk + grounding score for answer review (Arch §3.4.13).
+ *
+ * `scoringStatus` and `attributionStatus` (Harmony wave 2, backend contract
+ * `backend_gaps.md` §"Harmony wave 2", FE CONTRACT BLOCK) distinguish
+ * backend-honest "nothing to show" states from the numbers/copy they would
+ * otherwise be confused with — `sourceChunks.length === 0` is NEVER on its own
+ * sufficient to decide the copy; always branch on `attributionStatus` first:
+ *
+ *  - `scoringStatus: 'not_scored_legacy'`: `groundingScore` is `null` (never
+ *    the old 0.50 floor constant — that fallback was the item-2c bug itself).
+ *    Render "Not scored (before scoring existed)", never a number.
+ *  - `attributionStatus: 'no_sources_retrieved'`: `sourceChunks` is `[]` and
+ *    this is an HONEST empty result — retrieval genuinely ran and found
+ *    nothing. The ONLY state where "No knowledge source backed this answer"
+ *    is a true statement.
+ *  - `attributionStatus: 'attribution_unavailable'`: `sourceChunks` is also
+ *    `[]`, but attribution was simply never captured (legacy rows, or any
+ *    reply path with no attribution seam bound). Must render "Source
+ *    attribution isn't available yet" — never "No knowledge source backed
+ *    this answer" (that false claim was the live item-2a bug: a verbatim
+ *    KB-backed reply scored 0.36 showed "no source").
+ */
 export const answerEvidence = z.object({
   messageId: uuid,
-  /** [0,1]; grounding floor is 0.50 uniform (Vision §3.3). */
-  groundingScore: z.number().min(0).max(1),
+  /** [0,1] when scored; `null` for `scoringStatus: 'not_scored_legacy'` rows. */
+  groundingScore: z.number().min(0).max(1).nullable(),
+  scoringStatus,
   sourceChunks: z.array(
     z.object({
       sourceId: uuid,
@@ -95,6 +133,7 @@ export const answerEvidence = z.object({
       text: z.string(),
     }),
   ),
+  attributionStatus,
   flaggedByAdmin: z.boolean(),
 });
 export type AnswerEvidence = z.infer<typeof answerEvidence>;

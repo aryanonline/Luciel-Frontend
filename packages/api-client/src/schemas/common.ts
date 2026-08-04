@@ -39,8 +39,13 @@ export const connectionStatus = z.enum([
 ]);
 export type ConnectionStatus = z.infer<typeof connectionStatus>;
 
-/** The three customer-facing chips (Arch §3.8.1). */
-export type ConnectionChip = 'connected' | 'action_needed' | 'reconnect_needed';
+/**
+ * The customer-facing chips (Arch §3.8.1). `not_available` (Harmony wave 2,
+ * item 6a) is distinct from `action_needed`: it is the non-actionable
+ * counterpart shown when the served provider registry doesn't hold this
+ * provider at all, so there is nothing the owner can click to fix it.
+ */
+export type ConnectionChip = 'connected' | 'action_needed' | 'reconnect_needed' | 'not_available';
 
 /**
  * Structured API error envelope. Models the states the UI must handle

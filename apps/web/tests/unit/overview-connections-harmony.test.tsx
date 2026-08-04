@@ -66,3 +66,25 @@ describe('Harmony FE-H#7: Overview agrees with Configure on honest-disabled prov
   });
 });
 
+describe('Harmony wave 2, item 6a: a registry-unconfigured connection row is never told "Action needed"', () => {
+  it('shows the non-actionable "Not available yet" chip — never "Action needed" — for a never-connected row whose provider the registry marks configured: false', async () => {
+    renderWithQuery(<DashboardPage />);
+    // Fixture: channel_auth/meta is `status: 'unconfigured'` in seedConnections
+    // and `configured: false` in seedConnectionProviders — there is no OAuth
+    // app on this environment, so there is no action the owner can take.
+    const metaLabel = await screen.findByText(/Meta sign-in · Meta/i);
+    const metaRow = metaLabel.closest('li');
+    expect(metaRow).not.toBeNull();
+    expect(within(metaRow as HTMLElement).getByText(/Not available yet/i)).toBeInTheDocument();
+    expect(within(metaRow as HTMLElement).queryByText(/^Action needed/i)).not.toBeInTheDocument();
+  });
+
+  it('still shows "Reconnect needed" — an actionable state — for the expired, registry-configured HubSpot connection', async () => {
+    renderWithQuery(<DashboardPage />);
+    const hubspotLabel = await screen.findByText(/CRM · HubSpot/i);
+    const hubspotRow = hubspotLabel.closest('li');
+    expect(hubspotRow).not.toBeNull();
+    expect(within(hubspotRow as HTMLElement).getByText(/Reconnect needed/i)).toBeInTheDocument();
+  });
+});
+

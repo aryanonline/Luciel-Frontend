@@ -95,8 +95,33 @@ function describeDelivery(result: SendMessageResult): Delivery {
   }
 }
 
-/** Grounding, paired with an icon + number so colour is never the only signal. */
-function GroundingBadge({ score }: { score: number }) {
+/**
+ * Grounding, paired with an icon + number so colour is never the only signal.
+ *
+ * Harmony wave 2, item 6b (backend contract: backend_gaps.md §"Harmony wave
+ * 2", FE CONTRACT BLOCK, item 1 / backend item 2c): `scoringStatus ===
+ * 'not_scored_legacy'` means this row predates real per-message grounding —
+ * `groundingScore` on it is `null`, never the old uniform floor constant
+ * (0.50) the backend used to fake for these rows. Presenting a legacy row as
+ * "Grounded 0.50" states a specific measurement that was never taken. Those
+ * rows must read "Not scored (before scoring existed)" instead — an honest
+ * "we don't know", distinct from both "Grounded" and "Weakly grounded".
+ */
+function GroundingBadge({
+  score,
+  scoringStatus,
+}: {
+  score: number | null;
+  scoringStatus: AnswerEvidence['scoringStatus'];
+}) {
+  if (scoringStatus === 'not_scored_legacy' || score === null) {
+    return (
+      <span className="inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label text-vm-text-muted">
+        <span aria-hidden="true">?</span>
+        <span>Not scored (before scoring existed)</span>
+      </span>
+    );
+  }
   const grounded = score >= GROUNDING_FLOOR;
   return (
     <span
@@ -385,16 +410,27 @@ export default function ConversationsPage() {
                           <>
                             <div className="flex flex-wrap items-center justify-between gap-vm-2">
                               <span className="text-vm-0 text-vm-text-muted">
-                                {answer.sourceChunks.length > 0 ? (
+                                {/* Harmony wave 2, item 6b (backend_gaps.md §"Harmony wave 2",
+                                    FE CONTRACT BLOCK, item 2 / backend item 2a): NEVER decide
+                                    this copy from `sourceChunks.length` alone — both
+                                    `no_sources_retrieved` and `attribution_unavailable` carry
+                                    an empty array, but only the former is an honest "no
+                                    source" claim. Branch on `attributionStatus` first. */}
+                                {answer.attributionStatus === 'has_sources' ? (
                                   <>
                                     <span className="font-label">Knowledge used: </span>
                                     {sourceNames(answer).join(', ')}
                                   </>
+                                ) : answer.attributionStatus === 'attribution_unavailable' ? (
+                                  "Source attribution isn't available yet."
                                 ) : (
                                   'No knowledge source backed this answer.'
                                 )}
                               </span>
-                              <GroundingBadge score={answer.groundingScore} />
+                              <GroundingBadge
+                                score={answer.groundingScore}
+                                scoringStatus={answer.scoringStatus}
+                              />
                             </div>
 
                             {answer.sourceChunks.length > 0 && (
