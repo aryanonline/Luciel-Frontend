@@ -5,7 +5,7 @@ import { createWidgetClient } from '../widget';
 /**
  * Plane-separation guard (Space Instructions §1, §6.3): the widget entrypoint
  * must expose ZERO admin surface. This is a coarse scaffold-level check — the
- * real enforcement is the bundle-analysis gate in CI (see DEFINITION_OF_DONE)
+ * real enforcement is the bundle-analysis gate run by the widget build and CI
  * — but it catches an accidental admin re-export at the source level early.
  */
 describe('widget entrypoint contains no admin surface', () => {
