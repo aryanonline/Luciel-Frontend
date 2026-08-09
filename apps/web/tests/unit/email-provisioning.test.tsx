@@ -74,18 +74,34 @@ const luciel: Luciel = {
 };
 
 describe('P0-2: work-email provisioning sits inside the Channels pillar', () => {
-  it('the channels pillar renders it with the Email channel', async () => {
+  it('the channels pillar renders it expanded — no disclosure — with the Email channel on', async () => {
     renderWithQuery(<ChannelsPillar luciel={luciel} />);
-    expect(await screen.findByRole('heading', { name: /work email/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /work email/i })).toBeVisible();
+    expect(screen.queryByText(/works before the channel is on/i)).not.toBeInTheDocument();
   });
 
-  it('still offers setup while the Email channel is off, so the address can come first', async () => {
+  it('still offers setup while the Email channel is off — collapsed behind a disclosure', async () => {
     const emailOff: Luciel = {
       ...luciel,
       channels: luciel.channels.map((c) => (c.id === 'email' ? { ...c, enabled: false } : c)),
     };
     renderWithQuery(<ChannelsPillar luciel={emailOff} />);
-    expect(await screen.findByText(/answering email yet/i)).toBeInTheDocument();
+
+    // Provision-first stays reachable (Decision #4): the setup is behind the
+    // disclosure, not gone — and the summary says it works before the channel
+    // is on, so an owner is not left thinking the toggle comes first.
+    const summary = screen.getByText(
+      "Set up Luciel's email address (works before the channel is on)",
+    );
+    expect(summary).toBeVisible();
+    expect(await screen.findByText(/answering email yet/i)).not.toBeVisible();
+
+    // Expanding the disclosure reveals the untouched provisioning section.
+    const details = summary.closest('details') as HTMLDetailsElement;
+    details.open = true;
+    fireEvent(details, new Event('toggle'));
+    expect(screen.getByText(/answering email yet/i)).toBeVisible();
+    expect(screen.getByRole('heading', { name: /work email/i })).toBeVisible();
   });
 
   it('appears exactly once on Configure — the page no longer mounts a second copy', async () => {

@@ -18,6 +18,7 @@ import {
   type ConnectionType,
   type Luciel,
   type ChannelConfig,
+  type ProviderCredentialField,
 } from '@luciel/api-client';
 import {
   useConnectionLifecycle,
@@ -126,6 +127,14 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const smsChannel = luciel.channels.find((c) => c.id === 'sms');
   const voiceChannel = luciel.channels.find((c) => c.id === 'voice');
   const phoneEnabled = Boolean(smsChannel?.enabled || voiceChannel?.enabled);
+  // The ONE shared phone panel renders INSIDE the first enabled phone row —
+  // under the toggle it belongs to, the same inline pattern the messaging
+  // surfaces use — never as a block after the whole channel list.
+  const phonePanelHost: ChannelConfig['id'] | null = smsChannel?.enabled
+    ? 'sms'
+    : voiceChannel?.enabled
+      ? 'voice'
+      : null;
   const numberStatus = smsChannel?.connectionStatus ?? voiceChannel?.connectionStatus;
   const numberConfigured =
     numberStatus === 'connected' || numberStatus === 'pending_carrier_registration';
@@ -268,8 +277,6 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
       )}
       <ul className="mt-vm-4 divide-y divide-vm-border">
         {luciel.channels.map((c) => {
-          // SMS/Voice share the BYO number; their status is surfaced in the number
-          // block below, so we don't render a duplicate per-row chip for them.
           const isPhoneChannel = c.id === 'sms' || c.id === 'voice';
           const surfaces = MESSAGING_SURFACES[c.id];
           // A messaging row's status comes from the connection control, which
@@ -287,7 +294,23 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   />
                   <span className="text-vm-2">{channelLabel[c.id]}</span>
                 </div>
-                {chip && c.enabled && <StatusChip kind={chip} />}
+                {/* SMS and Voice run on the ONE shared BYO number, so each
+                    enabled row derives its chip from that shared state — an
+                    enabled row with no visible status leaves "is this live?"
+                    unanswered at the toggle (honest connection states). */}
+                {c.enabled && isPhoneChannel ? (
+                  phonePending ? (
+                    <StatusChip kind="action_needed" detail="complete carrier registration" />
+                  ) : needsTwilio ? (
+                    <StatusChip kind="action_needed" detail="connect your Twilio account" />
+                  ) : needsNumber ? (
+                    <StatusChip kind="action_needed" detail="add your number" />
+                  ) : (
+                    <StatusChip kind="connected" />
+                  )
+                ) : (
+                  chip && c.enabled && <StatusChip kind={chip} />
+                )}
               </div>
               {showControl && surfaces && (
                 <div className="mt-vm-3 grid gap-vm-4 pl-[3.5rem]">
@@ -313,216 +336,75 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   ))}
                 </div>
               )}
-              {/* Luciel's work address is part of the Email channel, so it is set up
-                  in this row and nowhere else (Decision #4). Rendered whether or not
-                  the channel is on: the address can be provisioned first, and the
-                  component itself says Luciel isn't answering email until it is on. */}
-              {c.id === 'email' && (
+              {/* The shared BYO phone setup renders INSIDE the first enabled
+                  phone row, so the fields sit under the toggle that revealed
+                  them instead of after the whole list. */}
+              {c.id === phonePanelHost && (
                 <div className="mt-vm-3 pl-[3.5rem]">
-                  <EmailChannelProvisioning emailChannelEnabled={c.enabled} />
+                  <PhoneNumberPanel
+                    phonePending={phonePending}
+                    needsTwilio={needsTwilio}
+                    numberConfigured={numberConfigured}
+                    designatedNumber={designatedNumber}
+                    changingNumber={changingNumber}
+                    onStartChange={() => setChangingNumber(true)}
+                    onCancelChange={() => {
+                      setChangingNumber(false);
+                      setPhoneNumber('');
+                    }}
+                    phoneNumber={phoneNumber}
+                    onPhoneNumberChange={setPhoneNumber}
+                    phoneValid={phoneValid}
+                    saving={channelAction.busy}
+                    onSubmitNumber={() => void submitNumber()}
+                    smsEnabled={Boolean(smsChannel?.enabled)}
+                    twilioUnavailable={twilioUnavailable}
+                    twilioFields={twilioFields}
+                    twilioValues={twilioValues}
+                    onTwilioValuesChange={setTwilioValues}
+                    twilioNotice={twilioNotice}
+                    providersError={smsProviders.isError}
+                    twilioSubmitting={connect.isPending || submitCredentials.isPending}
+                    onSubmitTwilio={() => void submitTwilio()}
+                    reverify={reverifySmsNumber}
+                  />
                 </div>
               )}
+              {/* The other enabled phone row points at the one that hosts the
+                  panel, so neither row reads as missing its setup. */}
+              {isPhoneChannel &&
+                c.enabled &&
+                phonePanelHost !== null &&
+                c.id !== phonePanelHost && (
+                  <p className="mt-vm-3 pl-[3.5rem] text-vm-0 text-vm-text-muted" role="note">
+                    SMS and Voice share one business number — set it up under{' '}
+                    {phonePanelHost === 'sms' ? 'SMS' : 'Voice'}.
+                  </p>
+                )}
+              {/* Luciel's work address is part of the Email channel, so it is set up
+                  in this row and nowhere else (Decision #4). It stays reachable while
+                  the channel is off — the address can be provisioned first — but sits
+                  behind a disclosure then, so an off row does not open a full setup
+                  panel the owner has not asked for. */}
+              {c.id === 'email' &&
+                (c.enabled ? (
+                  <div className="mt-vm-3 pl-[3.5rem]">
+                    <EmailChannelProvisioning emailChannelEnabled />
+                  </div>
+                ) : (
+                  <details className="mt-vm-3 pl-[3.5rem]">
+                    <summary className="cursor-pointer text-vm-1 text-vm-text-muted underline underline-offset-2">
+                      Set up Luciel&apos;s email address (works before the channel is on)
+                    </summary>
+                    <div className="mt-vm-3">
+                      <EmailChannelProvisioning emailChannelEnabled={false} />
+                    </div>
+                  </details>
+                ))}
             </li>
           );
         })}
       </ul>
-
-      {phoneEnabled && (
-        <div className="mt-vm-4 rounded-vm-card border border-vm-border p-vm-4">
-          <div className="flex items-center justify-between gap-vm-3">
-            <span className="text-vm-2 font-label">
-              Your business phone number (SMS &amp; Voice)
-            </span>
-            {phonePending ? (
-              <StatusChip kind="action_needed" detail="complete carrier registration" />
-            ) : needsTwilio ? (
-              <StatusChip kind="action_needed" detail="connect your Twilio account" />
-            ) : needsNumber ? (
-              <StatusChip kind="action_needed" detail="add your number" />
-            ) : (
-              <StatusChip kind="connected" />
-            )}
-          </div>
-          {phonePending ? (
-            <div className="mt-vm-2 space-y-vm-3 text-vm-1 text-vm-text-muted">
-              <p>
-                Your number is on file, but its A2P 10DLC carrier registration isn&apos;t verified
-                yet — so SMS and Voice aren&apos;t sending. You complete the Brand and Campaign
-                registration yourself, in your own carrier account, in your business&apos;s name.
-                VantageMind guides and verifies but never registers on your behalf, and no shared or
-                platform number is used.
-              </p>
-              <p>
-                Nothing checks this in the background. When you&apos;ve finished registering, use
-                Re-verify and we&apos;ll read your number&apos;s current carrier status.
-              </p>
-              <div className="flex flex-wrap items-center gap-vm-3">
-                <Button
-                  variant="secondary"
-                  onClick={() => reverifySmsNumber.mutate()}
-                  disabled={reverifySmsNumber.isPending}
-                >
-                  {reverifySmsNumber.isPending ? 'Re-verifying…' : 'Re-verify'}
-                </Button>
-                <a
-                  href={A2P_GUIDE_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline underline-offset-2"
-                >
-                  How to register your brand and campaign
-                </a>
-              </div>
-              {reverifySmsNumber.data?.statusDetail && <p>{reverifySmsNumber.data.statusDetail}</p>}
-              {reverifySmsNumber.isError && (
-                <p className="text-vm-danger">
-                  We couldn&apos;t reach the carrier just now. Your number is unchanged — try
-                  Re-verify again in a moment.
-                </p>
-              )}
-            </div>
-          ) : needsTwilio ? (
-            /* Step one: the customer's OWN Twilio account (Arch §3.1.4). The
-               fields are whatever the registry advertises, so a provider that
-               starts asking for one more thing needs no frontend change. */
-            <div className="mt-vm-3">
-              <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
-                Connect your Twilio account so Luciel can text and call from your own business
-                number — your number stays yours and your carrier costs are billed by Twilio
-                directly.
-              </p>
-              {smsProviders.isError && (
-                <Banner tone="warning">
-                  We could not load the Twilio form just now. Reload the page to try again.
-                </Banner>
-              )}
-              {twilioNotice && <Banner tone="warning">{twilioNotice}</Banner>}
-              {/* Honest-disabled, the same rule the shared control applies: the
-                  registry says no flow can be started, so there is no button to
-                  press (contract §1). */}
-              {twilioUnavailable && (
-                <p className="text-vm-1">
-                  Not available yet — we&apos;re finishing the Twilio connection. We&apos;ll switch
-                  this on as soon as it&apos;s ready; there is nothing for you to do.
-                </p>
-              )}
-              {!twilioUnavailable && twilioFields.length > 0 && (
-                <>
-                  <CredentialFields
-                    idPrefix="twilio"
-                    fields={twilioFields}
-                    values={twilioValues}
-                    onChange={setTwilioValues}
-                  />
-                  <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
-                    Give either your Auth Token or an API Key SID and Secret — whichever your Twilio
-                    account uses. Find both in the Twilio Console under Account Info.
-                  </p>
-                  <Button
-                    variant="primary"
-                    className="mt-vm-3"
-                    onClick={() => void submitTwilio()}
-                    disabled={
-                      connect.isPending ||
-                      submitCredentials.isPending ||
-                      !credentialFieldsComplete(twilioFields, twilioValues)
-                    }
-                  >
-                    {connect.isPending || submitCredentials.isPending
-                      ? 'Saving…'
-                      : 'Connect Twilio account'}
-                  </Button>
-                </>
-              )}
-            </div>
-          ) : numberConfigured && !changingNumber ? (
-            /* Step two is done: show the designated number back instead of
-               asking for one that is already on file (Arch §3.1.4). Changing it
-               is the same field, revealed on demand — the switch-account
-               pattern the shared control uses. */
-            <div className="mt-vm-3 flex flex-wrap items-center justify-between gap-vm-3">
-              <p className="text-vm-1 text-vm-text-muted">
-                {designatedNumber ? (
-                  <>
-                    Luciel texts and calls from{' '}
-                    <span className="font-label text-vm-text">{designatedNumber}</span>
-                  </>
-                ) : (
-                  'Luciel texts and calls from your designated business number'
-                )}{' '}
-                — your own number on your own Twilio account.
-              </p>
-              <Button variant="ghost" onClick={() => setChangingNumber(true)}>
-                Change number
-              </Button>
-            </div>
-          ) : (
-            <div className="mt-vm-3">
-              <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
-                Your Twilio account is connected. Tell us which of its numbers Luciel uses, in E.164
-                format (e.g. +14155551234). Your Luciel sends and receives on this number; the
-                platform never provisions one for you.
-              </p>
-              <div className="flex items-end gap-vm-2">
-                <div className="flex-1">
-                  <Field
-                    id="byo-phone-number"
-                    label="Business phone number"
-                    hint="Start with + and country code, e.g. +14155551234."
-                    error={
-                      phoneNumber.length > 0 && !phoneValid
-                        ? 'Enter a valid international number starting with + and country code.'
-                        : undefined
-                    }
-                  >
-                    {(fieldProps) => (
-                      <Input
-                        {...fieldProps}
-                        type="tel"
-                        inputMode="tel"
-                        value={phoneNumber}
-                        onChange={(e) => setPhoneNumber(e.target.value)}
-                        placeholder="+14155551234"
-                      />
-                    )}
-                  </Field>
-                </div>
-                <Button
-                  variant="primary"
-                  onClick={() => void submitNumber()}
-                  disabled={!phoneValid || channelAction.busy}
-                  className="mb-vm-4"
-                >
-                  {channelAction.busy ? 'Saving…' : changingNumber ? 'Save number' : 'Add number'}
-                </Button>
-                {changingNumber && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setChangingNumber(false);
-                      setPhoneNumber('');
-                    }}
-                    className="mb-vm-4"
-                  >
-                    Keep this number
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Durable SMS disclosure — the enablement modal is one-off, this is not
-              (Legal §A2/§A6, Arch §3.4.2). */}
-          {smsChannel?.enabled && (
-            <p className="mt-vm-4 border-t border-vm-border pt-vm-3 text-vm-0 text-vm-text-muted">
-              On SMS you are the sender of record: carrier registration and fees are yours, and so
-              is lawful opt-in and honoring opt-out under CASL and, where applicable, the TCPA. The
-              platform honors STOP and HELP automatically at the channel layer, and the first
-              outbound message to a recipient carries an AI-identity and STOP notice.
-            </p>
-          )}
-        </div>
-      )}
 
       {/* SMS hard gate — carrier registration + consent responsibility (Legal §A2/§A6). */}
       <Modal
@@ -633,5 +515,236 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         </div>
       </Modal>
     </Card>
+  );
+}
+
+/**
+ * Props for the shared BYO phone panel. State stays in the pillar, which
+ * derives the per-row SMS/Voice chips from the same values — so the panel and
+ * the row chips can never disagree about the number's state.
+ */
+interface PhoneNumberPanelProps {
+  phonePending: boolean;
+  needsTwilio: boolean;
+  numberConfigured: boolean;
+  designatedNumber?: string;
+  changingNumber: boolean;
+  onStartChange: () => void;
+  onCancelChange: () => void;
+  phoneNumber: string;
+  onPhoneNumberChange: (value: string) => void;
+  phoneValid: boolean;
+  saving: boolean;
+  onSubmitNumber: () => void;
+  smsEnabled: boolean;
+  twilioUnavailable: boolean;
+  twilioFields: ProviderCredentialField[];
+  twilioValues: Record<string, string>;
+  onTwilioValuesChange: (values: Record<string, string>) => void;
+  twilioNotice: string | null;
+  providersError: boolean;
+  twilioSubmitting: boolean;
+  onSubmitTwilio: () => void;
+  reverify: ReturnType<typeof useLucielMutations>['reverifySmsNumber'];
+}
+
+/**
+ * The ONE shared business-number setup for SMS & Voice (Arch §3.1.4/§3.1.6,
+ * Decision #48), rendered inline inside the first enabled phone row. The
+ * number's status is carried by the chips beside the SMS and Voice toggles,
+ * so the panel opens straight on the step the owner is being asked for.
+ */
+function PhoneNumberPanel({
+  phonePending,
+  needsTwilio,
+  numberConfigured,
+  designatedNumber,
+  changingNumber,
+  onStartChange,
+  onCancelChange,
+  phoneNumber,
+  onPhoneNumberChange,
+  phoneValid,
+  saving,
+  onSubmitNumber,
+  smsEnabled,
+  twilioUnavailable,
+  twilioFields,
+  twilioValues,
+  onTwilioValuesChange,
+  twilioNotice,
+  providersError,
+  twilioSubmitting,
+  onSubmitTwilio,
+  reverify,
+}: PhoneNumberPanelProps) {
+  return (
+    <div className="rounded-vm-card border border-vm-border p-vm-4">
+      <span className="text-vm-2 font-label">Your business phone number (SMS &amp; Voice)</span>
+      {phonePending ? (
+        <div className="mt-vm-2 space-y-vm-3 text-vm-1 text-vm-text-muted">
+          <p>
+            Your number is on file, but its A2P 10DLC carrier registration isn&apos;t verified yet —
+            so SMS and Voice aren&apos;t sending. You complete the Brand and Campaign registration
+            yourself, in your own carrier account, in your business&apos;s name. VantageMind guides
+            and verifies but never registers on your behalf, and no shared or platform number is
+            used.
+          </p>
+          <p>
+            Nothing checks this in the background. When you&apos;ve finished registering, use
+            Re-verify and we&apos;ll read your number&apos;s current carrier status.
+          </p>
+          <div className="flex flex-wrap items-center gap-vm-3">
+            <Button
+              variant="secondary"
+              onClick={() => reverify.mutate()}
+              disabled={reverify.isPending}
+            >
+              {reverify.isPending ? 'Re-verifying…' : 'Re-verify'}
+            </Button>
+            <a
+              href={A2P_GUIDE_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              How to register your brand and campaign
+            </a>
+          </div>
+          {reverify.data?.statusDetail && <p>{reverify.data.statusDetail}</p>}
+          {reverify.isError && (
+            <p className="text-vm-danger">
+              We couldn&apos;t reach the carrier just now. Your number is unchanged — try Re-verify
+              again in a moment.
+            </p>
+          )}
+        </div>
+      ) : needsTwilio ? (
+        /* Step one: the customer's OWN Twilio account (Arch §3.1.4). The
+           fields are whatever the registry advertises, so a provider that
+           starts asking for one more thing needs no frontend change. */
+        <div className="mt-vm-3">
+          <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
+            Connect your Twilio account so Luciel can text and call from your own business number —
+            your number stays yours and your carrier costs are billed by Twilio directly.
+          </p>
+          {providersError && (
+            <Banner tone="warning">
+              We could not load the Twilio form just now. Reload the page to try again.
+            </Banner>
+          )}
+          {twilioNotice && <Banner tone="warning">{twilioNotice}</Banner>}
+          {/* Honest-disabled, the same rule the shared control applies: the
+              registry says no flow can be started, so there is no button to
+              press (contract §1). */}
+          {twilioUnavailable && (
+            <p className="text-vm-1">
+              Not available yet — we&apos;re finishing the Twilio connection. We&apos;ll switch this
+              on as soon as it&apos;s ready; there is nothing for you to do.
+            </p>
+          )}
+          {!twilioUnavailable && twilioFields.length > 0 && (
+            <>
+              <CredentialFields
+                idPrefix="twilio"
+                fields={twilioFields}
+                values={twilioValues}
+                onChange={onTwilioValuesChange}
+              />
+              <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
+                Give either your Auth Token or an API Key SID and Secret — whichever your Twilio
+                account uses. Find both in the Twilio Console under Account Info.
+              </p>
+              <Button
+                variant="primary"
+                className="mt-vm-3"
+                onClick={onSubmitTwilio}
+                disabled={twilioSubmitting || !credentialFieldsComplete(twilioFields, twilioValues)}
+              >
+                {twilioSubmitting ? 'Saving…' : 'Connect Twilio account'}
+              </Button>
+            </>
+          )}
+        </div>
+      ) : numberConfigured && !changingNumber ? (
+        /* Step two is done: show the designated number back instead of
+           asking for one that is already on file (Arch §3.1.4). Changing it
+           is the same field, revealed on demand — the switch-account
+           pattern the shared control uses. */
+        <div className="mt-vm-3 flex flex-wrap items-center justify-between gap-vm-3">
+          <p className="text-vm-1 text-vm-text-muted">
+            {designatedNumber ? (
+              <>
+                Luciel texts and calls from{' '}
+                <span className="font-label text-vm-text">{designatedNumber}</span>
+              </>
+            ) : (
+              'Luciel texts and calls from your designated business number'
+            )}{' '}
+            — your own number on your own Twilio account.
+          </p>
+          <Button variant="ghost" onClick={onStartChange}>
+            Change number
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-vm-3">
+          <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
+            Your Twilio account is connected. Tell us which of its numbers Luciel uses, in E.164
+            format (e.g. +14155551234). Your Luciel sends and receives on this number; the platform
+            never provisions one for you.
+          </p>
+          <div className="flex items-end gap-vm-2">
+            <div className="flex-1">
+              <Field
+                id="byo-phone-number"
+                label="Business phone number"
+                hint="Start with + and country code, e.g. +14155551234."
+                error={
+                  phoneNumber.length > 0 && !phoneValid
+                    ? 'Enter a valid international number starting with + and country code.'
+                    : undefined
+                }
+              >
+                {(fieldProps) => (
+                  <Input
+                    {...fieldProps}
+                    type="tel"
+                    inputMode="tel"
+                    value={phoneNumber}
+                    onChange={(e) => onPhoneNumberChange(e.target.value)}
+                    placeholder="+14155551234"
+                  />
+                )}
+              </Field>
+            </div>
+            <Button
+              variant="primary"
+              onClick={onSubmitNumber}
+              disabled={!phoneValid || saving}
+              className="mb-vm-4"
+            >
+              {saving ? 'Saving…' : changingNumber ? 'Save number' : 'Add number'}
+            </Button>
+            {changingNumber && (
+              <Button variant="ghost" onClick={onCancelChange} className="mb-vm-4">
+                Keep this number
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Durable SMS disclosure — the enablement modal is one-off, this is not
+          (Legal §A2/§A6, Arch §3.4.2). */}
+      {smsEnabled && (
+        <p className="mt-vm-4 border-t border-vm-border pt-vm-3 text-vm-0 text-vm-text-muted">
+          On SMS you are the sender of record: carrier registration and fees are yours, and so is
+          lawful opt-in and honoring opt-out under CASL and, where applicable, the TCPA. The
+          platform honors STOP and HELP automatically at the channel layer, and the first outbound
+          message to a recipient carries an AI-identity and STOP notice.
+        </p>
+      )}
+    </div>
   );
 }

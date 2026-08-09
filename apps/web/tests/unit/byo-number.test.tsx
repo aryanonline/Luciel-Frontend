@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent, within } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
 import type { Luciel } from '@luciel/api-client';
@@ -65,6 +65,13 @@ const withNumberPending: Luciel = {
   ),
 };
 
+/** The <li> hosting a channel row, located from its enable toggle. */
+const channelRow = (name: RegExp): HTMLElement => {
+  const row = screen.getByRole('switch', { name }).closest('li');
+  expect(row).not.toBeNull();
+  return row as HTMLElement;
+};
+
 describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own Twilio account', () => {
   it('renders the action-needed chip and the served Twilio credential form', async () => {
     renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
@@ -75,6 +82,29 @@ describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own T
       ),
     ).toBeInTheDocument();
     expect(await screen.findByLabelText(/Twilio Account SID/i)).toBeInTheDocument();
+  });
+
+  it('renders the phone panel INSIDE the SMS row, not after the channel list', () => {
+    renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
+    // The owner-reported defect: the number setup rendered "way below" the SMS
+    // toggle, as a sibling after the whole <ul>. It belongs inside the row.
+    const smsRow = channelRow(/Enable SMS/i);
+    expect(within(smsRow).getByText(/Your business phone number/i)).toBeInTheDocument();
+    expect(
+      within(smsRow).getByText(/action needed: connect your Twilio account/i),
+    ).toBeInTheDocument();
+  });
+
+  it('hosts the panel on the Voice row when SMS is off and Voice is on', () => {
+    const voiceOnly: Luciel = {
+      ...base,
+      channels: base.channels.map((c) => (c.id === 'voice' ? { ...c, enabled: true } : c)),
+    };
+    renderWithQuery(<ChannelsPillar luciel={voiceOnly} />);
+    const voiceRow = channelRow(/Enable Voice/i);
+    expect(within(voiceRow).getByText(/Your business phone number/i)).toBeInTheDocument();
+    // No second enabled phone row exists, so no cross-reference note renders.
+    expect(screen.queryByText(/share one business number/i)).not.toBeInTheDocument();
   });
 
   it('does not ask which number to use before the Twilio account is on file', () => {
@@ -95,10 +125,31 @@ describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own T
 });
 
 describe('P0-1: a supplied number sits at "complete carrier registration"', () => {
-  it('renders the pending-carrier-registration state and no entry field', () => {
+  it('renders the pending chip on BOTH enabled rows and no entry field', () => {
     renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
-    expect(screen.getByText(/action needed: complete carrier registration/i)).toBeInTheDocument();
+    // One shared number, one shared state: each enabled phone row carries the
+    // honest chip beside its own toggle.
+    expect(screen.getAllByText(/action needed: complete carrier registration/i)).toHaveLength(2);
+    expect(
+      within(channelRow(/Enable Voice/i)).getByText(
+        /action needed: complete carrier registration/i,
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText(/Business phone number/i)).not.toBeInTheDocument();
+  });
+
+  it('points the Voice row at the SMS row that hosts the shared panel', () => {
+    renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
+    const voiceRow = channelRow(/Enable Voice/i);
+    const note = within(voiceRow).getByRole('note');
+    expect(note).toHaveTextContent(
+      /SMS and Voice share one business number — set it up under SMS\./,
+    );
+    // The panel itself renders once, inside the SMS row.
+    expect(
+      within(channelRow(/Enable SMS/i)).getByText(/Your business phone number/i),
+    ).toBeInTheDocument();
+    expect(within(voiceRow).queryByText(/Your business phone number/i)).not.toBeInTheDocument();
   });
 
   it('does not claim the platform is registering the number with the carriers', () => {
@@ -125,7 +176,9 @@ describe('Legal §A2/§A6: enabling SMS is gated on the carrier/consent acknowle
     expect(screen.getByText(/You register with the carriers, not us/i)).toBeInTheDocument();
     expect(screen.getByText(/You are the sender of record/i)).toBeInTheDocument();
     expect(screen.getByText(/Carrier costs are yours/i)).toBeInTheDocument();
-    expect(screen.getByText(/CASL in Canada and, where applicable, the US TCPA/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/CASL in Canada and, where applicable, the US TCPA/i),
+    ).toBeInTheDocument();
   });
 
   it('keeps the acknowledgment required — confirm is disabled until the box is checked', () => {
