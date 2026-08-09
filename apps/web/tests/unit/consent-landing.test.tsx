@@ -117,10 +117,12 @@ describe('consent landing — a grant that still owes a step', () => {
     served.connections = [metaGrant()];
     renderWithQuery(<ConfigurePage />);
 
+    // "Meta" is the registry's displayName — each channel row carries its own
+    // channel name, so the provider label no longer enumerates the surfaces.
     expect(
-      await screen.findByText(/Meta \(WhatsApp & Messenger\) is authorized — one step left\./),
+      await screen.findByText(/Meta is authorized — one step left\./),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/Meta .* is connected\./)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Meta is connected\./)).not.toBeInTheDocument();
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/dashboard/configure'));
   });
 
@@ -132,7 +134,7 @@ describe('consent landing — a grant that still owes a step', () => {
 
     expect(
       await screen.findByText(
-        /Meta \(WhatsApp & Messenger\) is connected\. Luciel can use it from the next conversation on\./,
+        /Meta is connected\. Luciel can use it from the next conversation on\./,
       ),
     ).toBeInTheDocument();
   });
@@ -147,7 +149,7 @@ describe('consent landing — a grant that still owes a step', () => {
 
     expect(
       await screen.findByText(
-        /Meta \(WhatsApp & Messenger\) is authorized\. If the channel below asks for an id/,
+        /Meta is authorized\. If the channel below asks for an id/,
       ),
     ).toBeInTheDocument();
   });

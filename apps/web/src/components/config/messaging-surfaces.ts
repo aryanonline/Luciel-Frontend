@@ -36,7 +36,12 @@ export interface MessagingSurface {
   prerequisite?: string;
 }
 
-/** The surfaces each channel row covers, in the order they are offered. */
+/**
+ * The surface each channel row covers — one per row (Arch §3.1.2). WhatsApp and
+ * Messenger are separate rows riding the ONE Meta grant: signing in on either
+ * row authorizes both, but each still binds its own id before it answers —
+ * authorization shared, liveness per-row.
+ */
 export const MESSAGING_SURFACES: Partial<Record<ChannelId, MessagingSurface[]>> = {
   whatsapp: [
     {
@@ -51,10 +56,28 @@ export const MESSAGING_SURFACES: Partial<Record<ChannelId, MessagingSurface[]>> 
         hint: 'In Meta Business Suite → WhatsApp Manager → API Setup, the "Phone number ID" (digits, not the phone number itself).',
       },
       unavailableReason: 'Meta app not configured',
-      note: 'This one Meta sign-in covers WhatsApp and Facebook Messenger. Each names its own id, so turning Messenger on never disconnects WhatsApp.',
+      note: 'This Meta sign-in is shared with Facebook Messenger — one sign-in covers both rows, and each names its own id.',
     },
   ],
-  instagram_messenger: [
+  messenger: [
+    {
+      label: 'Facebook Messenger',
+      connectionType: 'channel_auth',
+      provider: 'meta',
+      channels: ['messenger'],
+      purpose:
+        'Luciel replies to the Messenger conversations your Facebook Page receives, from your own Meta account.',
+      destination: {
+        label: 'Facebook Page ID',
+        hint: 'In your Facebook Page settings → About → Page ID.',
+      },
+      unavailableReason: 'Meta app not configured',
+      // Shared authorization is NOT shared liveness: the sign-in covers both
+      // rows, but Messenger answers nothing until its own Page id is bound.
+      note: 'Messenger uses the same Meta sign-in as WhatsApp — signing in on either row covers both. Messenger still needs its own Facebook Page ID below before it answers.',
+    },
+  ],
+  instagram: [
     {
       label: 'Instagram',
       connectionType: 'instagram_auth',
@@ -73,20 +96,6 @@ export const MESSAGING_SURFACES: Partial<Record<ChannelId, MessagingSurface[]>> 
       // through the consent screen. Said here rather than discovered there.
       prerequisite:
         'Requires an Instagram professional account — business or creator, free to switch in the Instagram app. A personal account is asked to convert partway through the sign-in.',
-    },
-    {
-      label: 'Facebook Messenger',
-      connectionType: 'channel_auth',
-      provider: 'meta',
-      channels: ['messenger'],
-      purpose:
-        'Luciel replies to the Messenger conversations your Facebook Page receives, from your own Meta account.',
-      destination: {
-        label: 'Facebook Page ID',
-        hint: 'In your Facebook Page settings → About → Page ID.',
-      },
-      unavailableReason: 'Meta app not configured',
-      note: 'Messenger rides the same Meta sign-in as WhatsApp, so connecting either one connects both.',
     },
   ],
 };

@@ -32,7 +32,8 @@ const base: Luciel = {
     { id: 'sms', enabled: false, connectionStatus: 'unconfigured' },
     { id: 'voice', enabled: false, connectionStatus: 'unconfigured' },
     { id: 'whatsapp', enabled: false },
-    { id: 'instagram_messenger', enabled: false },
+    { id: 'messenger', enabled: false },
+    { id: 'instagram', enabled: false },
   ],
   tools: [
     { id: 'send_sms', enabled: false },

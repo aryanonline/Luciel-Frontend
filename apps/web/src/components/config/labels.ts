@@ -1,5 +1,6 @@
 import type {
   ChannelId,
+  SessionChannelId,
   AddonToolId,
   ConnectionStatus,
   ConnectionType,
@@ -8,17 +9,30 @@ import type {
 import { chipForConnection } from '@luciel/api-client';
 import type { ChipKind } from '@luciel/ui';
 
-/** Human labels for channels (Vision §3.1). */
+/** Human labels for channels (Vision §3.1, Arch §3.1.2). WhatsApp, Messenger
+ *  and Instagram are three separate rows: one shared Meta sign-in powers
+ *  WhatsApp and Messenger, Instagram signs in on its own, and each binds its
+ *  own destination id. */
 export const channelLabel: Record<ChannelId, string> = {
   widget: 'Website chat widget',
   email: 'Email',
   sms: 'SMS',
   voice: 'Voice',
   whatsapp: 'WhatsApp',
-  // One switch, two surfaces on two separate grants — "&", not "/": the owner
-  // is turning both on, and each is connected on its own below.
-  instagram_messenger: 'Instagram & Messenger',
+  messenger: 'Facebook Messenger',
+  instagram: 'Instagram DM',
 };
+
+/**
+ * Label for a channel as read off a SESSION row. Old conversations can still
+ * carry the retired combined `instagram_messenger` id — display-only, never
+ * configurable — so this lookup tolerates it instead of widening the strict
+ * config map above.
+ */
+export function sessionChannelLabel(channel: SessionChannelId): string {
+  if (channel === 'instagram_messenger') return 'Instagram / Messenger';
+  return channelLabel[channel];
+}
 
 /** Add-on tools with one-sentence descriptions (Vision §3.2). */
 export const toolMeta: Record<AddonToolId, { label: string; desc: string; connectLabel?: string }> =

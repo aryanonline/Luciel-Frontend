@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { channelId } from './luciel';
+import { sessionChannelId } from './luciel';
 import { escalationEventSignal } from './conversations';
 
 /**
@@ -16,7 +16,9 @@ export const analyticsOverview = z.object({
   escalationsBySignal: z.array(
     z.object({ signal: escalationEventSignal, count: z.number().int().nonnegative() }),
   ),
-  channelMix: z.array(z.object({ channel: channelId, fraction: z.number().min(0).max(1) })),
+  // Session-derived aggregate: old sessions may still carry the legacy
+  // combined `instagram_messenger` id, so the mix is read-tolerant of it.
+  channelMix: z.array(z.object({ channel: sessionChannelId, fraction: z.number().min(0).max(1) })),
   budgetUtilization: z.number().min(0),
   /** Busiest-times heatmap: [dayOfWeek 0-6][hourOfDay 0-23] -> count. */
   busiestTimes: z.array(z.array(z.number().int().nonnegative())),
