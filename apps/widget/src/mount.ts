@@ -107,6 +107,31 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   let sessionId: string | undefined;
   let renderState: WidgetBootstrap['renderState'] = boot.renderState;
 
+  // Explicit end-of-session signal (Arch §3.4.8): when the visitor leaves the
+  // page, tell the backend the session is over. sendBeacon is the only
+  // transport that reliably outlives an unloading page, so it is used instead
+  // of the client — and where the browser lacks it, silence is the honest
+  // fallback: the backend ends the session by inactivity anyway. The endpoint
+  // is idempotent, but one signal per session is still the contract; the flag
+  // keys on the session id, so a NEW session issued later on this page signals
+  // its own end.
+  let endSignaledFor: string | undefined;
+  const signalSessionEnd = () => {
+    if (!sessionId || sessionId === endSignaledFor) return;
+    if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
+    navigator.sendBeacon(
+      `${__WIDGET_API_BASE_URL__}/api/v1/chat-widget/sessions/${sessionId}/end?embedKey=${encodeURIComponent(options.embedKey)}`,
+    );
+    endSignaledFor = sessionId;
+  };
+  // pagehide is the reliable leave event (it also fires into bfcache);
+  // visibilitychange→hidden is the fallback for mobile, where a discarded tab
+  // may never get pagehide.
+  window.addEventListener('pagehide', signalSessionEnd);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') signalSessionEnd();
+  });
+
   // Header carries the persistent "AI assistant" label (Arch §3.4.16) and the
   // close affordance. The label sits before the close button so it stays
   // visible whenever the panel is open.
@@ -242,10 +267,7 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   const setOpen = (open: boolean) => {
     root.setAttribute('data-open', String(open));
     launcher.setAttribute('aria-expanded', String(open));
-    launcher.setAttribute(
-      'aria-label',
-      open ? 'Close chat' : `Chat with ${boot.businessName}`,
-    );
+    launcher.setAttribute('aria-label', open ? 'Close chat' : `Chat with ${boot.businessName}`);
     if (open && !input.disabled) input.focus();
     else if (!open) launcher.focus();
   };
