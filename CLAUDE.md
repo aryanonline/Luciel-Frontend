@@ -146,7 +146,7 @@ pnpm -r test
 pnpm -r build
 ```
 
-The current suite is approximately 137 tests. Treat an unexpected test-count
+The current suite is approximately 145 tests. Treat an unexpected test-count
 change as a signal to review, not as a substitute for the command exit status.
 Run web E2E only when needed with `pnpm --filter @luciel/web test:e2e`.
 
