@@ -20,6 +20,7 @@ import type {
 } from '@luciel/api-client';
 import { LucielApiError } from '@luciel/api-client';
 import { useConversations } from '@/lib/hooks';
+import { sessionChannelLabel } from '@/components/config/labels';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { qk } from '@/lib/hooks';
@@ -328,8 +329,11 @@ export default function ConversationsPage() {
                         onClick={() => void open(c.sessionId)}
                       >
                         <div className="truncate text-vm-2">{c.summary ?? 'Conversation'}</div>
+                        {/* Human channel label, never the raw wire id — and
+                            read-tolerant of old sessions still carrying the
+                            retired combined `instagram_messenger` id. */}
                         <div className="text-vm-0 text-vm-text-muted">
-                          {c.channel} · {new Date(c.startedAt).toLocaleString()}
+                          {sessionChannelLabel(c.channel)} · {new Date(c.startedAt).toLocaleString()}
                         </div>
                       </button>
                       <Button

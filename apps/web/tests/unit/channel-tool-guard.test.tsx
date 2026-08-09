@@ -28,7 +28,8 @@ const lucielSmsChannelOff: Luciel = {
     { id: 'email', enabled: true },
     { id: 'voice', enabled: false },
     { id: 'whatsapp', enabled: false },
-    { id: 'instagram_messenger', enabled: false },
+    { id: 'messenger', enabled: false },
+    { id: 'instagram', enabled: false },
   ],
   tools: [
     { id: 'send_sms', enabled: false },

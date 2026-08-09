@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { uuid, isoTimestamp } from './common';
-import { channelId, escalationSignal } from './luciel';
+import { sessionChannelId, escalationSignal } from './luciel';
 
 /**
  * Conversations, leads, escalation events, answer-review. Sources: Arch §3.4.9
@@ -42,7 +42,8 @@ export interface LeadExportFile {
 export const conversationSummary = z.object({
   sessionId: uuid,
   leadId: uuid.optional(),
-  channel: channelId,
+  /** Read-tolerant: old sessions may still carry legacy `instagram_messenger`. */
+  channel: sessionChannelId,
   mode: conversationMode,
   startedAt: isoTimestamp,
   lastMessageAt: isoTimestamp,

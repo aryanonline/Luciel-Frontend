@@ -289,8 +289,11 @@ export function ConnectionControl({
       )}
 
       <div className="flex flex-wrap items-center gap-vm-3">
-        {needsDestination ? (
-          <StatusChip kind="action_needed" detail="name the id Luciel answers on" />
+        {needsDestination && destinationField ? (
+          /* Name the surface's OWN id field: three Meta rows each owe a
+             different id, and a generic "name the id" chip cannot tell the
+             owner which of the three they are being asked for. */
+          <StatusChip kind="action_needed" detail={`add the ${destinationField.label}`} />
         ) : (
           <StatusChip
             kind={chipKind(status) ?? 'action_needed'}

@@ -62,13 +62,15 @@ import { MESSAGING_SURFACES } from './messaging-surfaces';
  * force-disables send_sms; disabling the Email channel force-disables send_email.
  * The tools-pillar UI also shows the tool toggle as blocked (see tools-pillar.tsx).
  *
- * Meta messaging is TWO grants, not one (Decision #7, contract §2). The
- * Facebook grant (`channel_auth`) covers WhatsApp and Messenger; Instagram DMs
- * sign in separately on Business Login for Instagram (`instagram_auth`), because
- * Facebook rejects an authorize request carrying the `instagram_*` scopes and
- * fails the whole dialog with it — so putting Instagram on the shared grant took
- * WhatsApp and Messenger down too. Each surface therefore gets its own control,
- * and the owner is never told that one sign-in covers Instagram.
+ * Meta messaging is THREE channel rows on TWO grants (Arch §3.1.2, Decision #7,
+ * contract §2). WhatsApp and Messenger are separate rows sharing the one
+ * Facebook grant (`channel_auth`) — signing in on either row authorizes both;
+ * Instagram DMs sign in separately on Business Login for Instagram
+ * (`instagram_auth`), because Facebook rejects an authorize request carrying
+ * the `instagram_*` scopes and fails the whole dialog with it — so putting
+ * Instagram on the shared grant took WhatsApp and Messenger down too. Each row
+ * gets its own control, and the owner is never told that one sign-in covers
+ * Instagram.
  *
  * Within a grant, authorization alone does not make a channel live — until its
  * id is bound, inbound has nothing to route by — but binding one channel never
@@ -291,9 +293,6 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                 <div className="mt-vm-3 grid gap-vm-4 pl-[3.5rem]">
                   {surfaces.map((surface) => (
                     <div key={surface.provider + surface.channels.join()}>
-                      {surfaces.length > 1 && (
-                        <p className="mb-vm-2 text-vm-2 font-label">{surface.label}</p>
-                      )}
                       <ConnectionControl
                         connectionType={surface.connectionType}
                         label={surface.label}

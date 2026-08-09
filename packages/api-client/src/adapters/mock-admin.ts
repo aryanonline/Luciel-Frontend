@@ -105,16 +105,15 @@ const TOOLS_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, AddonToolId[]>> =
 };
 
 /**
- * `instagram_messenger` is one channel id covering two surfaces on two separate
- * grants, so either grant going away takes it down. Overstating the loss is the
- * safe direction: the alternative leaves the channel switched on with only half
- * its senders resolvable.
+ * WhatsApp and Messenger both ride the ONE Facebook grant (Arch §3.1.2), so
+ * that grant going away takes both channels down; Instagram rides its own
+ * Business Login grant and only Instagram goes with it.
  */
 const CHANNELS_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, ChannelId[]>> = {
   sms_sender: ['sms', 'voice'],
   email_sender: ['email'],
-  channel_auth: ['whatsapp', 'instagram_messenger'],
-  instagram_auth: ['instagram_messenger'],
+  channel_auth: ['whatsapp', 'messenger'],
+  instagram_auth: ['instagram'],
 };
 
 /**
@@ -127,8 +126,8 @@ const ACTION_ADD_NUMBER =
 /** Which UI channel each per-channel destination belongs to (contract §2). */
 const CHANNEL_BY_META_CHANNEL: Record<MetaChannel, ChannelId> = {
   whatsapp: 'whatsapp',
-  instagram: 'instagram_messenger',
-  messenger: 'instagram_messenger',
+  instagram: 'instagram',
+  messenger: 'messenger',
 };
 
 const toolsForConnectionType = (connectionType: ConnectionType): AddonToolId[] => [

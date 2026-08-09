@@ -1,23 +1,29 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
-import type { ConnectionProviders, Luciel, ProviderOption } from '@luciel/api-client';
+import type { Connection, ConnectionProviders, Luciel, ProviderOption } from '@luciel/api-client';
 
 /**
- * Meta messaging is TWO grants (contract §2). The Facebook grant covers
- * WhatsApp and Messenger; Instagram DMs sign in on Business Login for
- * Instagram, its own client on its own connection type — Facebook rejects an
- * authorize request carrying the `instagram_*` scopes and fails the whole
- * dialog, so riding the shared grant took WhatsApp and Messenger down with it.
+ * Meta messaging is THREE channel rows on TWO grants (Arch §3.1.2, contract
+ * §2). WhatsApp and Messenger are separate rows sharing the ONE Facebook grant
+ * — signing in on either row authorizes both, but each row still binds its own
+ * id before it answers. Instagram DMs sign in on Business Login for Instagram,
+ * its own client on its own connection type — Facebook rejects an authorize
+ * request carrying the `instagram_*` scopes and fails the whole dialog, so
+ * riding the shared grant took WhatsApp and Messenger down with it.
  *
- * What the pillar owes the owner: each surface connected on the client that can
+ * What the pillar owes the owner: each row connected on the client that can
  * actually connect it, each independently honest about whether it is available
- * (contract §1), and never a shared Meta sign-in that claims to cover Instagram.
+ * (contract §1), never a shared Meta sign-in that claims to cover Instagram,
+ * and a destination ask that names the row's OWN id — three rows, three
+ * different ids.
  */
 
 const startConnection = vi.fn();
 const catalog = vi.fn<[string | undefined], ConnectionProviders[]>();
+/** Connection rows served to the pillar; null falls through to the mock adapter. */
+const served = vi.hoisted(() => ({ connections: null as Connection[] | null }));
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -27,6 +33,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
       ...actual.api,
       connections: {
         ...actual.api.connections,
+        list: async () => served.connections ?? actual.api.connections.list(),
         listProviders: (connectionType?: string) => Promise.resolve(catalog(connectionType)),
         start: (...args: unknown[]) => Promise.resolve(startConnection(...args)),
       },
@@ -44,7 +51,9 @@ const oauth = (provider: string, displayName: string, configured: boolean): Prov
   scopeKind: null,
 });
 
-/** The served catalog, with each client's availability set per test. */
+/** The served catalog, with each client's availability set per test. The Meta
+ *  provider's displayName is just "Meta" — each row carries its own channel
+ *  name, so the registry label no longer enumerates surfaces. */
 function servedCatalog({
   meta,
   instagram,
@@ -55,7 +64,7 @@ function servedCatalog({
   return [
     {
       connectionType: 'channel_auth',
-      providers: [oauth('meta', 'Meta (WhatsApp & Messenger)', meta)],
+      providers: [oauth('meta', 'Meta', meta)],
     },
     {
       connectionType: 'instagram_auth',
@@ -72,6 +81,24 @@ function serve(availability: { meta: boolean; instagram: boolean }) {
   });
 }
 
+/** Both grants authorized, neither with any destination bound yet. */
+const authorizedGrants = (): Connection[] => [
+  {
+    connectionId: '11111111-1111-4111-8111-111111111111',
+    connectionType: 'channel_auth',
+    provider: 'meta',
+    status: 'connected',
+    createdAt: '2026-02-01T10:00:00Z',
+  },
+  {
+    connectionId: '22222222-2222-4222-8222-222222222222',
+    connectionType: 'instagram_auth',
+    provider: 'instagram',
+    status: 'connected',
+    createdAt: '2026-02-01T10:05:00Z',
+  },
+];
+
 const base: Luciel = {
   instanceId: '55555555-5555-4555-8555-555555555555',
   name: 'Test Luciel',
@@ -83,16 +110,25 @@ const base: Luciel = {
     { id: 'sms', enabled: false, connectionStatus: 'unconfigured' },
     { id: 'voice', enabled: false, connectionStatus: 'unconfigured' },
     { id: 'whatsapp', enabled: true },
-    { id: 'instagram_messenger', enabled: true },
+    { id: 'messenger', enabled: true },
+    { id: 'instagram', enabled: true },
   ],
   tools: [],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
   personality: { preset: 'warm_concierge' },
 };
 
+/** The <li> hosting a channel row, located from its enable toggle. */
+const channelRow = (name: RegExp): HTMLElement => {
+  const row = screen.getByRole('switch', { name }).closest('li');
+  expect(row).not.toBeNull();
+  return row as HTMLElement;
+};
+
 beforeEach(() => {
   startConnection.mockReset();
   catalog.mockReset();
+  served.connections = null;
   // Not a redirect: "Action needed:" short-circuits authorizeOrExplain before
   // it navigates, which jsdom cannot do.
   startConnection.mockResolvedValue({
@@ -101,24 +137,60 @@ beforeEach(() => {
   });
 });
 
-describe('contract §2: Instagram is connected on its own client, Messenger on the Meta one', () => {
-  it('offers each surface its own connect button, named by the served registry', async () => {
+describe('§3.1.2: WhatsApp and Messenger are separate rows on the one Meta grant', () => {
+  it('renders a "Connect Meta" button on the WhatsApp row and on the Messenger row', async () => {
     serve({ meta: true, instagram: true });
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
-    // Case-sensitive on the registry's displayName: these names are served, not
-    // written into the pillar, so this fails if either is ever hardcoded. Two
-    // Meta buttons, because WhatsApp and Messenger are two surfaces on the one
-    // grant and either can start it.
-    const metaButtons = await screen.findAllByRole('button', {
-      name: 'Connect Meta (WhatsApp & Messenger)',
-    });
+    // Case-sensitive on the registry's displayName ("Meta", not a hardcoded
+    // vendor string): one button per Meta row, and only those two.
+    const metaButtons = await screen.findAllByRole('button', { name: 'Connect Meta' });
     expect(metaButtons).toHaveLength(2);
     metaButtons.forEach((button) => expect(button).toBeEnabled());
+    expect(channelRow(/Enable WhatsApp/i)).toContainElement(metaButtons[0]!);
+    expect(channelRow(/Enable Facebook Messenger/i)).toContainElement(metaButtons[1]!);
     expect(await screen.findByRole('button', { name: 'Connect Instagram' })).toBeEnabled();
   });
 
-  it('starts each connect on the client that can actually complete it', async () => {
+  it('starts the shared channel_auth/meta flow from either Meta row', async () => {
+    serve({ meta: true, instagram: true });
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+
+    const metaButtons = await screen.findAllByRole('button', { name: 'Connect Meta' });
+    fireEvent.click(metaButtons[0]!);
+    await waitFor(() => expect(startConnection).toHaveBeenCalledWith('channel_auth', 'meta'));
+
+    startConnection.mockClear();
+    startConnection.mockResolvedValue({
+      authorizeUrl: null,
+      statusDetail: 'Action needed: nothing to redirect to in a test.',
+    });
+    fireEvent.click(metaButtons[1]!);
+    await waitFor(() => expect(startConnection).toHaveBeenCalledWith('channel_auth', 'meta'));
+  });
+
+  it('says on both Meta rows that the sign-in is shared — and that each row still owes its own id', async () => {
+    serve({ meta: true, instagram: true });
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+
+    expect(
+      await screen.findByText(/This Meta sign-in is shared with Facebook Messenger/i),
+    ).toBeInTheDocument();
+    expect(channelRow(/Enable WhatsApp/i)).toHaveTextContent(
+      /one sign-in covers both rows, and each names its own id/i,
+    );
+    expect(channelRow(/Enable Facebook Messenger/i)).toHaveTextContent(
+      /Messenger uses the same Meta sign-in as WhatsApp — signing in on either row covers both/i,
+    );
+    // Shared authorization is never shared liveness (honest connection states).
+    expect(channelRow(/Enable Facebook Messenger/i)).toHaveTextContent(
+      /still needs its own Facebook Page ID below before it answers/i,
+    );
+  });
+});
+
+describe('contract §2: Instagram is connected on its own client, never the Meta grant', () => {
+  it('starts Instagram on instagram_auth and never asks the Meta grant for it', async () => {
     serve({ meta: true, instagram: true });
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
@@ -127,14 +199,13 @@ describe('contract §2: Instagram is connected on its own client, Messenger on t
       expect(startConnection).toHaveBeenCalledWith('instagram_auth', 'instagram'),
     );
 
-    fireEvent.click(
-      (await screen.findAllByRole('button', { name: 'Connect Meta (WhatsApp & Messenger)' }))[0],
-    );
-    await waitFor(() => expect(startConnection).toHaveBeenCalledWith('channel_auth', 'meta'));
-
     // The scope split is the whole point: asking Facebook for Instagram fails
     // the dialog outright and takes WhatsApp and Messenger down with it.
     expect(startConnection).not.toHaveBeenCalledWith('channel_auth', 'instagram');
+    // The Instagram row offers no Meta-grant button.
+    expect(
+      within(channelRow(/Enable Instagram DM/i)).queryByRole('button', { name: /Connect Meta/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('forewarns that Instagram needs a professional account, before the sign-in', async () => {
@@ -155,24 +226,40 @@ describe('contract §2: Instagram is connected on its own client, Messenger on t
     serve({ meta: true, instagram: true });
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
-    expect(
-      await screen.findByText(/This one Meta sign-in covers WhatsApp and Facebook Messenger/i),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/Meta sign-in covers.*Instagram/i)).not.toBeInTheDocument();
+    await screen.findAllByRole('button', { name: 'Connect Meta' });
+    expect(screen.queryByText(/sign-in covers[^.]*Instagram/i)).not.toBeInTheDocument();
     expect(
       screen.getByText(/Instagram has its own sign-in, so connecting it leaves WhatsApp/i),
     ).toBeInTheDocument();
   });
 });
 
+describe('contract §2: three rows, three distinct destination asks', () => {
+  it('names each row’s own id in its action-needed chip once authorized', async () => {
+    serve({ meta: true, instagram: true });
+    served.connections = authorizedGrants();
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+
+    // Authorized is not live: each row asks for the id IT answers on, by name —
+    // a generic "name the id" cannot tell three rows apart.
+    expect(
+      await screen.findByText('Action needed: add the WhatsApp phone number ID'),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Action needed: add the Facebook Page ID')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Action needed: add the Instagram professional account ID'),
+    ).toBeInTheDocument();
+    // And never a false Connected chip while a destination is still owed.
+    expect(screen.queryByText('Connected')).not.toBeInTheDocument();
+  });
+});
+
 describe('contract §1: each client is honest-disabled on its own', () => {
-  it('leaves WhatsApp connectable when only Instagram is unconfigured', async () => {
+  it('leaves WhatsApp and Messenger connectable when only Instagram is unconfigured', async () => {
     serve({ meta: true, instagram: false });
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
-    expect(
-      await screen.findAllByRole('button', { name: 'Connect Meta (WhatsApp & Messenger)' }),
-    ).toHaveLength(2);
+    expect(await screen.findAllByRole('button', { name: 'Connect Meta' })).toHaveLength(2);
     expect(
       await screen.findByText(/Not available yet — Instagram sign-in not configured/i),
     ).toBeInTheDocument();
@@ -184,7 +271,7 @@ describe('contract §1: each client is honest-disabled on its own', () => {
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
     expect(await screen.findByRole('button', { name: 'Connect Instagram' })).toBeEnabled();
-    // Both Meta surfaces — WhatsApp and Messenger — go down with the one grant.
+    // Both rows on the one grant — WhatsApp and Messenger — go down with it.
     expect(
       (await screen.findAllByText(/Not available yet — Meta app not configured/i)).length,
     ).toBe(2);
@@ -196,7 +283,7 @@ describe('contract §1: each client is honest-disabled on its own', () => {
       const groups: ConnectionProviders[] = [
         {
           connectionType: 'channel_auth',
-          providers: [oauth('meta', 'Meta (WhatsApp & Messenger)', true)],
+          providers: [oauth('meta', 'Meta', true)],
         },
         { connectionType: 'sms_sender', providers: [] },
       ];

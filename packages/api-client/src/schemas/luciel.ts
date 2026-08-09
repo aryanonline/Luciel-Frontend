@@ -18,15 +18,31 @@ export const lucielState = z.enum([
 export type LucielState = z.infer<typeof lucielState>;
 
 // --- Channels (Vision §3.1) ---------------------------------------------------
+/**
+ * The seven configurable channels (Arch §3.1.2). WhatsApp, Messenger and
+ * Instagram are SEPARATE channels: one shared Meta sign-in powers WhatsApp and
+ * Messenger, Instagram signs in on Business Login for Instagram, and each row
+ * still binds its own destination id before it is Connected.
+ */
 export const channelId = z.enum([
   'widget',
   'email',
   'sms',
   'voice',
   'whatsapp',
-  'instagram_messenger',
+  'messenger',
+  'instagram',
 ]);
 export type ChannelId = z.infer<typeof channelId>;
+
+/**
+ * A channel as read off a SESSION row. Old conversations can still carry the
+ * retired combined `instagram_messenger` id; it is read-tolerated for display
+ * only and is never a configurable channel — the config enum above stays
+ * strict.
+ */
+export const sessionChannelId = z.union([channelId, z.literal('instagram_messenger')]);
+export type SessionChannelId = z.infer<typeof sessionChannelId>;
 
 export const channelConfig = z.object({
   id: channelId,

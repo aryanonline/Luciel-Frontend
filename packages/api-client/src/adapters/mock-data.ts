@@ -49,7 +49,8 @@ export const seedLuciel: Luciel = {
     { id: 'sms', enabled: false, connectionStatus: 'unconfigured' },
     { id: 'voice', enabled: false, connectionStatus: 'unconfigured' },
     { id: 'whatsapp', enabled: false },
-    { id: 'instagram_messenger', enabled: false },
+    { id: 'messenger', enabled: false },
+    { id: 'instagram', enabled: false },
   ],
   tools: [
     // Healthy connection example:
@@ -207,8 +208,10 @@ export const seedConnectionProviders: ConnectionProviders[] = [
     connectionType: 'channel_auth',
     providers: [
       {
+        // Just "Meta": each channel row carries its own channel name, so the
+        // provider label no longer enumerates the surfaces it powers.
         provider: 'meta',
-        displayName: 'Meta (WhatsApp & Messenger)',
+        displayName: 'Meta',
         authKind: 'oauth',
         helpText:
           'One sign-in to your Meta Business account covers WhatsApp and Facebook Messenger.',
