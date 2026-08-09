@@ -269,6 +269,101 @@ describe('widget mount', () => {
     );
   });
 
+  // --- §3.4.8: explicit end-of-session signal -------------------------------
+
+  /** Stub client issuing a caller-chosen session id, so beacon tests can tell
+   *  their own signals apart from earlier mounts still listening on the shared
+   *  jsdom window. */
+  const clientWithSession = (sessionId: string): WidgetApiClient => ({
+    bootstrap: async () => ({
+      renderState: 'active',
+      businessName: 'Northside Auto',
+      assistantName: 'Luciel',
+      openingMessage: 'Hi — I am an AI assistant for Northside Auto.',
+      aiAssistantLabel: 'AI assistant',
+      poweredByVantageMind: true,
+    }),
+    send: async () => ({
+      sessionId,
+      reply: {
+        messageId: '00000000-0000-4000-8000-000000000001',
+        role: 'assistant',
+        text: 'ok',
+        at: '2026-07-30T00:00:00.000Z',
+      },
+      renderState: 'active',
+    }),
+    history: async () => [],
+  });
+
+  /** Installs a sendBeacon spy for the duration of `run`, then restores. */
+  const withBeaconSpy = async (run: (sent: string[]) => Promise<void>) => {
+    const sent: string[] = [];
+    const nav = navigator as { sendBeacon?: (url: string) => boolean };
+    const original = nav.sendBeacon;
+    nav.sendBeacon = (url) => {
+      sent.push(url);
+      return true;
+    };
+    try {
+      await run(sent);
+    } finally {
+      nav.sendBeacon = original;
+    }
+  };
+
+  it('fires the end-of-session beacon once on pagehide (§3.4.8)', async () => {
+    const SESSION = '00000000-0000-4000-8000-0000000000e1';
+    await withBeaconSpy(async (sent) => {
+      const mine = () => sent.filter((url) => url.includes(SESSION));
+      const shadow = await mountOpen(clientWithSession(SESSION));
+
+      // No session yet — leaving before the first message signals nothing.
+      window.dispatchEvent(new Event('pagehide'));
+      expect(mine()).toHaveLength(0);
+
+      (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'hi';
+      (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+      await flush();
+
+      window.dispatchEvent(new Event('pagehide'));
+      expect(mine()).toEqual([
+        `https://api.vantagemind.ai/api/v1/chat-widget/sessions/${SESSION}/end?embedKey=vm_live_demo`,
+      ]);
+
+      // Once per session: the endpoint is idempotent, but a second hide on the
+      // same session still sends nothing new.
+      window.dispatchEvent(new Event('pagehide'));
+      expect(mine()).toHaveLength(1);
+    });
+  });
+
+  it('falls back to visibilitychange→hidden where pagehide never fires', async () => {
+    const SESSION = '00000000-0000-4000-8000-0000000000e2';
+    await withBeaconSpy(async (sent) => {
+      const mine = () => sent.filter((url) => url.includes(SESSION));
+      const shadow = await mountOpen(clientWithSession(SESSION));
+      (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'hi';
+      (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+      await flush();
+
+      // Still visible → not an end signal.
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(mine()).toHaveLength(0);
+
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      });
+      try {
+        document.dispatchEvent(new Event('visibilitychange'));
+        expect(mine()).toHaveLength(1);
+      } finally {
+        Reflect.deleteProperty(document, 'visibilityState');
+      }
+    });
+  });
+
   it('ignores a second Enter while the first message is still in flight', async () => {
     const { client, release } = clientDeferred();
     const shadow = await mountOpen(client);
