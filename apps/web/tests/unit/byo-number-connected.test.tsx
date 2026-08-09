@@ -24,8 +24,13 @@ const connected: Luciel = {
   channels: [
     { id: 'widget', enabled: true },
     { id: 'email', enabled: false },
-    { id: 'sms', enabled: true, connectionStatus: 'connected', smsComplianceAcknowledgedAt: '2026-06-01T10:00:00Z' },
-    { id: 'voice', enabled: false, connectionStatus: 'connected' },
+    {
+      id: 'sms',
+      enabled: true,
+      connectionStatus: 'connected',
+      smsComplianceAcknowledgedAt: '2026-06-01T10:00:00Z',
+    },
+    { id: 'voice', enabled: true, connectionStatus: 'connected' },
     { id: 'whatsapp', enabled: false },
     { id: 'messenger', enabled: false },
     { id: 'instagram', enabled: false },
@@ -52,11 +57,13 @@ describe('P0-1: a connected BYO number is shown back, not asked for again', () =
     expect(screen.queryByLabelText(/Business phone number/i)).not.toBeInTheDocument();
   });
 
-  it('keeps the Connected chip and the durable A2P/consent disclosure', async () => {
+  it('keeps a Connected chip on BOTH rows and the durable A2P/consent disclosure', async () => {
     renderWithQuery(<ChannelsPillar luciel={connected} />);
 
     expect(await screen.findByText(NUMBER)).toBeInTheDocument();
-    expect(screen.getByText('Connected')).toBeInTheDocument();
+    // One shared number, one shared state: the SMS row and the Voice row each
+    // carry the honest chip beside their own toggle.
+    expect(screen.getAllByText('Connected')).toHaveLength(2);
     expect(screen.getByText(/honors STOP and HELP automatically/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Re-verify/i })).not.toBeInTheDocument();
   });
