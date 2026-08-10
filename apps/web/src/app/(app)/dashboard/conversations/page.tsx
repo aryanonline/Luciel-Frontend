@@ -52,6 +52,16 @@ const ROLE_LABEL: Record<Message['role'], string> = {
 type Delivery = { tone: 'info' | 'warning'; text: React.ReactNode };
 
 /**
+ * A failed transcript read, with the tone it deserves. `service_unavailable`
+ * (503) is the archived-conversation case: the backend's own message says the
+ * transcript is in long-term storage and nothing has been lost, so it renders
+ * as a calm info notice with that copy verbatim — not as a danger banner that
+ * suggests something broke or disappeared. Every other failure keeps the
+ * generic danger treatment.
+ */
+type TranscriptError = { tone: 'info' | 'danger'; text: string };
+
+/**
  * How a reply landed. `delivered: false` is a normal outcome, not a failure —
  * for the widget it is the ONLY outcome, because there is no push transport to
  * a browser we hold no connection to; the reply is persisted and the visitor
@@ -158,7 +168,7 @@ export default function ConversationsPage() {
   const [delivery, setDelivery] = React.useState<Delivery | null>(null);
   const [replyError, setReplyError] = React.useState<string | null>(null);
   const [transcriptLoading, setTranscriptLoading] = React.useState(false);
-  const [transcriptError, setTranscriptError] = React.useState<string | null>(null);
+  const [transcriptError, setTranscriptError] = React.useState<TranscriptError | null>(null);
   /** Session whose take-over / hand-back is in flight, so only that row disables. */
   const [modeBusy, setModeBusy] = React.useState<string | null>(null);
   const [modeError, setModeError] = React.useState<string | null>(null);
@@ -205,9 +215,13 @@ export default function ConversationsPage() {
       if (openedSession.current !== sessionId) return;
       setMessages(transcript);
       void loadEvidence(sessionId, transcript);
-    } catch {
+    } catch (err) {
       if (openedSession.current !== sessionId) return;
-      setTranscriptError('We could not load this conversation. Please try again.');
+      setTranscriptError(
+        err instanceof LucielApiError && err.code === 'service_unavailable'
+          ? { tone: 'info', text: err.message }
+          : { tone: 'danger', text: 'We could not load this conversation. Please try again.' },
+      );
     } finally {
       if (openedSession.current === sessionId) setTranscriptLoading(false);
     }
@@ -367,8 +381,8 @@ export default function ConversationsPage() {
                 </p>
               )}
               {transcriptError && (
-                <Banner tone="danger">
-                  {transcriptError}{' '}
+                <Banner tone={transcriptError.tone}>
+                  {transcriptError.text}{' '}
                   <button className="underline" onClick={() => void open(openSession)}>
                     Try again
                   </button>
