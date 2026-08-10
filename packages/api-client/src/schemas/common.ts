@@ -62,6 +62,11 @@ export const apiErrorCode = z.enum([
   'validation_error',
   'at_cap', // free 50 reached, no payment method (Arch §3.4.1b)
   'payment_required',
+  // 503 — the data exists but its backing store cannot serve it right now
+  // (e.g. an archived conversation whose cold-storage read failed). Distinct
+  // from `server_error` so the UI can pass through the backend's honest
+  // "nothing has been lost; try again shortly" instead of a generic failure.
+  'service_unavailable',
   'server_error',
   'network_error',
 ]);

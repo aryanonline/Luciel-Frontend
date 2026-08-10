@@ -22,6 +22,10 @@ const STATUS_TO_CODE: Record<number, ApiErrorCode> = {
   409: 'conflict',
   422: 'validation_error',
   429: 'rate_limited',
+  // Not folded into 'server_error': a 503 carries a body message worth showing
+  // verbatim (e.g. an archived conversation whose cold-storage read failed —
+  // "nothing has been lost; try again shortly").
+  503: 'service_unavailable',
 };
 
 export interface TransportOptions {
