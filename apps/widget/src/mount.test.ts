@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { mountWidget } from './mount';
-import { createWidgetClient, type WidgetApiClient } from '@luciel/api-client/widget';
+import { createWidgetClient, LucielApiError, type WidgetApiClient } from '@luciel/api-client/widget';
 
 /** Stub client so a reply with markdown in it can be asserted on. */
 const clientReplying = (replyText: string): WidgetApiClient => ({
@@ -362,6 +362,54 @@ describe('widget mount', () => {
         Reflect.deleteProperty(document, 'visibilityState');
       }
     });
+  });
+
+  // --- Send-failure honesty: rate limit vs. everything else -----------------
+
+  /** Stub client whose send always rejects with the given error. */
+  const clientFailing = (error: unknown): WidgetApiClient => ({
+    bootstrap: async () => ({
+      renderState: 'active',
+      businessName: 'Northside Auto',
+      assistantName: 'Luciel',
+      openingMessage: 'Hi — I am an AI assistant for Northside Auto.',
+      aiAssistantLabel: 'AI assistant',
+      poweredByVantageMind: true,
+    }),
+    send: async () => {
+      throw error;
+    },
+    history: async () => [],
+  });
+
+  /** Mounts against a failing client, sends once, and returns the transcript text. */
+  const sendAndReadTranscript = async (error: unknown): Promise<string> => {
+    const shadow = await mountOpen(clientFailing(error));
+    (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'hi';
+    (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+    await flush();
+    return (shadow.querySelector('.vm-body') as HTMLElement).textContent ?? '';
+  };
+
+  it('a rate limit reads as "one moment", with the server\'s wait when it sent one', async () => {
+    const text = await sendAndReadTranscript(
+      new LucielApiError({ code: 'rate_limited', message: 'Too many requests.', retryAfterSeconds: 30 }),
+    );
+    expect(text).toContain('One moment — please try again in 30 seconds.');
+    expect(text).not.toContain('something went wrong');
+
+    // Without a server-sent wait, it stays gentle but unspecific.
+    document.body.innerHTML = '';
+    const noWait = await sendAndReadTranscript(
+      new LucielApiError({ code: 'rate_limited', message: 'Too many requests.' }),
+    );
+    expect(noWait).toContain('One moment — please try again in a few seconds.');
+  });
+
+  it('every other failure keeps the generic copy', async () => {
+    const text = await sendAndReadTranscript(new Error('network down'));
+    expect(text).toContain('Sorry — something went wrong. Please try again.');
+    expect(text).not.toContain('One moment');
   });
 
   it('ignores a second Enter while the first message is still in flight', async () => {
