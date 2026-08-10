@@ -150,6 +150,12 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     luciel: clone(seed.seedLuciel) as Luciel | null,
     billing: clone(seed.seedBilling),
     connections: clone(seed.seedConnections),
+    /**
+     * Provider staged by `swap()` per connection id (Arch §3.8.7 B, Decision
+     * #39): the row keeps serving on its CURRENT provider until the
+     * replacement's OAuth callback completes, and only then cuts over.
+     */
+    stagedSwaps: {} as Record<string, string>,
     emailProvisioning: clone(seed.seedEmailProvisioning) as EmailProvisioning | null,
     knowledge: clone(seed.seedKnowledge),
     syncConnections: [] as KnowledgeSyncConnection[],
@@ -715,9 +721,35 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         }
         const c = state.connections.find((x) => x.connectionId === connectionId);
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        // A swap only cuts over HERE, on success — until this point the row
+        // kept serving on its previous provider (Arch §3.8.7 B).
+        const staged = state.stagedSwaps[connectionId];
+        if (staged) {
+          c.provider = staged;
+          delete state.stagedSwaps[connectionId];
+        }
         c.status = 'connected';
         c.statusDetail = null;
         c.lastHealthCheckAt = new Date().toISOString();
+        // BYO mailbox live (§3.1.6a): the verified Outlook mailbox becomes the
+        // send+receive address, and the one email-provisioning read reports it
+        // so Configure's email panel and this row cannot disagree.
+        if (c.connectionType === 'email_sender' && c.provider === 'outlook') {
+          const address = 'you@your-company.example';
+          c.displayName = 'Outlook mailbox';
+          c.nonSecretConfig = {
+            ...(c.nonSecretConfig ?? {}),
+            address,
+            destination: address,
+            mode: 'byo_mailbox',
+          };
+          state.emailProvisioning = {
+            mode: 'byo_mailbox',
+            emailAddress: address,
+            status: 'connected',
+            dnsRecords: null,
+          };
+        }
         // A connected Meta channel is not a working one until its destination is
         // bound (contract §2), so nothing flips the channel live here.
         return ok(c);
@@ -874,6 +906,25 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async provisionEmail(req) {
         guardVerified();
+        // byo_mailbox is not provisioned — it arrives through the email_sender
+        // connect/swap OAuth flow (§3.1.6a), so asking for it here is a caller bug.
+        if (req.mode === 'byo_mailbox') {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'A mailbox is connected with a sign-in, not provisioned here.',
+          });
+        }
+        // Provisioning a platform mode IS the way back from a BYO mailbox
+        // (§3.1.6a): the platform sender takes over, so an outlook row returns
+        // to the platform SES sender here, exactly as the backend rebinds it.
+        const sender = state.connections.find((x) => x.connectionType === 'email_sender');
+        if (sender && sender.provider === 'outlook') {
+          sender.provider = 'ses';
+          sender.displayName = 'Amazon SES';
+          sender.status = 'connected';
+          sender.statusDetail = null;
+          delete sender.nonSecretConfig;
+        }
         if (req.mode === 'own_domain') {
           // Own-domain inbound needs DNS/MX verification → not live yet.
           const emailAddress = req.emailAddress ?? 'hello@yourdomain.com';
@@ -902,12 +953,28 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         }
         return ok(state.emailProvisioning);
       },
-      async swap(connectionId, _provider) {
+      async swap(connectionId, provider) {
         guardVerified();
         // Proven-before-cutover (Arch §3.8.7 B, Decision #39): the current
         // connection stays LIVE (status unchanged) until the replacement
-        // health-checks. We only kick off the new connect flow here.
-        void state.connections.find((x) => x.connectionId === connectionId);
+        // health-checks. The replacement provider is only STAGED here; the
+        // cutover happens when its OAuth callback completes — on any failure
+        // the current row is untouched.
+        const c = state.connections.find((x) => x.connectionId === connectionId);
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        const option = seed.seedConnectionProviders
+          .find((p) => p.connectionType === c.connectionType)
+          ?.providers.find((p) => p.provider === provider);
+        // Same honesty as start(): a provider the platform holds no OAuth app
+        // for cannot begin a flow — say so, never a URL that dead-ends. The
+        // working sender is untouched (contract §1, Arch §3.1.6a).
+        if (option && !option.configured) {
+          return ok({
+            authorizeUrl: null,
+            statusDetail: `Action needed: ${option.displayName} is not available yet.`,
+          });
+        }
+        state.stagedSwaps[connectionId] = provider;
         return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
       },
     },

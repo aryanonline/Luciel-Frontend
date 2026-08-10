@@ -28,6 +28,9 @@ const PROVIDER_AUTHORIZE_HOSTS = [
   // Instagram DMs sign in on Business Login for Instagram, which is a different
   // consent host from Facebook's — a Meta connection is two hosts, not one.
   'www.instagram.com',
+  // BYO email sender (§3.1.6a): the customer's own Outlook mailbox signs in on
+  // Microsoft's consent host.
+  'login.microsoftonline.com',
 ];
 
 const ACTION_NEEDED = 'Action needed:';

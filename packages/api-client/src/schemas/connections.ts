@@ -215,13 +215,20 @@ export type ReverifySmsResult = z.infer<typeof reverifySmsResult>;
 
 /**
  * Email-address provisioning (Arch §3.1.6a, Decision #49). The admin provisions
- * the address Luciel SENDS AND RECEIVES on. Two modes, both LAUNCH capabilities:
+ * the address Luciel SENDS AND RECEIVES on. Two platform modes, both LAUNCH
+ * capabilities:
  *   own_domain   — the business's own address; requires an inbound DNS/MX routing
  *                  step, so it sits at `pending_email_routing` until verified.
  *   vm_subdomain — a zero-DNS VantageMind-subdomain fallback; live immediately.
  * Own-domain inbound is NOT a deferred limitation.
+ *
+ * byo_mailbox (§3.1.6a BYO email, owner decision 2026-08-10 Outlook-first) is
+ * the customer's OWN Outlook mailbox connected as the sender via OAuth — not
+ * provisioned here (it arrives through the email_sender connect/swap flow), but
+ * reported here so the one email read answers "what address is Luciel on?" for
+ * every mode. `dnsRecords` is null for it: there is nothing to publish.
  */
-export const emailProvisioningMode = z.enum(['own_domain', 'vm_subdomain']);
+export const emailProvisioningMode = z.enum(['own_domain', 'vm_subdomain', 'byo_mailbox']);
 export type EmailProvisioningMode = z.infer<typeof emailProvisioningMode>;
 
 /** A single non-secret DNS record the admin adds for own-domain inbound routing. */
@@ -246,7 +253,11 @@ export const emailProvisioning = z.object({
   emailAddress: z.string(),
   /** `connected` once live; `pending_email_routing` while own-domain DNS/MX verifies. */
   status: connectionStatus,
-  /** own_domain only: the records the admin must add to complete inbound routing. */
-  dnsRecords: z.array(dnsRecord).optional(),
+  /**
+   * own_domain only: the records the admin must add to complete inbound routing.
+   * The backend serves an explicit `null` for byo_mailbox (nothing to publish),
+   * so null is accepted alongside omission.
+   */
+  dnsRecords: z.array(dnsRecord).nullable().optional(),
 });
 export type EmailProvisioning = z.infer<typeof emailProvisioning>;

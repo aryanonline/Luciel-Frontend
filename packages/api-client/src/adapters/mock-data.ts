@@ -320,6 +320,27 @@ export const seedConnectionProviders: ConnectionProviders[] = [
     ],
   },
   {
+    // BYO email sender (§3.1.6a, owner decision 2026-08-10 Outlook-first): the
+    // customer's own Outlook mailbox as the address Luciel answers from —
+    // connect, verify, bind, then live; it never silently replaces a working
+    // sender. `configured: true` here so the whole flow is walkable on the
+    // mock; on a real environment it is false until the platform's Azure app
+    // is registered (the honest dark state).
+    connectionType: 'email_sender',
+    providers: [
+      {
+        provider: 'outlook',
+        displayName: 'Outlook mailbox',
+        authKind: 'oauth',
+        helpText:
+          'Connect the work mailbox Luciel answers from — replies come from your own address. Sent mail lands in your own Sent folder.',
+        configured: true,
+        credentialFields: [],
+        scopeKind: null,
+      },
+    ],
+  },
+  {
     // BYO: the CUSTOMER's own Twilio account (§3.1.4). The platform is never in
     // the telephony billing path, so this is always available — nothing here is
     // gated on a platform OAuth app.
