@@ -1,5 +1,6 @@
 import {
   createWidgetClient,
+  LucielApiError,
   type WidgetApiClient,
   type WidgetBootstrap,
 } from '@luciel/api-client/widget';
@@ -21,9 +22,12 @@ import { widgetStyles } from './styles';
  *    incoming messages, visible focus, respects host prefers-reduced-motion,
  *    does not trap focus.
  *
- * The actual send/receive chat loop is a placeholder; the full conversation UX
- * lands in the widget milestone. This is the structural shell with the
- * non-negotiable disclosures and the data-plane-only client wired in.
+ * The send/receive loop is live: doSend() posts through the data-plane client,
+ * carries the session id for continuity, shows a typing bubble while a reply is
+ * in flight, guards against double-send, renders replies as sanitized markdown
+ * with a live-region announcement, and honours server-driven render-state
+ * changes (at-cap keeps the input disabled). Failures append an in-transcript
+ * notice — gentler for a rate limit, generic for everything else.
  */
 
 export interface MountOptions {
@@ -228,8 +232,22 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       renderState = res.renderState;
       appendMessage('assistant', res.reply.text);
       live.textContent = markdownToPlainText(res.reply.text); // announce incoming (Arch §5.16)
-    } catch {
-      appendMessage('assistant', 'Sorry — something went wrong. Please try again.');
+    } catch (err) {
+      // A 429 means Luciel is catching its breath, not that something broke —
+      // the HTTP transport surfaces it as a typed LucielApiError, so say so
+      // honestly (with the server's wait when it sent one) instead of the
+      // generic failure line, which stays for everything else.
+      if (err instanceof LucielApiError && err.code === 'rate_limited') {
+        const wait = err.retryAfterSeconds;
+        appendMessage(
+          'assistant',
+          wait && wait > 1
+            ? `One moment — please try again in ${wait} seconds.`
+            : 'One moment — please try again in a few seconds.',
+        );
+      } else {
+        appendMessage('assistant', 'Sorry — something went wrong. Please try again.');
+      }
     } finally {
       typing.remove();
       sending = false;
