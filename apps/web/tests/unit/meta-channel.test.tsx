@@ -138,17 +138,20 @@ beforeEach(() => {
 });
 
 describe('§3.1.2: WhatsApp and Messenger are separate rows on the one Meta grant', () => {
-  it('renders a "Connect Meta" button on the WhatsApp row and on the Messenger row', async () => {
+  it("each row's connect button names the CHANNEL, not the vendor behind it", async () => {
     serve({ meta: true, instagram: true });
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
-    // Case-sensitive on the registry's displayName ("Meta", not a hardcoded
-    // vendor string): one button per Meta row, and only those two.
-    const metaButtons = await screen.findAllByRole('button', { name: 'Connect Meta' });
-    expect(metaButtons).toHaveLength(2);
-    metaButtons.forEach((button) => expect(button).toBeEnabled());
-    expect(channelRow(/Enable WhatsApp/i)).toContainElement(metaButtons[0]!);
-    expect(channelRow(/Enable Facebook Messenger/i)).toContainElement(metaButtons[1]!);
+    // Owner feedback 2026-08-10: "Connect Meta" on a WhatsApp row speaks the
+    // vendor's language, not the customer's. The button names the channel being
+    // lit up; the surface copy still explains the shared Meta sign-in.
+    const whatsapp = await screen.findByRole('button', { name: 'Connect WhatsApp' });
+    const messenger = await screen.findByRole('button', { name: 'Connect Facebook Messenger' });
+    expect(whatsapp).toBeEnabled();
+    expect(messenger).toBeEnabled();
+    expect(channelRow(/Enable WhatsApp/i)).toContainElement(whatsapp);
+    expect(channelRow(/Enable Facebook Messenger/i)).toContainElement(messenger);
+    expect(screen.queryByRole('button', { name: 'Connect Meta' })).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Connect Instagram' })).toBeEnabled();
   });
 
@@ -156,8 +159,7 @@ describe('§3.1.2: WhatsApp and Messenger are separate rows on the one Meta gran
     serve({ meta: true, instagram: true });
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
-    const metaButtons = await screen.findAllByRole('button', { name: 'Connect Meta' });
-    fireEvent.click(metaButtons[0]!);
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect WhatsApp' }));
     await waitFor(() => expect(startConnection).toHaveBeenCalledWith('channel_auth', 'meta'));
 
     startConnection.mockClear();
@@ -165,7 +167,7 @@ describe('§3.1.2: WhatsApp and Messenger are separate rows on the one Meta gran
       authorizeUrl: null,
       statusDetail: 'Action needed: nothing to redirect to in a test.',
     });
-    fireEvent.click(metaButtons[1]!);
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect Facebook Messenger' }));
     await waitFor(() => expect(startConnection).toHaveBeenCalledWith('channel_auth', 'meta'));
   });
 
@@ -204,7 +206,9 @@ describe('contract §2: Instagram is connected on its own client, never the Meta
     expect(startConnection).not.toHaveBeenCalledWith('channel_auth', 'instagram');
     // The Instagram row offers no Meta-grant button.
     expect(
-      within(channelRow(/Enable Instagram DM/i)).queryByRole('button', { name: /Connect Meta/i }),
+      within(channelRow(/Enable Instagram DM/i)).queryByRole('button', {
+        name: /Connect (WhatsApp|Facebook Messenger)/i,
+      }),
     ).not.toBeInTheDocument();
   });
 
@@ -226,7 +230,7 @@ describe('contract §2: Instagram is connected on its own client, never the Meta
     serve({ meta: true, instagram: true });
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
-    await screen.findAllByRole('button', { name: 'Connect Meta' });
+    await screen.findByRole('button', { name: 'Connect WhatsApp' });
     expect(screen.queryByText(/sign-in covers[^.]*Instagram/i)).not.toBeInTheDocument();
     expect(
       screen.getByText(/Instagram has its own sign-in, so connecting it leaves WhatsApp/i),
@@ -259,7 +263,10 @@ describe('contract §1: each client is honest-disabled on its own', () => {
     serve({ meta: true, instagram: false });
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
-    expect(await screen.findAllByRole('button', { name: 'Connect Meta' })).toHaveLength(2);
+    expect(await screen.findByRole('button', { name: 'Connect WhatsApp' })).toBeEnabled();
+    expect(
+      await screen.findByRole('button', { name: 'Connect Facebook Messenger' }),
+    ).toBeEnabled();
     expect(
       await screen.findByText(/Not available yet — Instagram sign-in not configured/i),
     ).toBeInTheDocument();
@@ -275,7 +282,9 @@ describe('contract §1: each client is honest-disabled on its own', () => {
     expect(
       (await screen.findAllByText(/Not available yet — Meta app not configured/i)).length,
     ).toBe(2);
-    expect(screen.queryByRole('button', { name: /^Connect Meta/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Connect (WhatsApp|Facebook Messenger)/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('does not offer a connect button for a client the registry does not carry yet', async () => {

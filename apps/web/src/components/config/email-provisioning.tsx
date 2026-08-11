@@ -168,7 +168,14 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
 
   const mailboxPanel = (
     <div className="rounded-vm-card border border-vm-border p-vm-4">
-      <h3 className="text-vm-2 font-label">Or connect your own work mailbox</h3>
+      <h3 className="text-vm-2 font-label">
+        Connect your own work mailbox{' '}
+        <span className="font-normal text-vm-text-muted">— recommended</span>
+      </h3>
+      <p className="mt-vm-1 text-vm-1 text-vm-text-muted">
+        Replies come from your own address and land in your own Sent folder — the most
+        professional setup, one sign-in.
+      </p>
       {providers.isPending ? (
         <p className="mt-vm-2 text-vm-1 text-vm-text-muted" role="status">
           Checking whether a mailbox sign-in is available…
@@ -325,6 +332,7 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
         </div>
       ) : (
         <div className="mt-vm-4 space-y-vm-4">
+          {mailboxPanel}
           {provisioning.data ? (
             <div className="rounded-vm-card border border-vm-border p-vm-4">
               <div className="flex items-center justify-between gap-vm-3">
@@ -364,7 +372,6 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
           ) : (
             platformSetup
           )}
-          {mailboxPanel}
         </div>
       )}
     </section>
