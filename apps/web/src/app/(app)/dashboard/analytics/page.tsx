@@ -131,17 +131,27 @@ export default function AnalyticsPage() {
             <Stat label="Leads (period)" value={a.leadsThisPeriod} />
             <Stat
               label="Appointments booked"
-              value={a.appointmentsBooked ?? 'Not yet available'}
-              note={a.appointmentsBookedNote}
+              value={a.appointmentsBooked ?? '—'}
+              note={
+                a.appointmentsBooked == null
+                  ? (a.appointmentsBookedNote ??
+                    'Shows up once a calendar tool is connected and Luciel books its first appointment.')
+                  : a.appointmentsBookedNote
+              }
             />
             <Stat
-              label="Response time p50 / p95"
+              label="Response time (typical / slowest 5%)"
               value={
                 a.responseTimeP50Seconds != null && a.responseTimeP95Seconds != null
                   ? `${a.responseTimeP50Seconds}s / ${a.responseTimeP95Seconds}s`
-                  : 'Not yet available'
+                  : '—'
               }
-              note={a.responseTimeNote}
+              note={
+                a.responseTimeP50Seconds == null
+                  ? (a.responseTimeNote ??
+                    'How fast Luciel answers: the typical reply, and the slowest 5% of replies. Measured once real conversations flow.')
+                  : a.responseTimeNote
+              }
             />
           </div>
 

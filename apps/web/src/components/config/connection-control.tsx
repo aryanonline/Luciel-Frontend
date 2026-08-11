@@ -274,8 +274,11 @@ export function ConnectionControl({
   const connectLabel = () => {
     if (busy) return isCredentialForm ? 'Saving…' : 'Opening sign-in…';
     if (boundElsewhere || switching) return `Switch to ${providerName}`;
-    if (status === 'expired' || status === 'error') return `Reconnect ${providerName}`;
-    return `Connect ${providerName}`;
+    // Connect/Reconnect name the CHANNEL the owner is lighting up ("Connect
+    // WhatsApp"), not the vendor behind it ("Connect Meta") — the surface copy
+    // below already explains that one Meta sign-in powers its sibling channel.
+    if (status === 'expired' || status === 'error') return `Reconnect ${label}`;
+    return `Connect ${label}`;
   };
 
   return (

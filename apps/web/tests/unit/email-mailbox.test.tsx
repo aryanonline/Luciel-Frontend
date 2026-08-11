@@ -144,7 +144,7 @@ describe('§3.1.6a: the mailbox is offered as a third path when configured', () 
     renderWithQuery(<EmailChannelProvisioning emailChannelEnabled />);
 
     expect(
-      await screen.findByRole('heading', { name: /Or connect your own work mailbox/i }),
+      await screen.findByRole('heading', { name: /Connect your own work mailbox/i }),
     ).toBeInTheDocument();
     expect(await findConnectButton()).toBeInTheDocument();
     expect(screen.getByText('Outlook mailbox help text.')).toBeInTheDocument();
