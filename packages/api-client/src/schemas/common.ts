@@ -36,6 +36,12 @@ export const connectionStatus = z.enum([
   // Own-domain email address chosen but inbound DNS/MX routing not yet verified —
   // NOT live; shown as "Action needed: complete email routing" (Arch §3.1.6a).
   'pending_email_routing',
+  // The designated SMS/Voice number is NOT hosted in the tenant's own Twilio
+  // account (Arch §3.1.4 BYO operability probe) — distinct from a pending
+  // carrier registration: the number itself needs hosting/porting before any
+  // registration can matter. Previously degraded to `error` on the wire, which
+  // hid the actionable "this number isn't in your Twilio account" guidance.
+  'not_operable_hosting_required',
 ]);
 export type ConnectionStatus = z.infer<typeof connectionStatus>;
 

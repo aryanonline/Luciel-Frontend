@@ -143,6 +143,14 @@ describe('connection chip mapping (Arch §3.8.1/§3.8.4)', () => {
     expect(chipForConnection('error')).toBe('action_needed');
   });
 
+  // Arch §3.1.4: a BYO number not hosted in the tenant's own Twilio account is an
+  // actionable state (host/port the number), never a bare "error" and never
+  // "connected". The wire enum gained the value so the guidance survives to the UI.
+  it('not_operable_hosting_required is action_needed (actionable, not a bare error)', () => {
+    expect(chipForConnection('not_operable_hosting_required')).toBe('action_needed');
+    expect(chipForConnection('not_operable_hosting_required', false)).toBe('not_available');
+  });
+
   // Harmony wave 2, item 6a: a provider the served registry does not hold at
   // all can never be told "Action needed" — there is no button that does
   // anything. `registryConfigured: true` (explicit) must reproduce the

@@ -65,6 +65,18 @@ const withNumberPending: Luciel = {
   ),
 };
 
+// Arch §3.1.4 operability probe: the designated number is NOT hosted in the
+// tenant's own Twilio account. Previously this state degraded to a bare `error`
+// on the wire and the owner lost the actionable guidance.
+const withNumberNotHosted: Luciel = {
+  ...base,
+  channels: base.channels.map((c) =>
+    c.id === 'sms' || c.id === 'voice'
+      ? { ...c, enabled: true, connectionStatus: 'not_operable_hosting_required' }
+      : c,
+  ),
+};
+
 /** The <li> hosting a channel row, located from its enable toggle. */
 const channelRow = (name: RegExp): HTMLElement => {
   const row = screen.getByRole('switch', { name }).closest('li');
@@ -164,6 +176,19 @@ describe('P0-1: a supplied number sits at "complete carrier registration"', () =
     renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
     expect(screen.getByRole('button', { name: /Re-verify/i })).toBeInTheDocument();
     expect(screen.getByText(/Nothing checks this in the background/i)).toBeInTheDocument();
+  });
+});
+
+describe('Arch §3.1.4: a number not hosted in the tenant’s Twilio account is named, not "error"', () => {
+  it('renders the specific hosting guidance chip on both enabled phone rows', () => {
+    renderWithQuery(<ChannelsPillar luciel={withNumberNotHosted} />);
+    expect(
+      screen.getAllByText(/action needed: this number isn't in your Twilio account yet/i),
+    ).toHaveLength(2);
+    // Never the generic trouble copy, and never a false Connected.
+    expect(screen.queryByText(/is having trouble/i)).not.toBeInTheDocument();
+    const smsRow = channelRow(/Enable SMS/i);
+    expect(within(smsRow).queryByText(/^Connected$/)).not.toBeInTheDocument();
   });
 });
 
