@@ -45,6 +45,10 @@ export function chipForConnection(
     // Own-domain email routing not yet verified: not live, so "action needed"
     // until DNS/MX checks pass — never "connected" (Arch §3.1.6a).
     case 'pending_email_routing':
+    // The BYO number is not hosted in the tenant's own Twilio account
+    // (Arch §3.1.4): actionable — host/port the number — so "action needed",
+    // with the specific guidance supplied by the channel surface.
+    case 'not_operable_hosting_required':
     default:
       return 'action_needed';
   }

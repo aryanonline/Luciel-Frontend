@@ -299,7 +299,12 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     enabled row with no visible status leaves "is this live?"
                     unanswered at the toggle (honest connection states). */}
                 {c.enabled && isPhoneChannel ? (
-                  phonePending ? (
+                  numberStatus === 'not_operable_hosting_required' ? (
+                    <StatusChip
+                      kind="action_needed"
+                      detail="this number isn't in your Twilio account yet"
+                    />
+                  ) : phonePending ? (
                     <StatusChip kind="action_needed" detail="complete carrier registration" />
                   ) : needsTwilio ? (
                     <StatusChip kind="action_needed" detail="connect your Twilio account" />
