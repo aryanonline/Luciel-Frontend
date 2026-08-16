@@ -97,21 +97,27 @@ beforeEach(() => {
 });
 
 describe('Harmony wave 2, item 6b: scoringStatus', () => {
-  it('renders the real number for scoringStatus: scored', async () => {
+  it('renders the plain-language badge with the real number preserved in the tooltip', async () => {
     getAnswerEvidence.mockResolvedValue(evidence({ scoringStatus: 'scored', groundingScore: 0.82 }));
     await openConversation();
-    expect(await screen.findByText(/Grounded 0\.82/)).toBeInTheDocument();
+    // Owner-facing copy is plain language, not a raw model-eval score…
+    const badge = await screen.findByText('Backed by your knowledge');
+    // …but the real measurement is preserved one hover away, never fabricated.
+    expect(badge.closest('span[title]')).toHaveAttribute(
+      'title',
+      expect.stringContaining('0.82'),
+    );
     expect(screen.queryByText(/Not scored/)).not.toBeInTheDocument();
   });
 
-  it('renders "Not scored (before scoring existed)" for scoringStatus: not_scored_legacy, never a number or "Grounded 0.50"', async () => {
+  it('renders "Not scored (before scoring existed)" for scoringStatus: not_scored_legacy, never a number or a backed badge', async () => {
     getAnswerEvidence.mockResolvedValue(
       evidence({ scoringStatus: 'not_scored_legacy', groundingScore: null }),
     );
     await openConversation();
     expect(await screen.findByText('Not scored (before scoring existed)')).toBeInTheDocument();
-    expect(screen.queryByText(/Grounded 0\.50/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Grounded/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0\.50/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Backed by your knowledge/)).not.toBeInTheDocument();
   });
 });
 

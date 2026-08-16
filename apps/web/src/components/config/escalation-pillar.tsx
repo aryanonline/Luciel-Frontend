@@ -51,6 +51,12 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
   } = useServerDraft<EscalationContact>(luciel.escalation);
   const { busy, notice, run } = useActionNotice();
 
+  // SMS notifications require the SMS channel enabled (Arch §3.5.1). Offering
+  // the SMS route on an account that can't send SMS silently routes a
+  // high-value-lead page into nothing — the option stays visible but disabled,
+  // with the reason, until the channel is on.
+  const smsRoutable = luciel.channels.some((c) => c.id === 'sms' && c.enabled);
+
   const ruleFor = (signal: EscalationSignal): RoutingRule | undefined =>
     draft.routing?.find((r) => r.signal === signal);
 
@@ -146,7 +152,9 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
               {...p}
             >
               <option value="email">Email</option>
-              <option value="sms">SMS</option>
+              <option value="sms" disabled={!smsRoutable}>
+                {smsRoutable ? 'SMS' : 'SMS — enable the SMS channel first'}
+              </option>
             </Select>
           )}
         </Field>
@@ -176,7 +184,9 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
                   }
                 >
                   <option value="email">Email</option>
-                  <option value="sms">SMS</option>
+                  <option value="sms" disabled={!smsRoutable}>
+                    {smsRoutable ? 'SMS' : 'SMS — enable the SMS channel first'}
+                  </option>
                 </Select>
               </div>
               <div className="flex items-center gap-vm-2">

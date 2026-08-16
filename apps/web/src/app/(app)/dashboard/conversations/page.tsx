@@ -134,17 +134,19 @@ function GroundingBadge({
     );
   }
   const grounded = score >= GROUNDING_FLOOR;
+  // Plain language for the owner ("Grounded 0.87" is a model-eval score shown
+  // to a hairdresser); the real measurement stays one hover away in the title
+  // so the number is preserved, not hidden.
   return (
     <span
       className={cn(
         'inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label',
         grounded ? 'text-vm-success' : 'text-vm-warning',
       )}
+      title={`Grounding score ${score.toFixed(2)} — answers below 0.50 are refused or escalated.`}
     >
       <span aria-hidden="true">{grounded ? '✓' : '!'}</span>
-      <span>
-        {grounded ? 'Grounded' : 'Weakly grounded'} {score.toFixed(2)}
-      </span>
+      <span>{grounded ? 'Backed by your knowledge' : 'Weakly backed — worth reviewing'}</span>
     </span>
   );
 }
