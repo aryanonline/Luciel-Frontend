@@ -84,11 +84,13 @@ function chipDetail(status: ConnectionStatus | undefined, label: string): string
     case undefined:
     case 'unconfigured':
     case 'not_connected':
+    // `revoked` is terminal — the credential is gone, so the honest action is a
+    // fresh connect. The detail previously said "reconnect …" beside a button
+    // that said (and did) "Connect …": the chip and the button now agree.
+    case 'revoked':
       return `connect ${label}`;
     case 'error':
       return `${label} is having trouble`;
-    case 'revoked':
-      return `reconnect ${label}`;
     default:
       return undefined;
   }
@@ -362,8 +364,13 @@ export function ConnectionControl({
         </div>
       )}
 
-      {/* Provider CHOICE (Decision #6) — shown while connecting or switching. */}
-      {(!isLive || switching) && !nothingAvailable && !pinned && choices.length > 1 && (
+      {/* Provider CHOICE (Decision #6) — shown while connecting or switching,
+          and only when there is a real choice to make: TWO OR MORE providers
+          the owner could actually connect. One connectable provider means one
+          plain Connect button (owner ruling: "connect your calendar" should be
+          enough), with any not-yet-available options listed quietly below the
+          button rather than as disabled radios in a one-option quiz. */}
+      {(!isLive || switching) && !nothingAvailable && !pinned && connectable.length > 1 && (
         <fieldset className="rounded-vm-card border border-vm-border p-vm-3">
           <legend className="px-vm-1 text-vm-1 font-label">Choose how to connect {label}</legend>
           <div className="grid gap-vm-2">
@@ -429,6 +436,25 @@ export function ConnectionControl({
           )}
         </div>
       )}
+
+      {/* With a single connectable provider the radios are gone, but the owner
+          should still see what else is on the way — as information, not as a
+          disabled control pretending to be a choice. */}
+      {(!isLive || switching) &&
+        !nothingAvailable &&
+        !pinned &&
+        connectable.length === 1 &&
+        choices.some((o) => !o.configured) && (
+          <ul className="grid gap-vm-1 text-vm-0 text-vm-text-muted">
+            {choices
+              .filter((o) => !o.configured)
+              .map((o) => (
+                <li key={o.provider}>
+                  {o.displayName} — coming soon. {o.helpText}
+                </li>
+              ))}
+          </ul>
+        )}
 
       {/* Destination step: connected is not live until this is bound (§2). */}
       {needsDestination && destinationField && (
