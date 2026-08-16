@@ -13,7 +13,7 @@ import type {
 import { useCapabilities, useConnections, useLucielMutations } from '@/lib/hooks';
 import { useActionNotice } from '@/lib/use-action-notice';
 import { ConnectionControl } from './connection-control';
-import { toolMeta, chipKind, channelLabel } from './labels';
+import { toolMeta, chipKind, channelLabel, offRowConnectionNote } from './labels';
 
 /**
  * Tools pillar (Vision §3.2, Customer Journey §4.2). Two clearly-separated bands:
@@ -248,6 +248,25 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
                         the Email channel above.
                       </p>
                     )}
+                    {/* Off + a saved connection: say it survives the toggle —
+                        the connect control below only renders while on, so
+                        without this the connection (even one needing a
+                        reconnect) went invisible. */}
+                    {!on &&
+                      !channelBlocked &&
+                      offRowConnectionNote(
+                        target
+                          ? connectionFor(target.connectionType)?.status
+                          : t.connectionStatus,
+                      ) && (
+                        <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+                          {offRowConnectionNote(
+                            target
+                              ? connectionFor(target.connectionType)?.status
+                              : t.connectionStatus,
+                          )}
+                        </p>
+                      )}
                   </div>
                 </div>
                 {/* A tool with a connection gets its chip from the control below. */}
@@ -312,6 +331,11 @@ function CapabilityRow({
           {partial && (
             <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
               Only part of this is switched on right now — turn it on to enable all of it.
+            </p>
+          )}
+          {!enabled && !partial && offRowConnectionNote(connection?.status) && (
+            <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+              {offRowConnectionNote(connection?.status)}
             </p>
           )}
         </div>

@@ -179,6 +179,38 @@ describe('P0-1: a supplied number sits at "complete carrier registration"', () =
   });
 });
 
+describe('Arch §3.8.7: a toggled-off channel says its connection survives', () => {
+  it('shows the saved-connection note on an off row with a live connection', () => {
+    const offButConnected: Luciel = {
+      ...base,
+      channels: base.channels.map((c) =>
+        c.id === 'sms' ? { ...c, enabled: false, connectionStatus: 'connected' } : c,
+      ),
+    };
+    renderWithQuery(<ChannelsPillar luciel={offButConnected} />);
+    expect(
+      screen.getByText(/Its connection is saved — nothing to set up again/i),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the reconnect-waiting note on an off row whose connection expired', () => {
+    const offExpired: Luciel = {
+      ...base,
+      channels: base.channels.map((c) =>
+        c.id === 'sms' ? { ...c, enabled: false, connectionStatus: 'expired' } : c,
+      ),
+    };
+    renderWithQuery(<ChannelsPillar luciel={offExpired} />);
+    expect(screen.getByText(/needs a reconnect — turn this back on to fix it/i)).toBeInTheDocument();
+  });
+
+  it('stays quiet on an off row with nothing saved', () => {
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+    expect(screen.queryByText(/Its connection is saved/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/needs a reconnect/i)).not.toBeInTheDocument();
+  });
+});
+
 describe('Arch §3.1.4: a number not hosted in the tenant’s Twilio account is named, not "error"', () => {
   it('renders the specific hosting guidance chip on both enabled phone rows', () => {
     renderWithQuery(<ChannelsPillar luciel={withNumberNotHosted} />);

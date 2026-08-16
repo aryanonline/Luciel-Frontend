@@ -103,6 +103,29 @@ export function chipKind(status: ConnectionStatus | undefined): ChipKind | null 
 }
 
 /**
+ * What a TOGGLED-OFF row should say about its saved connection. Disabling never
+ * disconnects (Arch §3.8.7 rule B) — but the connect control only renders while
+ * the row is on, so without this note the connection went invisible and owners
+ * had no way to know re-enabling needs no re-setup (or that an expired one is
+ * waiting for a reconnect behind the toggle).
+ */
+export function offRowConnectionNote(status: ConnectionStatus | undefined): string | null {
+  switch (status) {
+    case 'connected':
+    case 'pending_carrier_registration':
+    case 'pending_email_routing':
+    case 'not_operable_hosting_required':
+      return 'Its connection is saved — nothing to set up again when you turn this back on.';
+    case 'expired':
+    case 'error':
+      return 'Its saved connection needs a reconnect — turn this back on to fix it.';
+    default:
+      // unconfigured / not_connected / revoked: nothing saved worth noting.
+      return null;
+  }
+}
+
+/**
  * Human labels for `ConnectionType` — the OTHER half of a Connections row.
  * These are internal registry enum values (e.g. `sms_sender`, `channel_auth`)
  * and must never reach an owner-visible surface verbatim (Harmony fix FE-H#6):
