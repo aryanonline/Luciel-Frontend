@@ -30,7 +30,7 @@ import { useActionNotice } from '@/lib/use-action-notice';
 import { ConnectionControl } from './connection-control';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
-import { channelLabel, chipKind, toolMeta } from './labels';
+import { channelLabel, chipKind, offRowConnectionNote, toolMeta } from './labels';
 import { MESSAGING_SURFACES } from './messaging-surfaces';
 
 /**
@@ -321,6 +321,15 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   chip && c.enabled && <StatusChip kind={chip} />
                 )}
               </div>
+              {/* Off + a saved connection: disabling never disconnects (Arch
+                  §3.8.7), but the connect surface only renders while on — say
+                  the connection survives so the owner knows re-enabling needs
+                  no re-setup (or that a reconnect is waiting). */}
+              {!c.enabled && offRowConnectionNote(c.connectionStatus) && (
+                <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+                  {offRowConnectionNote(c.connectionStatus)}
+                </p>
+              )}
               {showControl && surfaces && (
                 <div className="mt-vm-3 grid gap-vm-4 pl-[3.5rem]">
                   {surfaces.map((surface) => (
