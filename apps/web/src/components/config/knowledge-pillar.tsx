@@ -49,6 +49,20 @@ const PER_FILE_MAX_BYTES = 50_000_000;
 /** Chunk preview shows the head of the source verbatim (Arch §3.2.2). */
 const CHUNK_PREVIEW_LIMIT = 10;
 
+/** Product labels for source origins — raw wire enums ("google_drive") are not
+ * display copy; a de-snaked "google drive" still reads as an engineering leak.
+ * Unmapped values fall back to de-snaking so a new origin degrades readably. */
+const ORIGIN_LABEL: Record<string, string> = {
+  upload: 'Uploaded file',
+  paste: 'Pasted text',
+  csv: 'CSV import',
+  website_crawl: 'Website crawl',
+  google_drive: 'Google Drive',
+  notion: 'Notion',
+  crm_kb: 'CRM knowledge base',
+};
+const originLabel = (origin: string): string => ORIGIN_LABEL[origin] ?? origin.replace(/_/g, ' ');
+
 /** The live-sync connectors this pillar offers; availability comes from the registry. */
 const SYNC_CONNECTORS: { provider: KnowledgeSyncProvider; label: string }[] = [
   { provider: 'google_drive', label: 'Google Drive' },
@@ -273,7 +287,7 @@ export function KnowledgePillar() {
             <div className="min-w-0">
               <div className="truncate text-vm-2">{s.name}</div>
               <div className="text-vm-0 text-vm-text-muted">
-                {s.origin.replace(/_/g, ' ')} · {fmtBytes(s.sizeBytes)} ·{' '}
+                {originLabel(s.origin)} · {fmtBytes(s.sizeBytes)} ·{' '}
                 {s.lastSyncedAt
                   ? `last synced ${new Date(s.lastSyncedAt).toLocaleDateString()}`
                   : `updated ${new Date(s.lastUpdatedAt).toLocaleDateString()}`}
@@ -283,11 +297,16 @@ export function KnowledgePillar() {
               {s.syncStatus && (
                 <StatusChip
                   kind={
+                    // Explicit per-state mapping: only the two known-healthy
+                    // states may claim Connected. A sync status this build does
+                    // not recognize is unknown, and unknown must never render
+                    // as Connected (honest-states invariant) — it asks for
+                    // attention instead.
                     s.syncStatus === 'paused_reconnect_needed'
                       ? 'reconnect_needed'
-                      : s.syncStatus === 'error'
-                        ? 'action_needed'
-                        : 'connected'
+                      : s.syncStatus === 'synced' || s.syncStatus === 'syncing'
+                        ? 'connected'
+                        : 'action_needed'
                   }
                 />
               )}

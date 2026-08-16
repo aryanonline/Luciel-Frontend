@@ -30,7 +30,7 @@ import { useActionNotice } from '@/lib/use-action-notice';
 import { ConnectionControl } from './connection-control';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
-import { channelLabel, chipKind } from './labels';
+import { channelLabel, chipKind, toolMeta } from './labels';
 import { MESSAGING_SURFACES } from './messaging-surfaces';
 
 /**
@@ -79,8 +79,10 @@ import { MESSAGING_SURFACES } from './messaging-surfaces';
  * offline. Both rules are enforced by the shared connection control.
  */
 
-/** Channel IDs whose disable cascades to a dependent send tool. */
-const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], string>> = {
+/** Channel IDs whose disable cascades to a dependent send tool. Typed against
+ * the tool-label map so the cascade toast can name the tool by its product
+ * label rather than its raw wire id. */
+const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], keyof typeof toolMeta>> = {
   sms: 'send_sms',
   email: 'send_email',
 };
@@ -234,7 +236,9 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
             t.id === dependentToolId ? { ...t, enabled: false } : t,
           );
           await updateTools.mutateAsync(nextTools);
-          return `${channelLabel[id]} is off, and ${dependentToolId.replace(/_/g, ' ')} was switched off with it.`;
+          // The tool's product label, never the raw wire id ("Send SMS", not
+          // "send sms") — the one de-snaked enum that had leaked into a toast.
+          return `${channelLabel[id]} is off, and ${toolMeta[dependentToolId].label} was switched off with it.`;
         }
         return `${channelLabel[id]} is ${enabled ? 'on' : 'off'}.`;
       },
