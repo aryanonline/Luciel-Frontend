@@ -356,8 +356,19 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
                         key={i}
                         className="rounded-vm-control border border-vm-border bg-vm-surface p-vm-3 text-vm-0"
                       >
-                        <span className="font-label">{r.type}</span> {r.host} → <code>{r.value}</code>
-                        {r.priority !== undefined ? ` (priority ${r.priority})` : ''}
+                        {/* Labeled fields, not a bare "MX host → value" row: the
+                            owner is pasting these into their domain host's form,
+                            which asks for exactly these field names. */}
+                        <span className="font-label">Record type: {r.type}</span>
+                        <div className="mt-vm-1">
+                          Name/host: <code>{r.host}</code>
+                        </div>
+                        <div className="mt-vm-1">
+                          Value: <code>{r.value}</code>
+                        </div>
+                        {r.priority !== undefined && (
+                          <div className="mt-vm-1">Priority: {r.priority}</div>
+                        )}
                       </li>
                     ))}
                   </ul>
