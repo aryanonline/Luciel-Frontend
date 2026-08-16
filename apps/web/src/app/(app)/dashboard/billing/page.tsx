@@ -113,7 +113,9 @@ export default function BillingPage() {
             <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
               Resets {new Date(b.periodResetsAt).toLocaleDateString()} (your billing-cycle date).
               {b.billedThisPeriod > 0 &&
-                ` PAYG so far: ${Math.ceil(b.billedThisPeriod / 100)} × 100 × $39 = $${
+                // Spelled out, not "PAYG" — an owner shouldn't need our acronyms
+                // to read their own bill.
+                ` Pay-as-you-go so far: ${Math.ceil(b.billedThisPeriod / 100)} × 100 conversations × $39 = $${
                   Math.ceil(b.billedThisPeriod / 100) * 39
                 }.`}
             </p>
