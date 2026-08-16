@@ -1,5 +1,6 @@
 import type { WidgetApiClient } from '../widget-client';
 import type { WidgetBootstrap } from '../schemas';
+import { widgetBootstrap, widgetSendResult } from '../schemas';
 import { createTransport } from './transport';
 
 /**
@@ -61,8 +62,17 @@ export function createHttpWidgetClient(baseUrl: string): WidgetApiClient {
   // embedKey in the body; a credentialed request would fail preflight.
   const t = createTransport({ baseUrl, credentials: 'omit' });
   return {
-    bootstrap: (embedKey) => t.post('/api/v1/chat-widget/bootstrap', { embedKey }),
-    send: (embedKey, req) => t.post('/api/v1/chat-widget/messages', { embedKey, ...req }),
+    // The widget renders on someone ELSE'S website, so a response the schema
+    // does not recognize must FAIL CLOSED (bootstrap throws → mount renders
+    // nothing), never fall through to an active-looking panel whose sends go
+    // nowhere. Zod parse — not a cast — is what makes an unknown renderState
+    // (or a response missing the AI-disclosure chrome) an error instead of a
+    // silently-dead widget. This is the widget data-plane only; the admin
+    // client's tolerance posture is unchanged.
+    bootstrap: async (embedKey) =>
+      widgetBootstrap.parse(await t.post('/api/v1/chat-widget/bootstrap', { embedKey })),
+    send: async (embedKey, req) =>
+      widgetSendResult.parse(await t.post('/api/v1/chat-widget/messages', { embedKey, ...req })),
     history: (embedKey, sessionId) =>
       t.get(`/api/v1/chat-widget/sessions/${sessionId}?embedKey=${encodeURIComponent(embedKey)}`),
   };
