@@ -14,10 +14,22 @@ import { createWidgetClient } from '../widget';
 
 const BASE_URL = 'https://api.example.com';
 
-function stubFetch() {
+// A schema-valid widget bootstrap body: the widget data-plane now zod-parses
+// responses (fail-closed on a customer's site), so the stub must serve a shape
+// the parser accepts — the assertion under test is still only the cookie mode.
+const VALID_BOOTSTRAP = {
+  renderState: 'active',
+  businessName: 'Acme',
+  assistantName: 'Acme assistant',
+  openingMessage: "Hi — I'm the AI assistant for Acme.",
+  aiAssistantLabel: 'AI assistant',
+  poweredByVantageMind: true,
+};
+
+function stubFetch(body: unknown = {}) {
   const fetchMock = vi.fn(
     async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      new Response(JSON.stringify({}), {
+      new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -35,11 +47,21 @@ afterEach(() => {
 
 describe('transport cookie mode per plane', () => {
   it("the widget client omits credentials so a wildcard-ACAO preflight can't fail", async () => {
-    const fetchMock = stubFetch();
+    const fetchMock = stubFetch(VALID_BOOTSTRAP);
     await createWidgetClient({ adapter: 'http', baseUrl: BASE_URL }).bootstrap('vm_live_demo');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(credentialsOf(fetchMock)).toBe('omit');
+  });
+
+  it('the widget bootstrap fails closed on a response the schema does not recognize', async () => {
+    // A 200 whose body carries an unknown renderState (or is missing the
+    // AI-disclosure chrome) must REJECT — the widget then renders nothing on
+    // the host page instead of an active-looking panel whose sends go nowhere.
+    stubFetch({ ...VALID_BOOTSTRAP, renderState: 'revoked' });
+    await expect(
+      createWidgetClient({ adapter: 'http', baseUrl: BASE_URL }).bootstrap('vm_live_demo'),
+    ).rejects.toThrow();
   });
 
   it('the admin client still includes the httpOnly session cookie', async () => {

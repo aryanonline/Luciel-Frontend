@@ -242,6 +242,48 @@ describe('widget mount', () => {
     expect(shadowHost.style.position).toBe('');
   });
 
+  it('fails closed on a renderState this build does not recognize — no active-looking panel', async () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    // An injected client bypasses the HTTP layer's schema validation, so the
+    // mount itself must refuse an unknown directive rather than render a panel
+    // whose sends would go nowhere (a dead-but-visible widget on a customer
+    // site). Simulates a future/renamed state reaching an old bundle.
+    await mountWidget({
+      embedKey: 'vm_live_demo',
+      host,
+      client: createWidgetClient({
+        adapter: 'mock',
+        mock: { renderState: 'revoked' as unknown as 'paused' },
+      }),
+    });
+
+    const shadowHost = host.querySelector('[data-luciel-widget]') as HTMLElement;
+    expect(shadowHost.shadowRoot!.querySelector('.vm-launcher')).toBeNull();
+    expect((shadowHost.shadowRoot!.textContent ?? '').trim()).toBe('');
+  });
+
+  it('at_cap still sends — the visitor gets the graceful reply, never a silent void (Arch §3.4.1b)', async () => {
+    // A visitor who opens the widget while the free allowance is exhausted must
+    // be able to leave their message: the backend captures it + escalates and
+    // answers with the canned no-LLM reply. Blocking the send client-side made
+    // them type into nothing.
+    const shadow = await mountOpen(
+      createWidgetClient({ adapter: 'mock', mock: { renderState: 'at_cap' } }),
+    );
+    const input = shadow.querySelector('.vm-input') as HTMLInputElement;
+    const send = shadow.querySelector('.vm-send') as HTMLButtonElement;
+    input.value = 'Are you open Saturday?';
+    send.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const text = shadow.textContent ?? '';
+    expect(text).toContain("I'm at capacity right now");
+    // After the graceful reply the input closes — at-cap is one honest
+    // exchange, not an open loop.
+    expect(input.disabled).toBe(true);
+  });
+
   // --- P1-20: typing indicator and double-send guard ------------------------
 
   it('shows a typing indicator and locks the input while a reply is in flight', async () => {

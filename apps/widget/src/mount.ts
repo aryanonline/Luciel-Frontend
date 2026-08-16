@@ -84,7 +84,11 @@ export async function mountWidget(options: MountOptions): Promise<void> {
 
   // Paused → render an EMPTY <div>. No error, no "offline" (Arch §3.6.2).
   // Checked before positioning so a paused Luciel leaves no floating chrome.
-  if (boot.renderState === 'paused') {
+  // Any state this build does not recognize gets the SAME empty render: the
+  // HTTP client already fails closed on schema violations, but an injected
+  // client (options.client) bypasses that, and an unknown directive must never
+  // produce an active-looking panel whose sends go nowhere.
+  if (boot.renderState !== 'active' && boot.renderState !== 'at_cap') {
     shadow.appendChild(document.createElement('div'));
     return;
   }
@@ -219,7 +223,11 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   const doSend = async () => {
     const text = input.value.trim();
     // The in-flight guard is what stops a second Enter duplicating the message.
-    if (sending || !text || renderState !== 'active') return;
+    // at_cap still SENDS: the backend answers with the graceful no-LLM at-cap
+    // reply and captures the message (Arch §3.4.1b — "no conversation is
+    // silently dropped"). Blocking the send here made a visitor who arrived
+    // during at-cap type into a void. Only paused/unknown states refuse.
+    if (sending || !text || (renderState !== 'active' && renderState !== 'at_cap')) return;
     sending = true;
     input.disabled = true;
     send.disabled = true;
