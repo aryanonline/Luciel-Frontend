@@ -248,6 +248,15 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
                         the Email channel above.
                       </p>
                     )}
+                    {/* Mirror of the email case: an enabled Send SMS whose
+                        number/account isn't ready looked fully set up — no
+                        chip, no note — while every send would fail. */}
+                    {on && t.id === 'send_sms' && t.connectionStatus !== 'connected' && (
+                      <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+                        Luciel texts from your own business number — finish connecting your Twilio
+                        account and number with the SMS channel above.
+                      </p>
+                    )}
                     {/* Off + a saved connection: say it survives the toggle —
                         the connect control below only renders while on, so
                         without this the connection (even one needing a
