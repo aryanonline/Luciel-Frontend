@@ -126,11 +126,29 @@ export function KnowledgePillar() {
           `${tooBig.name} is ${fmtBytes(tooBig.size)} — the limit is ${fmtBytes(perFileMax)} per file.`,
         );
       }
+      let lookupNote = '';
       for (const file of chosen) {
-        if (kind === 'csv') await api.knowledge.importCsv(file, file.name);
-        else await api.knowledge.uploadFile(file, file.name);
+        if (kind === 'csv') {
+          await api.knowledge.importCsv(file, file.name);
+          // A CSV is ALSO the live-lookup table behind "Look up a record" — the
+          // tools pillar sends owners here for exactly that, so the one import
+          // must feed both (live-caught 2026-08-17: it previously fed only the
+          // knowledge base and the lookup tool could never be wired at all).
+          // Rows replace the previous table; a failure is said out loud, never
+          // silently downgraded to knowledge-only success.
+          lookupNote = await api.connections
+            .uploadRecordSourceCsv(file)
+            .then((r) => ` Its ${r.records} rows are also on file for live record lookups.`)
+            .catch(
+              () =>
+                ' The knowledge copy was added, but the live-lookup table could not be ' +
+                'updated — import the CSV again to retry.',
+            );
+        } else {
+          await api.knowledge.uploadFile(file, file.name);
+        }
       }
-      return `Added ${chosen.length} file${chosen.length > 1 ? 's' : ''} to your knowledge base.`;
+      return `Added ${chosen.length} file${chosen.length > 1 ? 's' : ''} to your knowledge base.${lookupNote}`;
     });
 
   const addPaste = () => {

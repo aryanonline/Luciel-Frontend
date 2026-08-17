@@ -693,6 +693,32 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         }
         return ok({ status: 'connected' as const, statusDetail: null });
       },
+      async uploadRecordSourceCsv(file) {
+        guardVerified();
+        // Replace-on-upload, mirroring the backend: rows REPLACE the previous
+        // table and the record_source connection flips to connected with the
+        // honest row count in its detail.
+        const text = await file.text();
+        const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+        const records = Math.max(0, lines.length - 1); // minus the header row
+        const columns = (lines[0] ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+        let row = state.connections.find((x) => x.connectionType === 'record_source');
+        if (!row) {
+          row = {
+            connectionId: nextId(),
+            connectionType: 'record_source',
+            provider: 'csv',
+            displayName: 'CSV records',
+            providerAvailable: true,
+            status: 'connected',
+            createdAt: new Date().toISOString(),
+          };
+          state.connections.push(row);
+        }
+        row.status = 'connected';
+        row.statusDetail = `${records} records on file`;
+        return ok({ records, columns });
+      },
       async completeOauth(connectionId, _code, oauthState) {
         guardVerified();
         // State is mandatory and single-use; without it the attempt is gone and

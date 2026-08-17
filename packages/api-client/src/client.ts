@@ -33,6 +33,7 @@ import type {
   MetaChannel,
   StartConnectionResult,
   ReverifySmsResult,
+  RecordSourceCsvResult,
   EmailProvisioning,
   ProvisionEmailRequest,
   ConversationSummary,
@@ -171,6 +172,15 @@ export interface LucielApiClient {
      * and repeatable.
      */
     reverifySms(): Promise<ReverifySmsResult>;
+    /**
+     * Upload the CSV that backs the `lookup_record` tool (record_source
+     * connection). Rows REPLACE the previous table; the connection flips to
+     * connected with "N records on file". The Knowledge pillar calls this
+     * alongside its knowledge ingest for CSV files, which is what makes the
+     * tools-pillar copy "CSV lives under Knowledge" true (live-caught
+     * 2026-08-17: this route previously had no frontend caller at all).
+     */
+    uploadRecordSourceCsv(file: File): Promise<RecordSourceCsvResult>;
     /**
      * Complete an OAuth flow: exchange the provider's `code` for a token, which the
      * backend stores as a tenant-scoped secret_ref (Arch §3.2.3/§3.8.3). Called by
