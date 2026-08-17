@@ -4,54 +4,19 @@ import * as React from 'react';
 import { Banner, Card, CardTitle, CardDescription, Button, PageHeader } from '@luciel/ui';
 import { useAnalytics } from '@/lib/hooks';
 import { saveBlob } from '@/lib/download';
-import type { AnalyticsOverview } from '@luciel/api-client';
-
-/**
- * Local, additive widening of the shared `AnalyticsOverview` type for fields
- * this build adds to the backend response (app/schemas_api/usage.py) ahead of
- * the shared `packages/api-client` schema (schemas/analytics.ts) being updated
- * to match — that package is outside this workstream's file ownership
- * (BUILD_BRIEF.md), so the wider shape is declared locally here only. Every
- * new field is optional so this stays backward-compatible with the current
- * mock adapter (which does not seed them yet) and forward-compatible once the
- * shared schema is widened to make them non-optional.
- */
-type AnalyticsOverviewExtended = Omit<
-  AnalyticsOverview,
-  'appointmentsBooked' | 'responseTimeP50Seconds' | 'responseTimeP95Seconds'
-> & {
-  // Overridden as nullable: honest gap (null + a note) instead of a fabricated
-  // 0 when no durable store exists yet (see app/analytics/service.py).
-  appointmentsBooked?: number | null;
-  appointmentsBookedNote?: string | null;
-  responseTimeP50Seconds?: number | null;
-  responseTimeP95Seconds?: number | null;
-  responseTimeNote?: string | null;
-  topKnowledgeSources?: { sourceId: string; name: string; retrievalCount: number }[];
-  topKnowledgeSourcesNote?: string | null;
-  conversionByChannel?: {
-    channel: string;
-    conversations: number;
-    leads: number;
-    conversionRate: number;
-  }[];
-  conversionBySourceNote?: string | null;
-  conversionByServiceNote?: string | null;
-};
 
 /**
  * Analytics (Arch §3.9). Aggregates only — no new PII, tenant-scoped. Surfaces:
- * conversations, leads, escalations-by-signal, response-time p50/p95,
- * appointments booked, channel mix, budget utilization, busiest-times heatmap,
- * top knowledge sources, conversion by channel, CSV export (Vision §7).
+ * conversations, leads, escalations-by-signal, reply time, appointments booked,
+ * channel mix, budget utilization, busiest-times heatmap, top knowledge
+ * sources, conversion by channel, CSV export (Vision §7).
  *
- * Honest empty states: appointments-booked, response-time p50/p95, and top
- * knowledge sources have no durable store yet on the backend (see
- * app/analytics/service.py's module docstring) — the API returns null/[] plus
- * a `*Note` string explaining why, and this page renders that note instead of
- * a fabricated 0. All new fields are read defensively (optional chaining +
- * fallbacks) because the shared mock adapter (packages/api-client, outside
- * this workstream's ownership per BUILD_BRIEF.md) may not yet seed them.
+ * Appointments booked and reply time are REAL numbers now (backend
+ * booking_events + transcript turn gaps); a null only ever means "nothing to
+ * measure yet this period" and arrives with a plain-language `*Note`. Top
+ * knowledge sources keeps its honest server-side gap note. The shared
+ * `AnalyticsOverview` schema carries all of this — the page-local widened type
+ * that papered over the old schema mismatch is gone.
  */
 const signalLabel: Record<string, string> = {
   explicit_human_request: 'Human requested',
@@ -81,8 +46,7 @@ async function downloadAnalyticsCsv(view: string) {
 }
 
 export default function AnalyticsPage() {
-  const { data: raw, isPending, isError, refetch } = useAnalytics();
-  const a = raw as AnalyticsOverviewExtended | undefined;
+  const { data: a, isPending, isError, refetch } = useAnalytics();
   const [exportError, setExportError] = React.useState<string | null>(null);
 
   const exportCsv = (view: string) => {
@@ -200,9 +164,7 @@ export default function AnalyticsPage() {
               </Button>
             </div>
             <CardDescription>
-              Lead-capture rate per channel (leads captured / conversations). True
-              admin-marked-outcome conversion, and conversion by source/service, are not yet
-              available — no lead-outcome or service-type field exists yet.
+              How many conversations on each channel turned into a captured lead.
               {a.conversionBySourceNote ? ` ${a.conversionBySourceNote}` : ''}
             </CardDescription>
             {!a.conversionByChannel || a.conversionByChannel.length === 0 ? (
@@ -266,7 +228,7 @@ export default function AnalyticsPage() {
           <Card>
             <CardTitle>Top knowledge sources</CardTitle>
             <CardDescription>
-              The top-N source files by retrieval frequency in the rolling window.
+              Which of your documents Luciel reaches for most when answering.
             </CardDescription>
             {a.topKnowledgeSources && a.topKnowledgeSources.length > 0 ? (
               <ul className="mt-vm-3 space-y-vm-2">
@@ -282,7 +244,8 @@ export default function AnalyticsPage() {
               </ul>
             ) : (
               <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
-                {a.topKnowledgeSourcesNote ?? 'Not yet available.'}
+                {a.topKnowledgeSourcesNote ??
+                  "Nothing to show yet — this fills in as Luciel answers from your documents."}
               </p>
             )}
           </Card>

@@ -452,8 +452,10 @@ export const seedAnalytics: AnalyticsOverview = {
   conversationsTotal: 312,
   leadsThisPeriod: 12,
   appointmentsBooked: 7,
+  appointmentsBookedNote: null,
   responseTimeP50Seconds: 45,
   responseTimeP95Seconds: 240,
+  responseTimeNote: null,
   escalationsBySignal: [
     { signal: 'high_value_lead', count: 5 },
     { signal: 'cannot_answer', count: 2 },
@@ -466,6 +468,40 @@ export const seedAnalytics: AnalyticsOverview = {
   ],
   budgetUtilization: 0.76,
   busiestTimes: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
+  topKnowledgeSources: [],
+  // Mirrors the server's honest gap note verbatim (mock models states, it does
+  // not invent claims — the retrieval-frequency store is not built).
+  topKnowledgeSourcesNote: "Knowledge source usage isn't tracked yet — coming soon.",
+  conversionByChannel: [
+    { channel: 'widget', conversations: 30, leads: 10, conversionRate: 0.33 },
+    { channel: 'email', conversations: 8, leads: 2, conversionRate: 0.25 },
+  ],
+  conversionBySourceNote: "Conversion by source isn't available yet — coming soon.",
+  conversionByServiceNote: "Conversion by service isn't available yet — coming soon.",
+};
+
+/** The honest EMPTY analytics state (new/quiet account): real zeros where the
+ * store is real, nulls + plain-language notes where there is nothing to
+ * measure yet. Exercised by the analytics page tests so the empty branches are
+ * covered, not just the happy path. */
+export const seedAnalyticsEmpty: AnalyticsOverview = {
+  conversationsThisPeriod: 0,
+  conversationsTotal: 0,
+  leadsThisPeriod: 0,
+  appointmentsBooked: 0,
+  appointmentsBookedNote: null,
+  responseTimeP50Seconds: null,
+  responseTimeP95Seconds: null,
+  responseTimeNote: 'Shows up once Luciel has replied to customers this billing period.',
+  escalationsBySignal: [],
+  channelMix: [],
+  budgetUtilization: 0,
+  busiestTimes: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
+  topKnowledgeSources: [],
+  topKnowledgeSourcesNote: "Knowledge source usage isn't tracked yet — coming soon.",
+  conversionByChannel: [],
+  conversionBySourceNote: "Conversion by source isn't available yet — coming soon.",
+  conversionByServiceNote: "Conversion by service isn't available yet — coming soon.",
 };
 
 export const seedAudit: AuditEvent[] = [
