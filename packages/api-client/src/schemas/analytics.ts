@@ -4,15 +4,24 @@ import { escalationEventSignal } from './conversations';
 
 /**
  * Analytics — aggregates only, tenant-scoped (Arch §3.9). No new PII.
+ *
+ * Nullable-with-note pattern (server truth, not a page-local widening): a
+ * metric the backend cannot honestly state serves `null` plus a plain-language
+ * `*Note` string — an honest empty state, never a fabricated 0. Appointments
+ * booked and reply time are REAL numbers now (booking_events + transcript turn
+ * gaps); their nulls only ever mean "nothing to measure yet this period".
  */
 export const analyticsOverview = z.object({
   conversationsThisPeriod: z.number().int().nonnegative(),
   conversationsTotal: z.number().int().nonnegative(),
   leadsThisPeriod: z.number().int().nonnegative(),
-  appointmentsBooked: z.number().int().nonnegative(),
-  /** Response-time distribution (escalation → admin first response). */
-  responseTimeP50Seconds: z.number().nonnegative(),
-  responseTimeP95Seconds: z.number().nonnegative(),
+  /** Successful bookings made through Luciel this period (real count). */
+  appointmentsBooked: z.number().int().nonnegative().nullable(),
+  appointmentsBookedNote: z.string().nullable().optional(),
+  /** Reply-time distribution: lead message → Luciel's reply, seconds. */
+  responseTimeP50Seconds: z.number().nonnegative().nullable(),
+  responseTimeP95Seconds: z.number().nonnegative().nullable(),
+  responseTimeNote: z.string().nullable().optional(),
   escalationsBySignal: z.array(
     z.object({ signal: escalationEventSignal, count: z.number().int().nonnegative() }),
   ),
@@ -22,6 +31,29 @@ export const analyticsOverview = z.object({
   budgetUtilization: z.number().min(0),
   /** Busiest-times heatmap: [dayOfWeek 0-6][hourOfDay 0-23] -> count. */
   busiestTimes: z.array(z.array(z.number().int().nonnegative())),
+  /** Top sources by retrieval frequency — still an honest server-side gap. */
+  topKnowledgeSources: z
+    .array(
+      z.object({
+        sourceId: z.string(),
+        name: z.string(),
+        retrievalCount: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
+  topKnowledgeSourcesNote: z.string().nullable().optional(),
+  conversionByChannel: z
+    .array(
+      z.object({
+        channel: sessionChannelId,
+        conversations: z.number().int().nonnegative(),
+        leads: z.number().int().nonnegative(),
+        conversionRate: z.number().min(0),
+      }),
+    )
+    .optional(),
+  conversionBySourceNote: z.string().nullable().optional(),
+  conversionByServiceNote: z.string().nullable().optional(),
 });
 export type AnalyticsOverview = z.infer<typeof analyticsOverview>;
 
