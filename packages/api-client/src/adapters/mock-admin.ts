@@ -666,6 +666,15 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // when the callback redeems the code (Arch §3.8.7), never here.
         const c = state.connections.find((x) => x.connectionId === connectionId);
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        // A credential_form provider (Twilio) has no consent screen to send the
+        // owner to — the backend answers `requiresClientForm` and the new details
+        // arrive via submitCredentials, verified before the row cuts over.
+        const option = seed.seedConnectionProviders
+          .find((p) => p.connectionType === c.connectionType)
+          ?.providers.find((p) => p.provider === c.provider);
+        if (option?.authKind === 'credential_form') {
+          return ok({ requiresClientForm: true });
+        }
         return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
       },
       async reverifySms() {
@@ -883,14 +892,23 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           if (!field.secret && value) nonSecret[field.name] = value;
         }
         c.nonSecretConfig = { ...(c.nonSecretConfig ?? {}), ...nonSecret };
-        if (c.connectionType === 'sms_sender') {
+        if (c.connectionType === 'sms_sender' && !c.nonSecretConfig?.destination) {
           // An account with no designated number cannot text anyone yet.
           c.status = 'unconfigured';
           c.statusDetail = ACTION_ADD_NUMBER;
         } else {
+          // Fresh non-phone connect, or a credential ROTATION on a row that
+          // already has its number: the new details verified, so the row is
+          // healthy again and the designated number is untouched (§3.8.7 B).
           c.status = 'connected';
           c.statusDetail = null;
           c.lastHealthCheckAt = new Date().toISOString();
+          if (c.connectionType === 'sms_sender' && state.luciel) {
+            for (const id of ['sms', 'voice'] as const) {
+              const ch = state.luciel.channels.find((x) => x.id === id);
+              if (ch && ch.connectionStatus) ch.connectionStatus = 'connected';
+            }
+          }
         }
         return ok(c);
       },

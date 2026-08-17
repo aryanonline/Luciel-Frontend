@@ -102,7 +102,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     reverifySmsNumber,
   } = useLucielMutations();
   const connections = useConnections();
-  const { connect, submitCredentials } = useConnectionLifecycle();
+  const { connect, reconnect, submitCredentials } = useConnectionLifecycle();
   // One row per type (§3.8.2), so a surface reads the grant it rides: WhatsApp
   // and Messenger share the Facebook row, Instagram has its own.
   const connectionFor = (type: ConnectionType) =>
@@ -120,6 +120,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const [smsAckChecked, setSmsAckChecked] = React.useState(false);
   const [phoneNumber, setPhoneNumber] = React.useState('');
   const [changingNumber, setChangingNumber] = React.useState(false);
+  const [rotatingTwilio, setRotatingTwilio] = React.useState(false);
   const [twilioValues, setTwilioValues] = React.useState<Record<string, string>>({});
   const [twilioNotice, setTwilioNotice] = React.useState<string | null>(null);
   const channelAction = useActionNotice();
@@ -144,8 +145,15 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   // account's numbers before the account itself is on file. The Account SID is
   // the non-secret half of the credential, so its presence is the proof.
   const twilioConnected = numberConfigured || Boolean(smsConnection?.nonSecretConfig?.accountSid);
-  const needsTwilio = phoneEnabled && !twilioConnected;
-  const needsNumber = phoneEnabled && twilioConnected && !numberConfigured;
+  // The saved Twilio credential stopped working (health sweep marked the row
+  // expired/error, served back through the channel's connectionStatus). The
+  // honest ask is new CREDENTIALS on the same row — not "add your number",
+  // which is what the two-step derivation below would otherwise fall into.
+  const needsCredentialRefresh =
+    phoneEnabled && (numberStatus === 'expired' || numberStatus === 'error');
+  const needsTwilio = phoneEnabled && !twilioConnected && !needsCredentialRefresh;
+  const needsNumber =
+    phoneEnabled && twilioConnected && !numberConfigured && !needsCredentialRefresh;
   const phonePending = phoneEnabled && numberStatus === 'pending_carrier_registration';
   const phoneValid = E164.test(phoneNumber.trim());
   // The number the tenant designated, read from the row that holds it — a live
@@ -167,6 +175,20 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const submitTwilio = async () => {
     setTwilioNotice(null);
     try {
+      // Rotation/repair re-credentials the EXISTING row (Arch §3.8.7 rule B):
+      // reconnect stages it without dropping the live status, and the new
+      // details are verified with Twilio before the row cuts over — a bad
+      // paste leaves the number and the current setup exactly as they were.
+      if (smsConnection && (needsCredentialRefresh || rotatingTwilio)) {
+        await reconnect.mutateAsync({ connectionId: smsConnection.connectionId });
+        await submitCredentials.mutateAsync({
+          connectionId: smsConnection.connectionId,
+          fields: twilioValues,
+        });
+        setTwilioValues({});
+        setRotatingTwilio(false);
+        return;
+      }
       const start = await connect.mutateAsync({
         connectionType: 'sms_sender',
         provider: 'twilio',
@@ -308,6 +330,13 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                       kind="action_needed"
                       detail="this number isn't in your Twilio account yet"
                     />
+                  ) : needsCredentialRefresh ? (
+                    /* expired → "Reconnect needed", error → "Action needed";
+                       either way the fix is the same credential form below. */
+                    <StatusChip
+                      kind={chipKind(numberStatus) ?? 'action_needed'}
+                      detail="update your Twilio credentials"
+                    />
                   ) : phonePending ? (
                     <StatusChip kind="action_needed" detail="complete carrier registration" />
                   ) : needsTwilio ? (
@@ -362,6 +391,13 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   <PhoneNumberPanel
                     phonePending={phonePending}
                     needsTwilio={needsTwilio}
+                    credentialRefresh={needsCredentialRefresh}
+                    rotating={rotatingTwilio}
+                    onStartRotate={() => setRotatingTwilio(true)}
+                    onCancelRotate={() => {
+                      setRotatingTwilio(false);
+                      setTwilioValues({});
+                    }}
                     numberConfigured={numberConfigured}
                     designatedNumber={designatedNumber}
                     changingNumber={changingNumber}
@@ -382,7 +418,9 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     onTwilioValuesChange={setTwilioValues}
                     twilioNotice={twilioNotice}
                     providersError={smsProviders.isError}
-                    twilioSubmitting={connect.isPending || submitCredentials.isPending}
+                    twilioSubmitting={
+                      connect.isPending || reconnect.isPending || submitCredentials.isPending
+                    }
                     onSubmitTwilio={() => void submitTwilio()}
                     reverify={reverifySmsNumber}
                   />
@@ -544,6 +582,12 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
 interface PhoneNumberPanelProps {
   phonePending: boolean;
   needsTwilio: boolean;
+  /** The saved credential stopped working — same form, repair copy. */
+  credentialRefresh: boolean;
+  /** Owner-initiated rotation on a HEALTHY row — same form, rotate copy. */
+  rotating: boolean;
+  onStartRotate: () => void;
+  onCancelRotate: () => void;
   numberConfigured: boolean;
   designatedNumber?: string;
   changingNumber: boolean;
@@ -575,6 +619,10 @@ interface PhoneNumberPanelProps {
 function PhoneNumberPanel({
   phonePending,
   needsTwilio,
+  credentialRefresh,
+  rotating,
+  onStartRotate,
+  onCancelRotate,
   numberConfigured,
   designatedNumber,
   changingNumber,
@@ -637,14 +685,19 @@ function PhoneNumberPanel({
             </p>
           )}
         </div>
-      ) : needsTwilio ? (
-        /* Step one: the customer's OWN Twilio account (Arch §3.1.4). The
-           fields are whatever the registry advertises, so a provider that
-           starts asking for one more thing needs no frontend change. */
+      ) : needsTwilio || credentialRefresh || rotating ? (
+        /* The ONE Twilio credential form, three doors in (Arch §3.1.4 +
+           §3.8.7 B): first connect, repair after the saved credential died,
+           or an owner-initiated rotation on a healthy row. The fields are
+           whatever the registry advertises, so a provider that starts asking
+           for one more thing needs no frontend change. */
         <div className="mt-vm-3">
           <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
-            Connect your Twilio account so Luciel can text and call from your own business number —
-            your number stays yours and your carrier costs are billed by Twilio directly.
+            {credentialRefresh
+              ? 'Twilio stopped accepting the saved credentials — this usually means the Auth Token or API Key was rotated or revoked in your Twilio Console. Enter the current details and we verify them with Twilio; your number and everything else stay exactly as they are.'
+              : rotating
+                ? 'Rotating your Twilio credentials? Paste the new details from your Twilio Console. Your current setup keeps working until the new details verify — nothing goes offline while you do this.'
+                : 'Connect your Twilio account so Luciel can text and call from your own business number — your number stays yours and your carrier costs are billed by Twilio directly.'}
           </p>
           {providersError && (
             <Banner tone="warning">
@@ -673,14 +726,26 @@ function PhoneNumberPanel({
                 Give either your Auth Token or an API Key SID and Secret — whichever your Twilio
                 account uses. Find both in the Twilio Console under Account Info.
               </p>
-              <Button
-                variant="primary"
-                className="mt-vm-3"
-                onClick={onSubmitTwilio}
-                disabled={twilioSubmitting || !credentialFieldsComplete(twilioFields, twilioValues)}
-              >
-                {twilioSubmitting ? 'Saving…' : 'Connect Twilio account'}
-              </Button>
+              <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
+                <Button
+                  variant="primary"
+                  onClick={onSubmitTwilio}
+                  disabled={
+                    twilioSubmitting || !credentialFieldsComplete(twilioFields, twilioValues)
+                  }
+                >
+                  {twilioSubmitting
+                    ? 'Verifying…'
+                    : credentialRefresh || rotating
+                      ? 'Verify and save'
+                      : 'Connect Twilio account'}
+                </Button>
+                {rotating && (
+                  <Button variant="ghost" onClick={onCancelRotate} disabled={twilioSubmitting}>
+                    Keep current credentials
+                  </Button>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -701,9 +766,17 @@ function PhoneNumberPanel({
             )}{' '}
             — your own number on your own Twilio account.
           </p>
-          <Button variant="ghost" onClick={onStartChange}>
-            Change number
-          </Button>
+          <div className="flex flex-wrap items-center gap-vm-2">
+            <Button variant="ghost" onClick={onStartChange}>
+              Change number
+            </Button>
+            {/* Credential rotation without a teardown (Arch §3.8.7 B): owners
+                who rotate their Auth Token in the Twilio Console update it here
+                in place — no disconnect, no number re-entry, no downtime. */}
+            <Button variant="ghost" onClick={onStartRotate}>
+              Update Twilio credentials
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="mt-vm-3">
