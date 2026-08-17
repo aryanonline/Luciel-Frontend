@@ -214,6 +214,20 @@ export const reverifySmsResult = z.object({
 export type ReverifySmsResult = z.infer<typeof reverifySmsResult>;
 
 /**
+ * Result of uploading the live-lookup CSV (record_source connection). The rows
+ * REPLACE the previous table (the backend's replace-on-upload semantics) and the
+ * connection flips to connected with "N records on file". Live-caught
+ * 2026-08-17: this backend route existed with NO frontend caller — the tools
+ * pillar told customers "CSV lives under Knowledge" while the Knowledge CSV
+ * import only ingested text, so lookup_record could never be wired from the UI.
+ */
+export const recordSourceCsvResult = z.object({
+  records: z.number().int().nonnegative(),
+  columns: z.array(z.string()),
+});
+export type RecordSourceCsvResult = z.infer<typeof recordSourceCsvResult>;
+
+/**
  * Email-address provisioning (Arch §3.1.6a, Decision #49). The admin provisions
  * the address Luciel SENDS AND RECEIVES on. Two platform modes, both LAUNCH
  * capabilities:
