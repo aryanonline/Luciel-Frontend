@@ -137,15 +137,16 @@ describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own T
 });
 
 describe('P0-1: a supplied number sits at "complete carrier registration"', () => {
-  it('renders the pending chip on BOTH enabled rows and no entry field', () => {
+  it('renders the honest split: SMS pending, Voice connected-with-note', () => {
     renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
-    // One shared number, one shared state: each enabled phone row carries the
-    // honest chip beside its own toggle.
-    expect(screen.getAllByText(/action needed: complete carrier registration/i)).toHaveLength(2);
+    // 10DLC gates TEXTING only (live-caught 2026-08-18): the SMS row keeps the
+    // action-needed chip; the Voice row says calls already work rather than
+    // claiming carrier registration blocks it.
+    expect(screen.getAllByText(/action needed: complete carrier registration/i)).toHaveLength(1);
+    const voiceRow = channelRow(/Enable Voice/i);
+    expect(within(voiceRow).getByText(/^Connected$/i)).toBeInTheDocument();
     expect(
-      within(channelRow(/Enable Voice/i)).getByText(
-        /action needed: complete carrier registration/i,
-      ),
+      within(voiceRow).getByText(/Calls work now; texting waits on carrier registration\./i),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText(/Business phone number/i)).not.toBeInTheDocument();
   });
@@ -168,14 +169,16 @@ describe('P0-1: a supplied number sits at "complete carrier registration"', () =
     renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
     expect(screen.queryByText(/being activated with the carriers/i)).not.toBeInTheDocument();
     expect(
-      screen.getByText(/You complete the Brand and Campaign registration yourself/i),
+      screen.getByText(/which you complete yourself, in your own carrier account/i),
     ).toBeInTheDocument();
   });
 
   it('offers a Re-verify trigger, since nothing polls the carrier in the background', () => {
     renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
     expect(screen.getByRole('button', { name: /Re-verify/i })).toBeInTheDocument();
-    expect(screen.getByText(/Nothing checks this in the background/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Nothing checks the carrier registration in the background/i),
+    ).toBeInTheDocument();
   });
 });
 
