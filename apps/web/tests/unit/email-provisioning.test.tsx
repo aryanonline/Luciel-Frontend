@@ -8,37 +8,30 @@ import EmbedPage from '@/app/(app)/dashboard/embed/page';
 import type { Luciel } from '@luciel/api-client';
 
 /**
- * P0-2 (email provisioning): the admin PROVISIONS the address Luciel sends AND
- * receives on (Arch §3.1.6a, Decision #49). Two LAUNCH options — the business's
- * own domain (with a DNS/MX routing step, "Action needed: complete email routing"
- * until verified) or a zero-DNS @vantagemind.ai fallback.
+ * P0-2 → c22 (owner decision 2026-08-18): email is BYO-mailbox ONLY. The two
+ * retired platform paths (own-domain DNS walk, @vantagemind.ai subdomain) are no
+ * longer offered anywhere in the panel — the ONLY action is the mailbox connect.
  *
  * It lives in ONE place: with the Email CHANNEL in Configure (Decision #4). The
  * Embed & launch tab is the widget snippet only, so the two can't disagree.
  */
 
 describe('P0-2: Luciel’s work email provisioning', () => {
-  it('offers own-domain provisioning and a free @vantagemind.ai fallback', async () => {
+  it('offers ONLY the mailbox connect — the platform paths are gone', async () => {
     renderWithQuery(<EmailChannelProvisioning emailChannelEnabled />);
-    expect(await screen.findByLabelText(/Email address on your domain/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Use your own domain/i })).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /Use a free @vantagemind\.ai address/i }),
+      await screen.findByRole('button', { name: /Connect Outlook mailbox/i }),
     ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Email address on your domain/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Use your own domain/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Use a free @vantagemind\.ai address/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('says Luciel is not answering email while the Email channel is off', async () => {
     renderWithQuery(<EmailChannelProvisioning emailChannelEnabled={false} />);
     expect(await screen.findByText(/answering email yet/i)).toBeInTheDocument();
-  });
-
-  it('shows the "complete email routing" action-needed state after own-domain setup', async () => {
-    renderWithQuery(<EmailChannelProvisioning emailChannelEnabled />);
-    const input = await screen.findByLabelText(/Email address on your domain/i);
-    fireEvent.change(input, { target: { value: 'hello@yourbusiness.com' } });
-    fireEvent.click(screen.getByRole('button', { name: /Set up my domain/i }));
-    expect(await screen.findByText(/action needed: complete email routing/i)).toBeInTheDocument();
-    expect(screen.getByText('hello@yourbusiness.com')).toBeInTheDocument();
   });
 
   it('is no longer duplicated on the Embed & launch tab', async () => {

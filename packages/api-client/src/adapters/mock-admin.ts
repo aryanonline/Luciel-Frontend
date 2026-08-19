@@ -950,52 +950,17 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async provisionEmail(req) {
         guardVerified();
-        // byo_mailbox is not provisioned — it arrives through the email_sender
-        // connect/swap OAuth flow (§3.1.6a), so asking for it here is a caller bug.
-        if (req.mode === 'byo_mailbox') {
-          throw new LucielApiError({
-            code: 'validation_error',
-            message: 'A mailbox is connected with a sign-in, not provisioned here.',
-          });
-        }
-        // Provisioning a platform mode IS the way back from a BYO mailbox
-        // (§3.1.6a): the platform sender takes over, so an outlook row returns
-        // to the platform SES sender here, exactly as the backend rebinds it.
-        const sender = state.connections.find((x) => x.connectionType === 'email_sender');
-        if (sender && sender.provider === 'outlook') {
-          sender.provider = 'ses';
-          sender.displayName = 'Amazon SES';
-          sender.status = 'connected';
-          sender.statusDetail = null;
-          delete sender.nonSecretConfig;
-        }
-        if (req.mode === 'own_domain') {
-          // Own-domain inbound needs DNS/MX verification → not live yet.
-          const emailAddress = req.emailAddress ?? 'hello@yourdomain.com';
-          const domain = emailAddress.split('@')[1] ?? 'yourdomain.com';
-          state.emailProvisioning = {
-            mode: 'own_domain',
-            emailAddress,
-            status: 'pending_email_routing',
-            dnsRecords: [
-              { type: 'MX', host: domain, value: 'inbound.vantagemind.ai', priority: 10 },
-              {
-                type: 'TXT',
-                host: domain,
-                value: 'v=spf1 include:mail.vantagemind.ai ~all',
-              },
-              { type: 'CNAME', host: `vm._domainkey.${domain}`, value: 'dkim.vantagemind.ai' },
-            ],
-          };
-        } else {
-          // VM-subdomain fallback: zero DNS, live immediately.
-          state.emailProvisioning = {
-            mode: 'vm_subdomain',
-            emailAddress: 'sarahchen.reply.vantagemind.ai',
-            status: 'connected',
-          };
-        }
-        return ok(state.emailProvisioning);
+        // c22 (owner decision 2026-08-18): email is BYO-mailbox ONLY — both retired
+        // platform modes answer the same actionable refusal the backend serves.
+        // The mock mirrors the refusal so the UI can never re-grow the old paths
+        // against a permissive fake.
+        void req;
+        throw new LucielApiError({
+          code: 'validation_error',
+          message:
+            'Platform email addresses are no longer offered — connect your own mailbox ' +
+            'instead (Configure → Channels → Email → Connect Outlook mailbox).',
+        });
       },
       async swap(connectionId, provider) {
         guardVerified();
