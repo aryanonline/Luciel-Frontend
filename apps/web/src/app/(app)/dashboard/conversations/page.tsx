@@ -19,7 +19,8 @@ import type {
   MessageDeliveryDetail,
 } from '@luciel/api-client';
 import { LucielApiError } from '@luciel/api-client';
-import { useConversations } from '@/lib/hooks';
+import { useSearchParams } from 'next/navigation';
+import { useConversations, useEscalations } from '@/lib/hooks';
 import { sessionChannelLabel } from '@/components/config/labels';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
@@ -158,8 +159,40 @@ const sourceNames = (e: AnswerEvidence) =>
 /** `'unavailable'` records an evidence fetch that failed, so we can say so. */
 type EvidenceState = AnswerEvidence | 'unavailable';
 
+/**
+ * Escalation-email deep link (?open=<sessionId>): opens that conversation once
+ * its row has loaded. Isolated in a child under <Suspense> because Next requires
+ * a suspense boundary around useSearchParams consumers at build time.
+ */
+function OpenFromQuery({
+  ready,
+  onOpen,
+}: {
+  ready: string[];
+  onOpen: (sessionId: string) => void;
+}) {
+  const params = useSearchParams();
+  const requested = params.get('open');
+  const opened = React.useRef(false);
+  React.useEffect(() => {
+    if (!opened.current && requested && ready.includes(requested)) {
+      opened.current = true;
+      onOpen(requested);
+    }
+  }, [requested, ready, onOpen]);
+  return null;
+}
+
 export default function ConversationsPage() {
   const conversations = useConversations();
+  // Escalation badges ride a separate query: its failure degrades to a note and
+  // must never hide the conversations list itself.
+  const escalations = useEscalations();
+  const escalatedSessions = React.useMemo(
+    () => new Set((escalations.data ?? []).map((e) => e.sessionId)),
+    [escalations.data],
+  );
+  const [listFilter, setListFilter] = React.useState<'all' | 'escalated'>('all');
   const qc = useQueryClient();
   const [openSession, setOpenSession] = React.useState<string | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
@@ -308,9 +341,37 @@ export default function ConversationsPage() {
         description="Review what your Luciel said, take over live when needed, and check the evidence behind any answer."
       />
 
+      <React.Suspense fallback={null}>
+        <OpenFromQuery
+          ready={(conversations.data ?? []).map((c) => c.sessionId)}
+          onOpen={(id) => void open(id)}
+        />
+      </React.Suspense>
+
       <div className="grid gap-vm-4 lg:grid-cols-2">
         <Card>
           <CardTitle>Recent</CardTitle>
+          <div className="mt-vm-2 flex items-center gap-vm-2" role="group" aria-label="Filter conversations">
+            <Button
+              variant={listFilter === 'all' ? 'primary' : 'secondary'}
+              aria-pressed={listFilter === 'all'}
+              onClick={() => setListFilter('all')}
+            >
+              All
+            </Button>
+            <Button
+              variant={listFilter === 'escalated' ? 'primary' : 'secondary'}
+              aria-pressed={listFilter === 'escalated'}
+              onClick={() => setListFilter('escalated')}
+            >
+              Escalated
+            </Button>
+            {escalations.isError && (
+              <span className="text-vm-0 text-vm-text-muted">
+                Escalation badges are unavailable right now.
+              </span>
+            )}
+          </div>
           {modeError && (
             <Banner tone="danger" className="mt-vm-3">
               {modeError}
@@ -332,9 +393,17 @@ export default function ConversationsPage() {
             <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
               No conversations yet. They appear here as soon as a visitor talks to your Luciel.
             </p>
+          ) : (conversations.data ?? []).filter(
+              (c) => listFilter === 'all' || escalatedSessions.has(c.sessionId),
+            ).length === 0 ? (
+            <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
+              No escalated conversations in this list.
+            </p>
           ) : (
             <ul className="mt-vm-3 divide-y divide-vm-border">
-              {conversations.data?.map((c) => {
+              {(conversations.data ?? [])
+                .filter((c) => listFilter === 'all' || escalatedSessions.has(c.sessionId))
+                .map((c) => {
                 const busy = modeBusy === c.sessionId;
                 const held = c.mode === 'human_controlled';
                 return (
@@ -344,12 +413,22 @@ export default function ConversationsPage() {
                         className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vm-focus"
                         onClick={() => void open(c.sessionId)}
                       >
-                        <div className="truncate text-vm-2">{c.summary ?? 'Conversation'}</div>
+                        <div className="truncate text-vm-2">
+                          {c.summary ??
+                            `In progress — started ${new Date(c.startedAt).toLocaleTimeString()}`}
+                        </div>
                         {/* Human channel label, never the raw wire id — and
                             read-tolerant of old sessions still carrying the
-                            retired combined `instagram_messenger` id. */}
+                            retired combined `instagram_messenger` id. The #ref
+                            matches the escalation email's "Conversation #". */}
                         <div className="text-vm-0 text-vm-text-muted">
-                          {sessionChannelLabel(c.channel)} · {new Date(c.startedAt).toLocaleString()}
+                          {sessionChannelLabel(c.channel)} · {new Date(c.startedAt).toLocaleString()}{' '}
+                          · #{c.sessionId.slice(0, 8)}
+                          {escalatedSessions.has(c.sessionId) && (
+                            <span className="ml-vm-2 inline-flex items-center rounded-vm-pill border border-vm-border px-vm-2 py-vm-1 font-label text-vm-warning">
+                              Escalated
+                            </span>
+                          )}
                         </div>
                       </button>
                       <Button
