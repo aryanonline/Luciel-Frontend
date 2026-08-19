@@ -138,8 +138,32 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
-describe('§3.1.6a: the mailbox is offered as a third path when configured', () => {
-  it('renders the connect option, its served name, and the platform paths beside it', async () => {
+describe('c22: a legacy platform address renders read-only beside the mailbox connect', () => {
+  it('shows the own-domain routing state with the mailbox as the upgrade path', async () => {
+    serve({ outlook: true });
+    served.provisioning = {
+      mode: 'own_domain',
+      emailAddress: 'hello@yourbusiness.com',
+      status: 'pending_email_routing',
+      dnsRecords: [
+        { type: 'MX', host: 'yourbusiness.com', value: 'inbound.vantagemind.ai', priority: 10 },
+      ],
+    };
+    renderWithQuery(<EmailChannelProvisioning emailChannelEnabled />);
+
+    expect(await screen.findByText(/action needed: complete email routing/i)).toBeInTheDocument();
+    expect(screen.getByText('hello@yourbusiness.com')).toBeInTheDocument();
+    // The mailbox connect renders beside it — the legacy tenant's upgrade path.
+    expect(await findConnectButton()).toBeInTheDocument();
+    // And no retired platform action exists anywhere.
+    expect(
+      screen.queryByRole('button', { name: /Use a free @vantagemind\.ai address/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('§3.1.6a → c22: the mailbox is THE email path', () => {
+  it('renders the connect option and its served name, with no platform paths', async () => {
     serve({ outlook: true });
     renderWithQuery(<EmailChannelProvisioning emailChannelEnabled />);
 
@@ -148,11 +172,11 @@ describe('§3.1.6a: the mailbox is offered as a third path when configured', () 
     ).toBeInTheDocument();
     expect(await findConnectButton()).toBeInTheDocument();
     expect(screen.getByText('Outlook mailbox help text.')).toBeInTheDocument();
-    // Coexistence: the mailbox joins the two platform modes, replacing neither.
-    expect(screen.getByRole('heading', { name: /Use your own domain/i })).toBeInTheDocument();
+    // c22: the retired platform modes are gone from the panel entirely.
+    expect(screen.queryByRole('heading', { name: /Use your own domain/i })).not.toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /Use a free @vantagemind\.ai address/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole('button', { name: /Use a free @vantagemind\.ai address/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -248,7 +272,7 @@ describe('contract §1: honest when the platform cannot start the sign-in', () =
 });
 
 describe('§3.1.6a: the live mailbox state is honest about address and health', () => {
-  it('shows the mailbox address with a Connected chip, and keeps the platform paths as the way back', async () => {
+  it('shows the mailbox address with a Connected chip and no way back to platform modes', async () => {
     serve({ outlook: true });
     served.connections = [outlookRow('connected')];
     served.provisioning = byoProvisioning('connected');
@@ -256,8 +280,8 @@ describe('§3.1.6a: the live mailbox state is honest about address and health', 
 
     expect(await screen.findByText(MAILBOX)).toBeInTheDocument();
     expect(screen.getByText('Connected')).toBeInTheDocument();
-    // Switching back is just provisioning a platform mode again.
-    expect(screen.getByText(/Switch back to a platform address/i)).toBeInTheDocument();
+    // c22: the retired platform modes are not offered as a way back.
+    expect(screen.queryByText(/Switch back to a platform address/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Connect Outlook mailbox' }),
     ).not.toBeInTheDocument();

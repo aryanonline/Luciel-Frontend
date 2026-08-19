@@ -161,10 +161,14 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   // The number the tenant designated, read from the row that holds it — a live
   // number is shown back, not asked for again. Same destination the shared
   // control reads (contract §2).
+  // A number awaiting its operability confirmation lives under
+  // pendingDestination (c21 anti-squatting) — still the owner's number on file.
   const designatedNumber =
     typeof smsConnection?.nonSecretConfig?.destination === 'string'
       ? smsConnection.nonSecretConfig.destination
-      : undefined;
+      : typeof smsConnection?.nonSecretConfig?.pending_destination === 'string'
+        ? smsConnection.nonSecretConfig.pending_destination
+        : undefined;
   // The backend stamps smsComplianceAcknowledgedAt server-side on first SMS
   // enable, so the durable stamp alone carries this gate.
   const smsAcknowledged = Boolean(smsChannel?.smsComplianceAcknowledgedAt);
