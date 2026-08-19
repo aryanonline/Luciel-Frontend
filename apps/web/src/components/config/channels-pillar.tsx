@@ -118,6 +118,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const [consentChecked, setConsentChecked] = React.useState(false);
   const [smsModalOpen, setSmsModalOpen] = React.useState(false);
   const [smsAckChecked, setSmsAckChecked] = React.useState(false);
+  /** Whether the SMS modal is closing because the ack succeeded (vs a dismissal). */
+  const smsConfirmedRef = React.useRef(false);
   const [phoneNumber, setPhoneNumber] = React.useState('');
   const [changingNumber, setChangingNumber] = React.useState(false);
   const [rotatingTwilio, setRotatingTwilio] = React.useState(false);
@@ -220,7 +222,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         provider: 'twilio',
         phoneNumber: number,
       });
-      return `${number} is on file. SMS and Voice answer on it once its carrier registration verifies.`;
+      return `${number} is on file. Voice answers on it now; SMS starts once its carrier registration verifies.`;
     }, 'We could not save that number. It has not been added — please check it and try again.');
     // Both the field and the editing state survive a failure: collapsing back to
     // the old number would hide what they typed and imply the change took.
@@ -279,6 +281,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const confirmSmsAck = async () => {
     const next = luciel.channels.map((c) => (c.id === 'sms' ? { ...c, enabled: true } : c));
     await updateChannels.mutateAsync(next);
+    smsConfirmedRef.current = true; // the close that follows is a success, not a dismissal
     setSmsModalOpen(false);
     setSmsAckChecked(false);
   };
@@ -337,6 +340,18 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                       kind={chipKind(numberStatus) ?? 'action_needed'}
                       detail="update your Twilio credentials"
                     />
+                  ) : phonePending && c.id === 'voice' ? (
+                    /* 10DLC carrier registration gates TEXTING only — calls
+                       already work at pending (live-caught 2026-08-18: the
+                       shared chip made Voice claim it wasn't ready while it
+                       was answering calls). Presentation-only split: the wire
+                       status stays one value for the one shared number. */
+                    <span className="inline-flex items-center gap-vm-2">
+                      <StatusChip kind="connected" />
+                      <span className="text-vm-0 text-vm-text-muted">
+                        Calls work now; texting waits on carrier registration.
+                      </span>
+                    </span>
                   ) : phonePending ? (
                     <StatusChip kind="action_needed" detail="complete carrier registration" />
                   ) : needsTwilio ? (
@@ -391,6 +406,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   <PhoneNumberPanel
                     phonePending={phonePending}
                     needsTwilio={needsTwilio}
+                    connectionDetail={smsConnection?.statusDetail}
                     credentialRefresh={needsCredentialRefresh}
                     rotating={rotatingTwilio}
                     onStartRotate={() => setRotatingTwilio(true)}
@@ -467,7 +483,19 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         open={smsModalOpen}
         onOpenChange={(o) => {
           setSmsModalOpen(o);
-          if (!o) setSmsAckChecked(false);
+          if (!o) {
+            setSmsAckChecked(false);
+            // Dismissing without acknowledging previously said NOTHING — the
+            // toggle just snapped back, which read as "it won't let me enable
+            // SMS" (live-caught 2026-08-18). Say why it stayed off.
+            if (!smsConfirmedRef.current) {
+              channelAction.setNotice({
+                tone: 'info',
+                text: 'SMS stays off — enabling it requires the carrier-registration acknowledgment.',
+              });
+            }
+            smsConfirmedRef.current = false;
+          }
         }}
         title="Enable SMS — carrier registration and consent"
         description="SMS is sent in your business's name, not ours. Please read this before turning it on."
@@ -556,6 +584,12 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
             you take calls. In two-party-consent jurisdictions (including Ontario and several US
             states), recording without valid consent can be a criminal offence.
           </p>
+          <p>
+            When you designate your number, Luciel automatically points its call, messaging, and
+            call-status webhooks at the platform using your Twilio credentials — no console setup
+            needed. If that ever fails, the exact addresses to set manually appear on the phone
+            number panel.
+          </p>
           <label className="flex items-start gap-vm-2">
             <input
               type="checkbox"
@@ -608,6 +642,8 @@ interface PhoneNumberPanelProps {
   twilioSubmitting: boolean;
   onSubmitTwilio: () => void;
   reverify: ReturnType<typeof useLucielMutations>['reverifySmsNumber'];
+  /** The connection row's served detail — carries the manual webhook URLs when auto-config failed. */
+  connectionDetail?: string | null;
 }
 
 /**
@@ -617,6 +653,7 @@ interface PhoneNumberPanelProps {
  * so the panel opens straight on the step the owner is being asked for.
  */
 function PhoneNumberPanel({
+  connectionDetail,
   phonePending,
   needsTwilio,
   credentialRefresh,
@@ -650,15 +687,19 @@ function PhoneNumberPanel({
       {phonePending ? (
         <div className="mt-vm-2 space-y-vm-3 text-vm-1 text-vm-text-muted">
           <p>
-            Your number is on file, but its A2P 10DLC carrier registration isn&apos;t verified yet —
-            so SMS and Voice aren&apos;t sending. You complete the Brand and Campaign registration
-            yourself, in your own carrier account, in your business&apos;s name. VantageMind guides
-            and verifies but never registers on your behalf, and no shared or platform number is
-            used.
+            Your number is on file and answering phone calls. Texting waits on its A2P 10DLC
+            carrier registration, which you complete yourself, in your own carrier account, in
+            your business&apos;s name. VantageMind guides and verifies but never registers on your
+            behalf, and no shared or platform number is used.
           </p>
           <p>
-            Nothing checks this in the background. When you&apos;ve finished registering, use
-            Re-verify and we&apos;ll read your number&apos;s current carrier status.
+            Luciel pointed your number&apos;s call and messaging webhooks at the platform
+            automatically, using your Twilio credentials — if that ever fails, the exact addresses
+            to set in your Twilio Console appear right here.
+          </p>
+          <p>
+            Nothing checks the carrier registration in the background. When you&apos;ve finished
+            registering, use Re-verify and we&apos;ll read your number&apos;s current status.
           </p>
           <div className="flex flex-wrap items-center gap-vm-3">
             <Button
@@ -678,6 +719,9 @@ function PhoneNumberPanel({
             </a>
           </div>
           {reverify.data?.statusDetail && <p>{reverify.data.statusDetail}</p>}
+          {connectionDetail?.includes("couldn't point your number") && (
+            <p className="text-vm-warning">{connectionDetail}</p>
+          )}
           {reverify.isError && (
             <p className="text-vm-danger">
               We couldn&apos;t reach the carrier just now. Your number is unchanged — try Re-verify

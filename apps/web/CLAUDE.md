@@ -70,3 +70,10 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
   plain Chromium before changing application code.
 - `apps/web` imports the control-plane client entrypoint only. Keep adapters and
   widget data-plane imports out of components and pages.
+- Voice/SMS chip split at `pending_carrier_registration` (2026-08-18): 10DLC gates
+  TEXTING only, so the Voice row renders Connected + "Calls work now…" while SMS
+  keeps action_needed — presentation-only; the wire status stays one value.
+- Conversations page: rows carry `#<first-8-of-sessionId>` matching the escalation
+  email's ref; `?open=<sessionId>` deep-opens a transcript (useSearchParams under
+  Suspense); escalation badges ride `useEscalations` and degrade to a note on
+  fetch failure. SMS-modal dismissal is never silent.
