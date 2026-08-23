@@ -6,10 +6,14 @@ import type { ProviderGroup } from '@luciel/api-client';
 
 /**
  * Owner ruling (scheduling UX): "connect your calendar" should be enough.
- * Radios are a real choice only when TWO OR MORE providers can actually be
- * connected. With a single configured provider the control shows one plain
- * Connect button, and not-yet-available providers appear as quiet information
+ * With a single configured provider the control shows one plain Connect
+ * button, and not-yet-available providers appear as quiet information
  * ("coming soon"), never as disabled radios in a one-option quiz.
+ *
+ * Audit round 3 (owner concern #8): with TWO OR MORE connectable providers
+ * there is no radio quiz either — each provider gets its OWN named connect
+ * button ("Connect Google Calendar", "Connect Calendly"); an OAuth provider
+ * starts its sign-in on the click.
  */
 
 const listProviders = vi.fn<[], Promise<ProviderGroup[]>>();
@@ -67,12 +71,18 @@ describe('single configured provider ⇒ one plain Connect button, no radio quiz
     expect(screen.queryByText(/Choose how to connect/)).not.toBeInTheDocument();
   });
 
-  it('still offers the radio choice when two providers are genuinely connectable', async () => {
+  it('renders one NAMED connect button per connectable provider — never radios', async () => {
     listProviders.mockResolvedValue(calendarGroup(true));
     renderWithQuery(<ConnectionControl connectionType="calendar" label="your calendar" />);
 
-    expect(await screen.findByText(/Choose how to connect your calendar/)).toBeInTheDocument();
-    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect(
+      await screen.findByRole('button', { name: 'Connect Google Calendar' }),
+    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Connect Calendly' })).toBeEnabled();
+    // The radio-then-generic-button two-step is gone (owner concern #8).
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Choose how to connect/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Connect your calendar' })).not.toBeInTheDocument();
     expect(screen.queryByText(/coming soon/)).not.toBeInTheDocument();
   });
 });
