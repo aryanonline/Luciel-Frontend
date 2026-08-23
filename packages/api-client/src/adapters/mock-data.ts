@@ -294,6 +294,31 @@ export const seedConnectionProviders: ConnectionProviders[] = [
     ],
   },
   {
+    // The BYO webhook tool's endpoint registration (audit round 3, Phase 5):
+    // this group was MISSING entirely, so the tools pillar rendered a connect
+    // button with no URL field that mock-redirected to an OAuth consent screen.
+    connectionType: 'outbound_webhook',
+    providers: [
+      {
+        provider: 'outbound_webhook',
+        displayName: 'Outbound webhook',
+        authKind: 'credential_form',
+        helpText: 'Send structured events to a URL you control.',
+        configured: true,
+        credentialFields: [
+          { name: 'url', label: 'Webhook URL', secret: false, required: true },
+          {
+            name: 'auth_header',
+            label: 'Authorization header',
+            secret: true,
+            required: false,
+          },
+        ],
+        scopeKind: null,
+      },
+    ],
+  },
+  {
     connectionType: 'record_source',
     providers: [
       {
