@@ -788,6 +788,25 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         c.status = 'connected';
         c.statusDetail = null;
         c.lastHealthCheckAt = new Date().toISOString();
+        // One-click Twilio (C10): the post-exchange verifier binds WHOSE account
+        // authorized — and §3.1.4 honesty holds on this path too: with no
+        // designated number the row lands on "add your number", never a false
+        // Connected (the backend contract this mock mirrors).
+        if (c.connectionType === 'sms_sender' && c.provider === 'twilio') {
+          c.nonSecretConfig = {
+            ...(c.nonSecretConfig ?? {}),
+            accountSid: 'AC00000000000000000000000000000042',
+            accountName: 'Your Twilio account',
+            mode: 'oauth',
+          };
+          const cfg = c.nonSecretConfig;
+          if (!cfg.destination && !cfg.pending_destination) {
+            c.status = 'unconfigured';
+            c.statusDetail =
+              'Action needed: add your number. Your Twilio account is connected — designate ' +
+              'the number Luciel should text from to bring the channel live.';
+          }
+        }
         // BYO mailbox live (§3.1.6a): the verified Outlook mailbox becomes the
         // send+receive address, and the one email-provisioning read reports it
         // so Configure's email panel and this row cannot disagree.

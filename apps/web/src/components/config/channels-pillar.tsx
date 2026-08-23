@@ -29,6 +29,7 @@ import {
   useTwilioNumbers,
 } from '@/lib/hooks';
 import { useActionNotice } from '@/lib/use-action-notice';
+import { authorizeOrExplain } from '@/lib/oauth-connect';
 import { ConnectionControl } from './connection-control';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
@@ -127,6 +128,10 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const [rotatingTwilio, setRotatingTwilio] = React.useState(false);
   const [twilioValues, setTwilioValues] = React.useState<Record<string, string>>({});
   const [twilioNotice, setTwilioNotice] = React.useState<string | null>(null);
+  // C10: one-click OAuth is the primary connect when the registry serves the
+  // twilio option as OAuth; "Use API keys instead" reveals the credential form.
+  const [useKeyForm, setUseKeyForm] = React.useState(false);
+  const [twilioOauthPending, setTwilioOauthPending] = React.useState(false);
   const channelAction = useActionNotice();
 
   // One BYO number backs both SMS and Voice (Arch §3.1.4/§3.1.6). Derive the shared
@@ -180,6 +185,45 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   // The backend stamps smsComplianceAcknowledgedAt server-side on first SMS
   // enable, so the durable stamp alone carries this gate.
   const smsAcknowledged = Boolean(smsChannel?.smsComplianceAcknowledgedAt);
+
+  const twilioOauthPrimary = twilioOption?.authKind === 'oauth' && !useKeyForm;
+
+  /**
+   * One-click connect (C10): start the OAuth flow and hand the browser to
+   * Twilio's consent screen. Repair/rotation on an existing row re-auths the
+   * SAME row via reconnect (proven-before-cutover, §3.8.7 B). A backend that
+   * has no platform OAuth app answers `requiresClientForm` — the honest degrade
+   * is the API-key form, not a dead button.
+   */
+  const connectTwilioOauth = async () => {
+    setTwilioNotice(null);
+    setTwilioOauthPending(true);
+    try {
+      const start =
+        smsConnection && (needsCredentialRefresh || rotatingTwilio)
+          ? await reconnect.mutateAsync({ connectionId: smsConnection.connectionId })
+          : await connect.mutateAsync({ connectionType: 'sms_sender', provider: 'twilio' });
+      if (start.requiresClientForm) {
+        setUseKeyForm(true);
+        return;
+      }
+      const message = authorizeOrExplain({
+        ...start,
+        provider: 'twilio',
+        label: twilioOption?.displayName ?? 'Your Twilio account',
+        callbackKind: 'connection',
+      });
+      if (message) setTwilioNotice(message);
+    } catch (err) {
+      setTwilioNotice(
+        err instanceof LucielApiError
+          ? err.message
+          : 'We could not start the Twilio sign-in. Please try again.',
+      );
+    } finally {
+      setTwilioOauthPending(false);
+    }
+  };
 
   /**
    * Step one of BYO (contract §1a): the customer's OWN Twilio credential. The
@@ -454,6 +498,10 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                       connect.isPending || reconnect.isPending || submitCredentials.isPending
                     }
                     onSubmitTwilio={() => void submitTwilio()}
+                    oauthPrimary={twilioOauthPrimary}
+                    oauthPending={twilioOauthPending}
+                    onConnectOauth={() => void connectTwilioOauth()}
+                    onUseKeyForm={() => setUseKeyForm(true)}
                     reverify={reverifySmsNumber}
                   />
                 </div>
@@ -664,6 +712,11 @@ interface PhoneNumberPanelProps {
   providersError: boolean;
   twilioSubmitting: boolean;
   onSubmitTwilio: () => void;
+  /** C10: the registry serves twilio as OAuth and the owner has not chosen keys. */
+  oauthPrimary: boolean;
+  oauthPending: boolean;
+  onConnectOauth: () => void;
+  onUseKeyForm: () => void;
   reverify: ReturnType<typeof useLucielMutations>['reverifySmsNumber'];
   /** The connection row's served detail — carries the manual webhook URLs when auto-config failed. */
   connectionDetail?: string | null;
@@ -704,6 +757,10 @@ function PhoneNumberPanel({
   providersError,
   twilioSubmitting,
   onSubmitTwilio,
+  oauthPrimary,
+  oauthPending,
+  onConnectOauth,
+  onUseKeyForm,
   reverify,
 }: PhoneNumberPanelProps) {
   return (
@@ -783,7 +840,38 @@ function PhoneNumberPanel({
               on as soon as it&apos;s ready; there is nothing for you to do.
             </p>
           )}
-          {!twilioUnavailable && twilioFields.length > 0 && (
+          {/* One-click OAuth is the primary door (C10): sign in to Twilio and
+              approve — no SIDs or tokens to copy. The API-key form stays one
+              click away as the explicit fallback. */}
+          {!twilioUnavailable && oauthPrimary && (
+            <>
+              <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
+                <Button variant="primary" onClick={onConnectOauth} disabled={oauthPending}>
+                  {oauthPending
+                    ? 'Opening sign-in…'
+                    : credentialRefresh || rotating
+                      ? 'Reconnect Twilio'
+                      : 'Connect Twilio'}
+                </Button>
+                {rotating && (
+                  <Button variant="ghost" onClick={onCancelRotate} disabled={oauthPending}>
+                    Keep current credentials
+                  </Button>
+                )}
+              </div>
+              <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
+                One click: sign in to Twilio and approve. Prefer your own keys?{' '}
+                <button
+                  type="button"
+                  className="underline underline-offset-2"
+                  onClick={onUseKeyForm}
+                >
+                  Use API keys instead
+                </button>
+              </p>
+            </>
+          )}
+          {!twilioUnavailable && !oauthPrimary && twilioFields.length > 0 && (
             <>
               <CredentialFields
                 idPrefix="twilio"

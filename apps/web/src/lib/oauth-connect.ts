@@ -31,6 +31,9 @@ const PROVIDER_AUTHORIZE_HOSTS = [
   // BYO email sender (§3.1.6a): the customer's own Outlook mailbox signs in on
   // Microsoft's consent host.
   'login.microsoftonline.com',
+  // One-click Twilio connect (audit round 3, C10): the customer's own Twilio
+  // account signs in on Twilio's OAuth host.
+  'login.twilio.com',
 ];
 
 const ACTION_NEEDED = 'Action needed:';
