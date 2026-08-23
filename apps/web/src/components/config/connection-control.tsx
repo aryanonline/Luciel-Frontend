@@ -105,6 +105,39 @@ function disabledSummary(tools: string[], channels: string[]): string | null {
   return `Switched off too: ${names.join(', ')}. Turn them back on after you reconnect.`;
 }
 
+/**
+ * The fixed CRM field mapping, disclosed after connect (Phase 6.5 — the Customer
+ * Journey's "confirms the field mapping" beat). Read-only on purpose: honesty
+ * about what is written, not a mapping editor.
+ */
+function crmMappingCopy(provider: string | undefined): string | null {
+  if (provider === 'hubspot') {
+    return (
+      'What Luciel writes: one HubSpot contact per lead, keyed by the lead’s email. ' +
+      'It records the facts captured in conversation (name, phone, what they asked for) ' +
+      'and updates that same contact as new facts surface — never a duplicate, and it ' +
+      'never reads your CRM.'
+    );
+  }
+  if (provider === 'salesforce') {
+    return (
+      'What Luciel writes: one Salesforce Lead per person, keyed by the lead’s email. ' +
+      'A captured name and business fill Last Name and Company — Salesforce requires ' +
+      'both, so until a lead shares them Luciel writes “Unknown” rather than inventing ' +
+      'details. Phone and other facts ride along, and the same Lead is updated as new ' +
+      'facts surface — never a duplicate, and it never reads your CRM.'
+    );
+  }
+  if (provider === 'custom_webhook') {
+    return (
+      'What Luciel sends: each captured lead’s stable key (their email) plus the facts ' +
+      'from the conversation, delivered to your endpoint. The key is how your system ' +
+      'recognizes the same lead again — deduping is your endpoint’s half of the contract.'
+    );
+  }
+  return null;
+}
+
 export function ConnectionControl({
   connectionType,
   label,
@@ -351,6 +384,15 @@ export function ConnectionControl({
           </>
         )}
       </div>
+
+      {/* CRM field-mapping disclosure (Phase 6.5, Customer Journey "confirms
+          the field mapping"): once connected, say exactly WHAT Luciel writes
+          and how it dedupes — read-only, because the mapping is fixed. */}
+      {connectionType === 'crm' && isLive && crmMappingCopy(connection?.provider) && (
+        <p className="text-vm-0 text-vm-text-muted" role="note">
+          {crmMappingCopy(connection?.provider)}
+        </p>
+      )}
 
       {/* Server-derived, read-only: why the dependent tool is being held off. */}
       {disabledReason && !isLive && (
