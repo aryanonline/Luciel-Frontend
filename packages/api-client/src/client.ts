@@ -33,6 +33,7 @@ import type {
   MetaChannel,
   StartConnectionResult,
   ReverifySmsResult,
+  TenantNumbersResult,
   RecordSourceCsvResult,
   EmailProvisioning,
   ProvisionEmailRequest,
@@ -172,6 +173,13 @@ export interface LucielApiClient {
      * and repeatable.
      */
     reverifySms(): Promise<ReverifySmsResult>;
+    /**
+     * List the numbers in the tenant's OWN Twilio account for the designate
+     * picker (C9). `numbers: null` means listing wasn't possible (no usable
+     * credential yet, or the provider refused) — fall back to manual E.164
+     * entry; this convenience never blocks the designate step.
+     */
+    listTwilioNumbers(connectionId: string): Promise<TenantNumbersResult>;
     /**
      * Upload the CSV that backs the `lookup_record` tool (record_source
      * connection). Rows REPLACE the previous table; the connection flips to

@@ -214,6 +214,23 @@ export const reverifySmsResult = z.object({
 export type ReverifySmsResult = z.infer<typeof reverifySmsResult>;
 
 /**
+ * The designate picker (C9): the numbers in the tenant's OWN Twilio account,
+ * listed with the credentials already on file. `numbers: null` = listing
+ * wasn't possible (no usable credential, provider refused) — the UI falls
+ * back to manual E.164 entry rather than blocking the designate step.
+ */
+export const tenantNumber = z.object({
+  phoneNumber: z.string(),
+  friendlyName: z.string(),
+});
+export type TenantNumber = z.infer<typeof tenantNumber>;
+
+export const tenantNumbersResult = z.object({
+  numbers: z.array(tenantNumber).nullable(),
+});
+export type TenantNumbersResult = z.infer<typeof tenantNumbersResult>;
+
+/**
  * Result of uploading the live-lookup CSV (record_source connection). The rows
  * REPLACE the previous table (the backend's replace-on-upload semantics) and the
  * connection flips to connected with "N records on file". Live-caught

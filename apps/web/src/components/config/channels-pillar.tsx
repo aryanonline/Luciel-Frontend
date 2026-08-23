@@ -19,12 +19,14 @@ import {
   type Luciel,
   type ChannelConfig,
   type ProviderCredentialField,
+  type TenantNumber,
 } from '@luciel/api-client';
 import {
   useConnectionLifecycle,
   useConnectionProviders,
   useConnections,
   useLucielMutations,
+  useTwilioNumbers,
 } from '@/lib/hooks';
 import { useActionNotice } from '@/lib/use-action-notice';
 import { ConnectionControl } from './connection-control';
@@ -158,6 +160,12 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     phoneEnabled && twilioConnected && !numberConfigured && !needsCredentialRefresh;
   const phonePending = phoneEnabled && numberStatus === 'pending_carrier_registration';
   const phoneValid = E164.test(phoneNumber.trim());
+  // C9 picker: fetch the account's own numbers only while the designate step is
+  // actually on screen. A null result (couldn't list) leaves manual entry alone.
+  const numberStepVisible = needsNumber || changingNumber;
+  const twilioNumbers = useTwilioNumbers(
+    numberStepVisible ? smsConnection?.connectionId : undefined,
+  );
   // The number the tenant designated, read from the row that holds it — a live
   // number is shown back, not asked for again. Same destination the shared
   // control reads (contract §2).
@@ -217,9 +225,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
 
   /** The number is only cleared from the field once the write is confirmed — a
    *  cleared input is the admin's only record of what they typed (P1-4). */
-  const submitNumber = async () => {
-    if (!phoneValid) return;
-    const number = phoneNumber.trim();
+  const submitNumberValue = async (number: string) => {
     const ok = await channelAction.run(async () => {
       await startConnection.mutateAsync({
         connectionType: 'sms_sender',
@@ -234,6 +240,10 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
       setPhoneNumber('');
       setChangingNumber(false);
     }
+  };
+  const submitNumber = async () => {
+    if (!phoneValid) return;
+    await submitNumberValue(phoneNumber.trim());
   };
 
   const setEnabled = (id: ChannelConfig['id'], enabled: boolean) => {
@@ -431,6 +441,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     phoneValid={phoneValid}
                     saving={channelAction.busy}
                     onSubmitNumber={() => void submitNumber()}
+                    availableNumbers={twilioNumbers.data?.numbers ?? null}
+                    onPickNumber={(n) => void submitNumberValue(n)}
                     smsEnabled={Boolean(smsChannel?.enabled)}
                     twilioUnavailable={twilioUnavailable}
                     twilioFields={twilioFields}
@@ -636,6 +648,13 @@ interface PhoneNumberPanelProps {
   phoneValid: boolean;
   saving: boolean;
   onSubmitNumber: () => void;
+  /**
+   * The tenant's own Twilio numbers (C9 picker). `null` or empty = listing
+   * wasn't possible — the manual E.164 field renders alone (honest fallback,
+   * never a blocked designate).
+   */
+  availableNumbers: TenantNumber[] | null;
+  onPickNumber: (number: string) => void;
   smsEnabled: boolean;
   twilioUnavailable: boolean;
   twilioFields: ProviderCredentialField[];
@@ -674,6 +693,8 @@ function PhoneNumberPanel({
   phoneValid,
   saving,
   onSubmitNumber,
+  availableNumbers,
+  onPickNumber,
   smsEnabled,
   twilioUnavailable,
   twilioFields,
@@ -829,10 +850,41 @@ function PhoneNumberPanel({
       ) : (
         <div className="mt-vm-3">
           <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
-            Your Twilio account is connected. Tell us which of its numbers Luciel uses, in E.164
-            format (e.g. +14155551234). Your Luciel sends and receives on this number; the platform
-            never provisions one for you.
+            Your Twilio account is connected. Pick which of its numbers Luciel uses — your own
+            number stays on your own account; the platform never provisions one for you.
           </p>
+          {/* C9 picker: the account's own numbers, one tap to designate. Listing
+              is a convenience — when it isn't possible the manual field below is
+              the whole flow, exactly as before. */}
+          {availableNumbers && availableNumbers.length > 0 && (
+            <ul className="mb-vm-3 space-y-vm-2">
+              {availableNumbers.map((n) => (
+                <li
+                  key={n.phoneNumber}
+                  className="flex flex-wrap items-center justify-between gap-vm-2 rounded-vm-card border border-vm-border px-vm-3 py-vm-2"
+                >
+                  <span className="text-vm-1">
+                    <span className="font-label text-vm-text">{n.phoneNumber}</span>
+                    {n.friendlyName ? (
+                      <span className="text-vm-text-muted"> — {n.friendlyName}</span>
+                    ) : null}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    onClick={() => onPickNumber(n.phoneNumber)}
+                    disabled={saving}
+                  >
+                    {saving ? 'Saving…' : 'Use this number'}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {availableNumbers && availableNumbers.length > 0 && (
+            <p className="mb-vm-2 text-vm-0 text-vm-text-muted">
+              Or enter a different number from your account, in E.164 format (e.g. +14155551234).
+            </p>
+          )}
           <div className="flex items-end gap-vm-2">
             <div className="flex-1">
               <Field

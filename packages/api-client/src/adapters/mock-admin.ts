@@ -693,6 +693,26 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         }
         return ok({ status: 'connected' as const, statusDetail: null });
       },
+      async listTwilioNumbers(connectionId) {
+        guardVerified();
+        // Mirrors the backend (C9): a deterministic two-number fixture once
+        // credentials are on file; null (fall back to manual entry) before —
+        // listing is a convenience that never blocks designate.
+        const c = state.connections.find(
+          (x) => x.connectionId === connectionId && x.connectionType === 'sms_sender',
+        );
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        const hasCredentials = Boolean(
+          (c.nonSecretConfig as Record<string, unknown> | undefined)?.accountSid,
+        );
+        if (!hasCredentials) return ok({ numbers: null });
+        return ok({
+          numbers: [
+            { phoneNumber: '+15005550006', friendlyName: 'Test line' },
+            { phoneNumber: '+15005550007', friendlyName: 'Second test line' },
+          ],
+        });
+      },
       async uploadRecordSourceCsv(file) {
         guardVerified();
         // Replace-on-upload, mirroring the backend: rows REPLACE the previous
