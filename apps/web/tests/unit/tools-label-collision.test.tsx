@@ -33,7 +33,11 @@ describe('Tools pillar: no two entries share a name', () => {
     expect(
       await screen.findByRole('switch', { name: /Enable Post to my own endpoint/i }),
     ).toBeInTheDocument();
-    // The one left is the CRM destination, inside the CRM connect control.
-    expect(await screen.findAllByText('Custom webhook')).toHaveLength(1);
+    // The one left is the CRM destination — since the Phase-4 rework it renders
+    // as that provider's own named connect button inside the CRM control.
+    expect(await screen.findAllByRole('button', { name: 'Connect Custom webhook' })).toHaveLength(
+      1,
+    );
+    expect(screen.queryAllByText('Custom webhook')).toHaveLength(0);
   });
 });

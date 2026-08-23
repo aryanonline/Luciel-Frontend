@@ -10,7 +10,6 @@ import {
   type ConnectionStatus,
   type ConnectionType,
   type MetaChannel,
-  type ProviderOption,
 } from '@luciel/api-client';
 import {
   useConnectionLifecycle,
@@ -167,6 +166,10 @@ export function ConnectionControl({
   // id, say) — that transition is a switch.
   const boundElsewhere = Boolean(provider && connection && connection.provider !== provider);
   const status = boundElsewhere ? undefined : connection?.status;
+  // Phase 4 (owner concern #8): ≥2 connectable providers render provider-named
+  // connect buttons; the generic action row survives only for a chosen
+  // credential form.
+  const multiConnect = !pinned && connectable.length > 1;
 
   const metaChannels = destinationField?.channels ?? [];
   const unboundChannels = metaChannels.filter((c) => !boundDestination(connection, [c]));
@@ -189,54 +192,84 @@ export function ConnectionControl({
    * consent screen; a credential_form provider's details are sent to the row
    * the start just created, so the flow finishes here instead of dead-ending on
    * "we cannot store these yet".
+   *
+   * `flowProvider`/`flowName`/`flowIsCredentialForm` are passed EXPLICITLY (C9
+   * follow-on, Phase 4): the provider-named connect buttons start a flow for the
+   * option they name in the same click, so the flow must not read the selection
+   * state that click has only just scheduled.
    */
-  const runFlow = async (flow: Promise<StartedConnectFlow>) => {
+  const runFlow = async (
+    flow: Promise<StartedConnectFlow>,
+    flowProvider: string,
+    flowName: string,
+    flowIsCredentialForm: boolean,
+  ) => {
     setNotice(null);
     try {
       const start = await flow;
-      if (start.requiresClientForm || isCredentialForm) {
+      if (start.requiresClientForm || flowIsCredentialForm) {
         const connectionId = start.connectionId ?? connection?.connectionId;
         if (!connectionId) {
-          say('danger', `We could not start the connection for ${providerName}. Please try again.`);
+          say('danger', `We could not start the connection for ${flowName}. Please try again.`);
           return;
         }
         await submitCredentials.mutateAsync({ connectionId, fields: credentials });
         setCredentials({});
         setSwitching(false);
-        say('info', `${providerName} is connected. Your details are stored in the secrets vault.`);
+        say('info', `${flowName} is connected. Your details are stored in the secrets vault.`);
         return;
       }
       const explanation = authorizeOrExplain({
         ...start,
-        provider: selectedProvider ?? '',
-        label: providerName,
+        provider: flowProvider,
+        label: flowName,
         callbackKind: 'connection',
       });
       if (explanation) say('danger', explanation);
     } catch (err) {
-      failed(err, `We could not connect ${providerName}. Please try again.`);
+      failed(err, `We could not connect ${flowName}. Please try again.`);
     }
   };
 
-  const beginConnect = () => {
-    if (!selectedProvider) return;
+  const beginConnectFor = (targetProvider: string) => {
+    const targetOption = choices.find((o) => o.provider === targetProvider);
+    const targetName = targetOption?.displayName ?? label;
+    const targetIsCredentialForm = targetOption?.authKind === 'credential_form';
     // An existing row is re-credentialed in place: switch when the account or
     // provider is changing, reconnect when it is the same one expiring.
     if (connection && (boundElsewhere || switching)) {
       void runFlow(
         switchTo.mutateAsync({
           connectionId: connection.connectionId,
-          provider: selectedProvider === connection.provider ? null : selectedProvider,
+          provider: targetProvider === connection.provider ? null : targetProvider,
         }),
+        targetProvider,
+        targetName,
+        targetIsCredentialForm,
       );
       setSwitching(false);
       return;
     }
     if (connection && (status === 'expired' || status === 'error')) {
-      void runFlow(reconnect.mutateAsync({ connectionId: connection.connectionId }));
+      void runFlow(
+        reconnect.mutateAsync({ connectionId: connection.connectionId }),
+        targetProvider,
+        targetName,
+        targetIsCredentialForm,
+      );
       return;
     }
-    void runFlow(connect.mutateAsync({ connectionType, provider: selectedProvider }));
+    void runFlow(
+      connect.mutateAsync({ connectionType, provider: targetProvider }),
+      targetProvider,
+      targetName,
+      targetIsCredentialForm,
+    );
+  };
+
+  const beginConnect = () => {
+    if (!selectedProvider) return;
+    beginConnectFor(selectedProvider);
   };
 
   const confirmDisconnect = async () => {
@@ -279,8 +312,10 @@ export function ConnectionControl({
     // Connect/Reconnect name the CHANNEL the owner is lighting up ("Connect
     // WhatsApp"), not the vendor behind it ("Connect Meta") — the surface copy
     // below already explains that one Meta sign-in powers its sibling channel.
+    // In the multi-provider credential sub-flow the button submits the CHOSEN
+    // provider's details, so it names that provider (Phase 4).
     if (status === 'expired' || status === 'error') return `Reconnect ${label}`;
-    return `Connect ${label}`;
+    return multiConnect ? `Connect ${providerName}` : `Connect ${label}`;
   };
 
   return (
@@ -364,78 +399,123 @@ export function ConnectionControl({
         </div>
       )}
 
-      {/* Provider CHOICE (Decision #6) — shown while connecting or switching,
-          and only when there is a real choice to make: TWO OR MORE providers
-          the owner could actually connect. One connectable provider means one
-          plain Connect button (owner ruling: "connect your calendar" should be
-          enough), with any not-yet-available options listed quietly below the
-          button rather than as disabled radios in a one-option quiz. */}
+      {/* Provider CHOICE (Decision #6, reworked audit round 3 Phase 4 — owner
+          concern #8): with TWO OR MORE connectable providers, each gets its OWN
+          named connect button ("Connect Google Calendar", "Connect HubSpot") —
+          no radio-then-generic-button two-step. An OAuth provider starts its
+          sign-in on the click; a credential_form provider's click reveals its
+          details form below. Not-yet-available options are listed quietly as
+          information, never as disabled controls. */}
       {(!isLive || switching) && !nothingAvailable && !pinned && connectable.length > 1 && (
-        <fieldset className="rounded-vm-card border border-vm-border p-vm-3">
-          <legend className="px-vm-1 text-vm-1 font-label">Choose how to connect {label}</legend>
+        <div className="rounded-vm-card border border-vm-border p-vm-3">
           <div className="grid gap-vm-2">
-            {choices.map((option) => (
-              <ProviderChoice
-                key={option.provider}
-                option={option}
-                name={`provider-${connectionType}`}
-                checked={option.provider === selectedProvider}
-                onSelect={() => {
-                  setChosen(option.provider);
-                  setCredentials({});
-                }}
-              />
+            {connectable.map((option) => (
+              <div key={option.provider} className="flex flex-wrap items-center gap-vm-2">
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setChosen(option.provider);
+                    setCredentials({});
+                    if (option.authKind !== 'credential_form') {
+                      beginConnectFor(option.provider);
+                    }
+                  }}
+                >
+                  {busy
+                    ? 'Working…'
+                    : boundElsewhere || switching
+                      ? `Switch to ${option.displayName}`
+                      : `Connect ${option.displayName}`}
+                </Button>
+                <span className="text-vm-0 text-vm-text-muted">{option.helpText}</span>
+              </div>
             ))}
           </div>
-        </fieldset>
-      )}
-
-      {/* credential_form providers collect the customer's own details instead of
-          a sign-in, and those details are saved to this connection (§1a). */}
-      {(!isLive || switching) && !nothingAvailable && isCredentialForm && !providedElsewhere && (
-        <div className="rounded-vm-card border border-vm-border p-vm-3">
-          <CredentialFields
-            idPrefix={connectionType}
-            fields={credentialFields}
-            values={credentials}
-            onChange={setCredentials}
-          />
-        </div>
-      )}
-
-      {(!isLive || switching) && !nothingAvailable && (
-        <div className="flex flex-wrap items-center gap-vm-2">
-          {providedElsewhere ? (
-            <span className="text-vm-1 text-vm-text-muted">{selectedOption?.helpText}</span>
-          ) : (
-            <Button
-              variant="secondary"
-              onClick={beginConnect}
-              disabled={
-                busy ||
-                !selectedProvider ||
-                selectedOption?.configured === false ||
-                !credentialFieldsComplete(credentialFields, credentials)
-              }
-            >
-              {connectLabel()}
-            </Button>
+          {choices.some((o) => !o.configured) && (
+            <ul className="mt-vm-2 grid gap-vm-1 text-vm-0 text-vm-text-muted">
+              {choices
+                .filter((o) => !o.configured)
+                .map((o) => (
+                  <li key={o.provider}>
+                    {o.displayName} — coming soon. {o.helpText}
+                  </li>
+                ))}
+            </ul>
           )}
           {switching && (
-            <Button variant="ghost" onClick={() => setSwitching(false)} disabled={busy}>
+            <Button
+              variant="ghost"
+              className="mt-vm-2"
+              onClick={() => setSwitching(false)}
+              disabled={busy}
+            >
               Keep the current one
             </Button>
           )}
-          {selectedOption?.configured === false && (
-            <span className="text-vm-0 text-vm-text-muted">
-              {providerName} isn&apos;t available yet — pick another option for now.
-            </span>
-          )}
-          {selectedOption?.helpText && selectedOption.configured && !providedElsewhere && (
-            <span className="text-vm-0 text-vm-text-muted">{selectedOption.helpText}</span>
-          )}
         </div>
       )}
+
+      {/* credential_form providers collect the customer's own details instead of
+          a sign-in, and those details are saved to this connection (§1a). With
+          multiple connectable providers the form appears only after its named
+          button was pressed (chosen), never as a default-open form. */}
+      {(!isLive || switching) &&
+        !nothingAvailable &&
+        isCredentialForm &&
+        !providedElsewhere &&
+        (!multiConnect || chosen !== null) && (
+          <div className="rounded-vm-card border border-vm-border p-vm-3">
+            <CredentialFields
+              idPrefix={connectionType}
+              fields={credentialFields}
+              values={credentials}
+              onChange={setCredentials}
+            />
+          </div>
+        )}
+
+      {/* The single action row. With multiple connectable providers the named
+          buttons above ARE the action, so this renders only to submit a chosen
+          credential form. */}
+      {(!isLive || switching) &&
+        !nothingAvailable &&
+        (!multiConnect || (chosen !== null && isCredentialForm && !providedElsewhere)) && (
+          <div className="flex flex-wrap items-center gap-vm-2">
+            {providedElsewhere ? (
+              <span className="text-vm-1 text-vm-text-muted">{selectedOption?.helpText}</span>
+            ) : (
+              <Button
+                variant="secondary"
+                onClick={beginConnect}
+                disabled={
+                  busy ||
+                  !selectedProvider ||
+                  selectedOption?.configured === false ||
+                  !credentialFieldsComplete(credentialFields, credentials)
+                }
+              >
+                {connectLabel()}
+              </Button>
+            )}
+            {switching && !multiConnect && (
+              <Button variant="ghost" onClick={() => setSwitching(false)} disabled={busy}>
+                Keep the current one
+              </Button>
+            )}
+            {selectedOption?.configured === false && (
+              <span className="text-vm-0 text-vm-text-muted">
+                {providerName} isn&apos;t available yet — pick another option for now.
+              </span>
+            )}
+            {selectedOption?.helpText &&
+              selectedOption.configured &&
+              !providedElsewhere &&
+              !multiConnect && (
+                <span className="text-vm-0 text-vm-text-muted">{selectedOption.helpText}</span>
+              )}
+          </div>
+        )}
 
       {/* With a single connectable provider the radios are gone, but the owner
           should still see what else is on the way — as information, not as a
@@ -516,34 +596,3 @@ export function ConnectionControl({
   );
 }
 
-function ProviderChoice({
-  option,
-  name,
-  checked,
-  onSelect,
-}: {
-  option: ProviderOption;
-  name: string;
-  checked: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <label className="flex items-start gap-vm-2 text-vm-1">
-      <input
-        type="radio"
-        name={name}
-        className="mt-1 h-4 w-4"
-        checked={checked}
-        disabled={!option.configured}
-        onChange={onSelect}
-      />
-      <span>
-        <span className={option.configured ? undefined : 'text-vm-text-muted'}>
-          {option.displayName}
-        </span>
-        {!option.configured && <span className="text-vm-text-muted"> — not available yet</span>}
-        <span className="block text-vm-0 text-vm-text-muted">{option.helpText}</span>
-      </span>
-    </label>
-  );
-}

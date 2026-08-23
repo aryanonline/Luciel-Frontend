@@ -300,8 +300,11 @@ export const seedConnectionProviders: ConnectionProviders[] = [
         provider: 'live_connector',
         displayName: 'Live connector',
         authKind: 'credential_form',
-        helpText: 'Look records up in your own system, live, at answer time.',
-        configured: true,
+        // Mirrors the served registry (audit round 3, Phase 4): the live-lookup
+        // effect layer is unbuilt, so the backend honest-disables this surface
+        // (`unavailable_for`) — the mock must not offer a form live never would.
+        helpText: 'Look records up in your own system, live, at answer time — not available yet.',
+        configured: false,
         credentialFields: [
           { name: 'baseUrl', label: 'Base URL', secret: false, required: true },
           { name: 'apiKey', label: 'API key', secret: true, required: true },
