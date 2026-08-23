@@ -369,15 +369,16 @@ export const seedConnectionProviders: ConnectionProviders[] = [
     ],
   },
   {
-    // BYO: the CUSTOMER's own Twilio account (§3.1.4). The platform is never in
-    // the telephony billing path, so this is always available — nothing here is
-    // gated on a platform OAuth app.
+    // BYO: the CUSTOMER's own Twilio account (§3.1.4). One-click OAuth is the
+    // primary connect since C10; the credential form stays as the explicit
+    // "use API keys instead" fallback, which is why this is always available —
+    // the customer's own keys are never gated on a platform OAuth app.
     connectionType: 'sms_sender',
     providers: [
       {
         provider: 'twilio',
         displayName: 'Your Twilio account',
-        authKind: 'credential_form',
+        authKind: 'oauth',
         helpText: 'Luciel texts and calls from your own business number, on your own Twilio account.',
         configured: true,
         credentialFields: [

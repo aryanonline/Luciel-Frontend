@@ -85,7 +85,7 @@ const channelRow = (name: RegExp): HTMLElement => {
 };
 
 describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own Twilio account', () => {
-  it('renders the action-needed chip and the served Twilio credential form', async () => {
+  it('renders the action-needed chip with one-click connect primary and the key form behind it', async () => {
     renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
     expect(screen.getByText(/action needed: connect your Twilio account/i)).toBeInTheDocument();
     expect(
@@ -93,6 +93,11 @@ describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own T
         /your number stays yours and your carrier costs are billed by Twilio directly/i,
       ),
     ).toBeInTheDocument();
+    // C10: OAuth is the primary door — one Connect button, no SIDs up front...
+    expect(await screen.findByRole('button', { name: /^Connect Twilio$/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Twilio Account SID/i)).not.toBeInTheDocument();
+    // ...and the credential form stays one explicit click away.
+    fireEvent.click(screen.getByRole('button', { name: /Use API keys instead/i }));
     expect(await screen.findByLabelText(/Twilio Account SID/i)).toBeInTheDocument();
   });
 
