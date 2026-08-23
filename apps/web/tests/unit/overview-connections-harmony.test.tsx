@@ -66,6 +66,27 @@ describe('Harmony FE-H#7: Overview agrees with Configure on honest-disabled prov
   });
 });
 
+describe('Audit round 3, C15: the legacy platform-SES email row is not offered a dead swap', () => {
+  it('renders the legacy SES row without "Change connected account" (email is BYO-mailbox only)', async () => {
+    renderWithQuery(<DashboardPage />);
+    // Fixture: email_sender/ses is `connected` and provider-available — before
+    // this fix it offered the swap affordance, which dead-ends because the
+    // platform-SES mode is no longer offered; the real path is the mailbox
+    // connect in Configure → Email.
+    const sesLabel = await screen.findByText(/Amazon SES/i);
+    const sesRow = sesLabel.closest('li');
+    expect(sesRow).not.toBeNull();
+    expect(
+      within(sesRow as HTMLElement).queryByRole('button', { name: /Change connected account/i }),
+    ).not.toBeInTheDocument();
+    // The suppression is row-specific: a genuinely swappable connection
+    // (Google Drive) keeps the affordance on the same render.
+    expect(
+      (await screen.findAllByRole('button', { name: /Change connected account/i })).length,
+    ).toBeGreaterThan(0);
+  });
+});
+
 describe('Harmony wave 2, item 6a: a registry-unconfigured connection row is never told "Action needed"', () => {
   it('shows the non-actionable "Not available yet" chip — never "Action needed" — for a never-connected row whose provider the registry marks configured: false', async () => {
     renderWithQuery(<DashboardPage />);

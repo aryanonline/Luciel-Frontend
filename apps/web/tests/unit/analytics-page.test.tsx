@@ -44,21 +44,28 @@ const base: AnalyticsOverview = {
   topKnowledgeSources: [],
   topKnowledgeSourcesNote: "Knowledge source usage isn't tracked yet — coming soon.",
   conversionByChannel: [{ channel: 'widget', conversations: 30, leads: 10, conversionRate: 0.33 }],
-  conversionBySourceNote: "Conversion by source isn't available yet — coming soon.",
+  conversionBySource: [
+    { source: 'widget', leads: 10, converted: 4, conversionRate: 0.4 },
+    { source: 'email', leads: 2, converted: 1, conversionRate: 0.5 },
+  ],
+  conversionBySourceNote: null,
   conversionByServiceNote: "Conversion by service isn't available yet — coming soon.",
 };
 
 const empty: AnalyticsOverview = {
   ...base,
   conversationsThisPeriod: 0,
+  conversationsTotal: 0,
   leadsThisPeriod: 0,
   appointmentsBooked: 0,
+  budgetUtilization: 0,
   responseTimeP50Seconds: null,
   responseTimeP95Seconds: null,
   responseTimeNote: 'Shows up once Luciel has replied to customers this billing period.',
   escalationsBySignal: [],
   channelMix: [],
   conversionByChannel: [],
+  conversionBySource: [],
 };
 
 beforeEach(() => {
@@ -84,6 +91,49 @@ describe('analytics page: real numbers in plain language', () => {
     expect(text).not.toMatch(/top-N|rolling window/i);
     expect(text).not.toMatch(/schema|field exists/i);
     expect(text).not.toContain('Not yet available.');
+  });
+});
+
+describe('analytics page: real dimensions (audit round 3, C14/C15)', () => {
+  it('renders the all-time count and free-50 usage on the Conversations stat', async () => {
+    overview.mockResolvedValue(base);
+    renderWithQuery(<AnalyticsPage />);
+    expect(
+      await screen.findByText('312 all time · 40% of the free 50 used this period'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders Conversion by source with won percentages from marked outcomes', async () => {
+    overview.mockResolvedValue(base);
+    renderWithQuery(<AnalyticsPage />);
+    expect(await screen.findByText('Conversion by source')).toBeInTheDocument();
+    expect(screen.getByText('40% won (4/10)')).toBeInTheDocument();
+    expect(screen.getByText('50% won (1/2)')).toBeInTheDocument();
+    // The card explains where the number comes from — the Leads page.
+    expect(screen.getByText(/Mark each lead's outcome on the Leads page/)).toBeInTheDocument();
+  });
+
+  it('renders real top knowledge sources with their retrieval counts', async () => {
+    overview.mockResolvedValue({
+      ...base,
+      topKnowledgeSources: [
+        { sourceId: 's-1', name: 'Services brochure.pdf', retrievalCount: 21 },
+        { sourceId: 's-2', name: 'FAQ.docx', retrievalCount: 9 },
+      ],
+      topKnowledgeSourcesNote: null,
+    });
+    renderWithQuery(<AnalyticsPage />);
+    expect(await screen.findByText('Services brochure.pdf')).toBeInTheDocument();
+    expect(screen.getByText('21')).toBeInTheDocument();
+    expect(screen.getByText('FAQ.docx')).toBeInTheDocument();
+  });
+
+  it('shows an honest empty state for Conversion by source, never a fabricated rate', async () => {
+    overview.mockResolvedValue(empty);
+    renderWithQuery(<AnalyticsPage />);
+    expect(await screen.findByText('Conversion by source')).toBeInTheDocument();
+    expect(screen.getByText('No leads captured yet this period.')).toBeInTheDocument();
+    expect(screen.queryByText(/% won/)).not.toBeInTheDocument();
   });
 });
 

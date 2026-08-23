@@ -43,6 +43,7 @@ import type {
   AnswerEvidence,
   EscalationEvent,
   Lead,
+  LeadOutcome,
   LeadExportFormat,
   LeadExportFile,
   AnalyticsOverview,
@@ -298,6 +299,11 @@ export interface LucielApiClient {
     prune(leadIds: string[]): Promise<void>;
     /** Archive = kept in cold storage, NOT deleted (Arch §3.4.10a). */
     archive(leadId: string): Promise<Lead>;
+    /**
+     * Mark the lead's business outcome (Vision §7; C14) — what conversion
+     * analytics group by. Reversible; audited server-side without lead PII.
+     */
+    markOutcome(leadId: string, outcome: LeadOutcome): Promise<Lead>;
     /**
      * Download this tenant's leads. Export exists so an Admin is never asked to
      * prune what they cannot first take with them (Legal §B5, §A7).

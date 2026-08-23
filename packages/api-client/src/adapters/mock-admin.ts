@@ -244,6 +244,8 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       ingestionStatus: 'ready',
       sizeBytes,
       lastUpdatedAt: now,
+      // A just-added source has served no answers yet — a real zero (C14).
+      usedByQuestions7d: 0,
       ...(syncStatus ? { syncStatus, lastSyncedAt: now } : {}),
     };
     state.knowledge.push(source);
@@ -1120,6 +1122,13 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const l = state.leads.find((x) => x.leadId === leadId);
         if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
         l.state = 'archived';
+        return ok(l);
+      },
+      async markOutcome(leadId, outcome) {
+        guardVerified();
+        const l = state.leads.find((x) => x.leadId === leadId);
+        if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
+        l.outcome = outcome;
         return ok(l);
       },
       async export(format) {

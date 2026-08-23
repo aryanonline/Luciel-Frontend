@@ -469,7 +469,14 @@ export function KnowledgePillar() {
         title="Delete this knowledge source?"
         description={
           <>
-            This will affect the answers Luciel gives. Recent customer questions used this source.
+            This will affect the answers Luciel gives.{' '}
+            {/* The §3.2.2 trust-contract number, real since C14: served from the
+                durable retrieval trace, never a generic claim. */}
+            {toDelete && toDelete.usedByQuestions7d > 0
+              ? `${toDelete.usedByQuestions7d} customer ${
+                  toDelete.usedByQuestions7d === 1 ? 'question' : 'questions'
+                } in the last 7 days drew on this source.`
+              : 'No customer questions in the last 7 days used this source.'}{' '}
             Editing or removing knowledge is how you keep Luciel accurate — but make sure you mean
             to.
           </>

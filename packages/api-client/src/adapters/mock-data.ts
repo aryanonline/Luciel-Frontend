@@ -426,6 +426,8 @@ export const seedKnowledge: KnowledgeSource[] = [
     ingestionStatus: 'ready',
     sizeBytes: 2_000_000,
     lastUpdatedAt: '2026-01-16T09:00:00Z',
+    // §3.2.2 delete-confirmation truth (C14): answers in the last 7 days.
+    usedByQuestions7d: 12,
   },
   {
     sourceId: '77777777-7777-4777-8777-777777777777',
@@ -436,6 +438,7 @@ export const seedKnowledge: KnowledgeSource[] = [
     lastUpdatedAt: '2026-06-13T08:00:00Z',
     lastSyncedAt: '2026-06-14T06:00:00Z',
     syncStatus: 'synced',
+    usedByQuestions7d: 0,
   },
 ];
 
@@ -458,6 +461,7 @@ export const seedLeads: Lead[] = [
     contactIdentifier: '416-555-0143',
     intent: 'Intro call request — small business launch',
     state: 'active',
+    outcome: 'in_progress',
     lastActivityAt: '2026-06-13T23:47:00Z',
     createdAt: '2026-06-13T23:42:00Z',
   },
@@ -496,15 +500,27 @@ export const seedAnalytics: AnalyticsOverview = {
   ],
   budgetUtilization: 0.76,
   busiestTimes: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
-  topKnowledgeSources: [],
-  // Mirrors the server's honest gap note verbatim (mock models states, it does
-  // not invent claims — the retrieval-frequency store is not built).
-  topKnowledgeSourcesNote: "Knowledge source usage isn't tracked yet — coming soon.",
+  // REAL since C14 (durable retrieval trace + admin-marked lead outcomes) —
+  // the served shapes below mirror the backend's real aggregates.
+  topKnowledgeSources: [
+    {
+      sourceId: '44444444-4444-4444-8444-444444444441',
+      name: 'Services brochure.pdf',
+      retrievalCount: 21,
+    },
+    { sourceId: '44444444-4444-4444-8444-444444444442', name: 'FAQ.docx', retrievalCount: 9 },
+  ],
+  topKnowledgeSourcesNote: null,
   conversionByChannel: [
     { channel: 'widget', conversations: 30, leads: 10, conversionRate: 0.33 },
     { channel: 'email', conversations: 8, leads: 2, conversionRate: 0.25 },
   ],
-  conversionBySourceNote: "Conversion by source isn't available yet — coming soon.",
+  conversionBySource: [
+    { source: 'widget', leads: 10, converted: 4, conversionRate: 0.4 },
+    { source: 'email', leads: 2, converted: 1, conversionRate: 0.5 },
+  ],
+  conversionBySourceNote: null,
+  // The one remaining honest gap: no service taxonomy is modeled anywhere.
   conversionByServiceNote: "Conversion by service isn't available yet — coming soon.",
 };
 
@@ -526,9 +542,10 @@ export const seedAnalyticsEmpty: AnalyticsOverview = {
   budgetUtilization: 0,
   busiestTimes: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
   topKnowledgeSources: [],
-  topKnowledgeSourcesNote: "Knowledge source usage isn't tracked yet — coming soon.",
+  topKnowledgeSourcesNote: null,
   conversionByChannel: [],
-  conversionBySourceNote: "Conversion by source isn't available yet — coming soon.",
+  conversionBySource: [],
+  conversionBySourceNote: null,
   conversionByServiceNote: "Conversion by service isn't available yet — coming soon.",
 };
 
