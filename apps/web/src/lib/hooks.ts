@@ -38,6 +38,7 @@ export const qk = {
   leads: ['leads'] as const,
   analytics: ['analytics'] as const,
   audit: ['audit'] as const,
+  twilioNumbers: (connectionId: string) => ['twilioNumbers', connectionId] as const,
 };
 
 export const useSession = () =>
@@ -55,6 +56,17 @@ export const useConnectionProviders = (connectionType?: ConnectionType) =>
   useQuery({
     queryKey: qk.connectionProviders(connectionType),
     queryFn: () => api.connections.listProviders(connectionType),
+  });
+/**
+ * The tenant's own Twilio numbers for the designate picker (C9). `numbers: null`
+ * in the result = listing wasn't possible — render the manual E.164 field alone;
+ * the picker is a convenience that never blocks designate.
+ */
+export const useTwilioNumbers = (connectionId?: string) =>
+  useQuery({
+    queryKey: qk.twilioNumbers(connectionId ?? ''),
+    queryFn: () => api.connections.listTwilioNumbers(connectionId as string),
+    enabled: Boolean(connectionId),
   });
 /** Owner-facing capability groups — the source of the scheduling control (Decision #8). */
 export const useCapabilities = () =>

@@ -101,6 +101,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         }),
       reconnect: (connectionId) => t.post(`/api/v1/admin/connections/${connectionId}/reconnect`),
       reverifySms: () => t.post('/api/v1/admin/connections/sms/reverify'),
+      listTwilioNumbers: (connectionId) =>
+        t.get(`/api/v1/admin/connections/${connectionId}/twilio/numbers`),
       uploadRecordSourceCsv: (file) =>
         t.postForm('/api/v1/admin/connections/record-source/csv', formData(file, file.name)),
       completeOauth: (connectionId, code, state) =>
