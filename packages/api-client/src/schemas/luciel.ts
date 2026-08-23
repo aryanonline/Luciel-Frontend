@@ -146,6 +146,12 @@ export const knowledgeSource = z.object({
   /** Live-sync sources only (Arch §3.2.3). */
   lastSyncedAt: isoTimestamp.optional(),
   syncStatus: knowledgeSyncStatus.optional(),
+  /**
+   * §3.2.2 delete-confirmation truth (C14): answers in the last 7 days that
+   * drew on this source, from the durable retrieval trace. A real 0 for a
+   * source no answer has used.
+   */
+  usedByQuestions7d: z.number().int().nonnegative().default(0),
 });
 export type KnowledgeSource = z.infer<typeof knowledgeSource>;
 

@@ -31,7 +31,10 @@ export const analyticsOverview = z.object({
   budgetUtilization: z.number().min(0),
   /** Busiest-times heatmap: [dayOfWeek 0-6][hourOfDay 0-23] -> count. */
   busiestTimes: z.array(z.array(z.number().int().nonnegative())),
-  /** Top sources by retrieval frequency — still an honest server-side gap. */
+  /**
+   * Top sources by answer frequency — REAL since the durable retrieval trace
+   * (audit round 3, C6/C14). Empty = an honest empty period, not a gap.
+   */
   topKnowledgeSources: z
     .array(
       z.object({
@@ -48,6 +51,21 @@ export const analyticsOverview = z.object({
         channel: sessionChannelId,
         conversations: z.number().int().nonnegative(),
         leads: z.number().int().nonnegative(),
+        conversionRate: z.number().min(0),
+      }),
+    )
+    .optional(),
+  /**
+   * Outcome-based conversion by lead source (first-contact channel) — REAL
+   * since leads carry an admin-marked outcome (C14). `source` is served as a
+   * plain string ("unknown" covers leads with no session on record).
+   */
+  conversionBySource: z
+    .array(
+      z.object({
+        source: z.string(),
+        leads: z.number().int().nonnegative(),
+        converted: z.number().int().nonnegative(),
         conversionRate: z.number().min(0),
       }),
     )

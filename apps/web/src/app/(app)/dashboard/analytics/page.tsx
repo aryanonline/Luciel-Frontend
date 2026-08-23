@@ -91,7 +91,11 @@ export default function AnalyticsPage() {
       ) : (
         <>
           <div className="grid gap-vm-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Conversations (period)" value={a.conversationsThisPeriod} />
+            <Stat
+              label="Conversations (period)"
+              value={a.conversationsThisPeriod}
+              note={`${a.conversationsTotal} all time · ${Math.round(a.budgetUtilization * 100)}% of the free 50 used this period`}
+            />
             <Stat label="Leads (period)" value={a.leadsThisPeriod} />
             <Stat
               label="Appointments booked"
@@ -165,7 +169,6 @@ export default function AnalyticsPage() {
             </div>
             <CardDescription>
               How many conversations on each channel turned into a captured lead.
-              {a.conversionBySourceNote ? ` ${a.conversionBySourceNote}` : ''}
             </CardDescription>
             {!a.conversionByChannel || a.conversionByChannel.length === 0 ? (
               <p className="mt-vm-3 text-vm-1 text-vm-text-muted">No conversation data yet.</p>
@@ -176,6 +179,31 @@ export default function AnalyticsPage() {
                     <span className="capitalize">{c.channel.replace(/_/g, ' ')}</span>
                     <span className="font-label">
                       {Math.round(c.conversionRate * 100)}% ({c.leads}/{c.conversations})
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardTitle>Conversion by source</CardTitle>
+            <CardDescription>
+              Of the leads that came from each place, how many you marked as won. Mark each
+              lead&apos;s outcome on the Leads page — that is what this card reads.
+              {a.conversionBySourceNote ? ` ${a.conversionBySourceNote}` : ''}
+            </CardDescription>
+            {!a.conversionBySource || a.conversionBySource.length === 0 ? (
+              <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
+                No leads captured yet this period.
+              </p>
+            ) : (
+              <ul className="mt-vm-3 space-y-vm-2">
+                {a.conversionBySource.map((c) => (
+                  <li key={c.source} className="flex items-center justify-between text-vm-1">
+                    <span className="capitalize">{c.source.replace(/_/g, ' ')}</span>
+                    <span className="font-label">
+                      {Math.round(c.conversionRate * 100)}% won ({c.converted}/{c.leads})
                     </span>
                   </li>
                 ))}

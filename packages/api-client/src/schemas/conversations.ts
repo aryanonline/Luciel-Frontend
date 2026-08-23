@@ -17,6 +17,13 @@ export const leadState = z.enum(['active', 'archived']);
 // NOTE: there is no 'pruned' state — prune permanently deletes (Arch §3.4.10a).
 export type LeadState = z.infer<typeof leadState>;
 
+/**
+ * Admin-marked business outcome (Vision §7; C14) — what conversion analytics
+ * group by. Distinct from `state` (visibility lifecycle). Reversible.
+ */
+export const leadOutcome = z.enum(['in_progress', 'converted', 'lost']);
+export type LeadOutcome = z.infer<typeof leadOutcome>;
+
 export const lead = z.object({
   leadId: uuid,
   /** Captured contact info (where available). */
@@ -24,6 +31,7 @@ export const lead = z.object({
   contactIdentifier: z.string().optional(),
   intent: z.string().optional(),
   state: leadState,
+  outcome: leadOutcome.default('in_progress'),
   lastActivityAt: isoTimestamp,
   createdAt: isoTimestamp,
 });

@@ -13,7 +13,7 @@ import {
   Field,
   Select,
 } from '@luciel/ui';
-import type { Lead, LeadExportFormat } from '@luciel/api-client';
+import type { Lead, LeadExportFormat, LeadOutcome } from '@luciel/api-client';
 import { useLeads, useLuciel, useLucielMutations, qk } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { saveBlob } from '@/lib/download';
@@ -95,6 +95,24 @@ export default function LeadsPage() {
       setArchiveError('We could not archive that lead. It is unchanged — please try again.');
     } finally {
       setArchiving(null);
+    }
+  };
+
+  const [outcomeSaving, setOutcomeSaving] = React.useState<string | null>(null);
+  const [outcomeError, setOutcomeError] = React.useState<string | null>(null);
+  /** Mark the lead's business outcome (Vision §7; C14) — feeds the analytics
+   *  Conversion-by-source card. Reversible; a failed write leaves the lead
+   *  unchanged and says so (never a silent revert). */
+  const markOutcome = async (leadId: string, outcome: LeadOutcome) => {
+    setOutcomeError(null);
+    setOutcomeSaving(leadId);
+    try {
+      await api.leads.markOutcome(leadId, outcome);
+      refresh();
+    } catch {
+      setOutcomeError('We could not save that outcome. The lead is unchanged — please try again.');
+    } finally {
+      setOutcomeSaving(null);
     }
   };
 
@@ -194,6 +212,11 @@ export default function LeadsPage() {
             {archiveError}
           </Banner>
         )}
+        {outcomeError && (
+          <Banner tone="danger" className="mt-vm-3">
+            {outcomeError}
+          </Banner>
+        )}
 
         {visible.length > 0 && (
           <label className="mt-vm-3 flex items-center gap-vm-2 text-vm-0 text-vm-text-muted">
@@ -227,6 +250,18 @@ export default function LeadsPage() {
               </div>
               <div className="flex items-center gap-vm-2">
                 {isStale(l) && <span className="text-vm-0 text-vm-text-muted">stale</span>}
+                {/* Business outcome (Vision §7; C14): what Conversion-by-source
+                    reads. Reversible on purpose — deals change. */}
+                <Select
+                  aria-label={`Outcome for ${l.name ?? 'lead'}`}
+                  value={l.outcome}
+                  disabled={outcomeSaving === l.leadId}
+                  onChange={(e) => void markOutcome(l.leadId, e.target.value as LeadOutcome)}
+                >
+                  <option value="in_progress">In progress</option>
+                  <option value="converted">Won</option>
+                  <option value="lost">Lost</option>
+                </Select>
                 {l.state === 'archived' && <StatusChip kind="connected" detail="archived (kept)" />}
                 {l.state === 'active' && (
                   <Button

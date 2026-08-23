@@ -288,7 +288,13 @@ export default function DashboardPage() {
               // the registry-derived `providerConfigured()` lookup remains the
               // fallback for any row the backend hasn't attached it to yet.
               const configured = isProviderConfigured(c, providers.data);
-              const canChangeAccount = c.status === 'connected' && configured;
+              // Email is BYO-mailbox ONLY (owner ruling 2026-08-18): a legacy
+              // platform-SES row keeps serving read-only, but "Change connected
+              // account" would drop into a picker that offers nothing for it —
+              // the mailbox connect in Configure → Email is the real path
+              // (audit round 3, C15).
+              const legacyEmailRow = c.connectionType === 'email_sender' && c.provider === 'ses';
+              const canChangeAccount = c.status === 'connected' && configured && !legacyEmailRow;
               return (
                 <li key={c.connectionId} className="text-vm-1">
                   <div className="flex items-center justify-between gap-vm-2">
