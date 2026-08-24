@@ -82,6 +82,18 @@ describe('analytics page: real numbers in plain language', () => {
     expect(screen.getByText('45s / 240s')).toBeInTheDocument();
   });
 
+  it('rounds raw float seconds to at most one decimal (#5b)', async () => {
+    // Live-caught 2026-08-23: "19.877088999999998s" reached the page verbatim.
+    overview.mockResolvedValue({
+      ...base,
+      responseTimeP50Seconds: 4.982123499999,
+      responseTimeP95Seconds: 19.877088999999998,
+    });
+    renderWithQuery(<AnalyticsPage />);
+    expect(await screen.findByText('5s / 19.9s')).toBeInTheDocument();
+    expect(screen.queryByText(/19\.877/)).not.toBeInTheDocument();
+  });
+
   it('keeps engineering jargon off the page', async () => {
     overview.mockResolvedValue(base);
     const { container } = renderWithQuery(<AnalyticsPage />);

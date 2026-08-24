@@ -39,6 +39,12 @@ export function WidgetPreview({
   const [sending, setSending] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
   const [sendError, setSendError] = React.useState<string | null>(null);
+  // The session thread, exactly as the shipped widget keeps it (mount.ts):
+  // the server assigns it on the first send and every later send carries it
+  // back. Without this, every test message opened a NEW session — three
+  // "conversations" for one chat, no continuity, and each message consuming a
+  // billed conversation (live-caught on the 2026-08-23 dev walkthrough).
+  const sessionIdRef = React.useRef<string | undefined>(undefined);
   const liveRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -87,7 +93,11 @@ export function WidgetPreview({
     setSending(true);
     setSendError(null);
     try {
-      const res = await client.send(embedKey, { text: visitor.text });
+      const res = await client.send(embedKey, {
+        sessionId: sessionIdRef.current,
+        text: visitor.text,
+      });
+      sessionIdRef.current = res.sessionId;
       setMessages((m) => [...m, res.reply]);
       // Announce the incoming assistant message (a11y live region, Arch §5.16).
       if (liveRef.current) liveRef.current.textContent = markdownToPlainText(res.reply.text);

@@ -111,7 +111,10 @@ export default function AnalyticsPage() {
               label="Response time (typical / slowest 5%)"
               value={
                 a.responseTimeP50Seconds != null && a.responseTimeP95Seconds != null
-                  ? `${a.responseTimeP50Seconds}s / ${a.responseTimeP95Seconds}s`
+                  ? // At most one decimal: the wire carries raw float seconds, and
+                    // "19.877088999999998s" reached the page verbatim
+                    // (live-caught 2026-08-23). Number() trims "45.0" back to "45".
+                    `${Number(a.responseTimeP50Seconds.toFixed(1))}s / ${Number(a.responseTimeP95Seconds.toFixed(1))}s`
                   : '—'
               }
               note={
