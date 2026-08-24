@@ -34,6 +34,11 @@ const PROVIDER_AUTHORIZE_HOSTS = [
   // One-click Twilio connect (audit round 3, C10): the customer's own Twilio
   // account signs in on Twilio's OAuth host.
   'login.twilio.com',
+  // Notion knowledge sync (round 4): the customer consents into their own
+  // workspace on Notion's API host. The backend registry pins this exact host,
+  // and its mirror test (test_every_oauth_authorize_host_is_mirrored_in_the_
+  // frontend_allowlist) fails whenever the two lists drift.
+  'api.notion.com',
 ];
 
 const ACTION_NEEDED = 'Action needed:';
