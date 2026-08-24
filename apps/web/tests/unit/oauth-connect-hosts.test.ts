@@ -22,7 +22,7 @@ const REAL_AUTHORIZE_URLS: Array<[provider: string, url: string]> = [
   ['meta', 'https://www.facebook.com/v19.0/dialog/oauth?state=s'],
   ['instagram', 'https://www.instagram.com/oauth/authorize?state=s'],
   ['outlook', 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?state=s'],
-  ['twilio', 'https://login.twilio.com/oauth2/authorize?state=s'],
+  ['twilio', 'https://oauth.twilio.com/v2/authorize?state=s'],
   ['notion', 'https://api.notion.com/v1/oauth/authorize?state=s'],
 ];
 

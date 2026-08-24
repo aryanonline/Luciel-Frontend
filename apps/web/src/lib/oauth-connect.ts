@@ -31,9 +31,11 @@ const PROVIDER_AUTHORIZE_HOSTS = [
   // BYO email sender (§3.1.6a): the customer's own Outlook mailbox signs in on
   // Microsoft's consent host.
   'login.microsoftonline.com',
-  // One-click Twilio connect (audit round 3, C10): the customer's own Twilio
-  // account signs in on Twilio's OAuth host.
-  'login.twilio.com',
+  // One-click Twilio connect (C10; host corrected round 4): "organizational API
+  // access" apps (OQ… clients) consent on oauth.twilio.com/v2 — the console's
+  // own authorize URIs say so, and the old login.twilio.com pin matched neither
+  // that nor login.twilio.com's OIDC metadata.
+  'oauth.twilio.com',
   // Notion knowledge sync (round 4): the customer consents into their own
   // workspace on Notion's API host. The backend registry pins this exact host,
   // and its mirror test (test_every_oauth_authorize_host_is_mirrored_in_the_
