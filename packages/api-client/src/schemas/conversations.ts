@@ -92,8 +92,16 @@ export const sendMessageResult = z.object({
 });
 export type SendMessageResult = z.infer<typeof sendMessageResult>;
 
-/** `AnswerEvidenceOut.scoringStatus` (Harmony wave 2, item 6b/backend item 2c). */
-export const scoringStatus = z.enum(['scored', 'not_scored_legacy']);
+/** `AnswerEvidenceOut.scoringStatus` (Harmony wave 2, item 6b/backend item 2c).
+ *
+ * `'not_applicable'` (#5c, live-caught 2026-08-23, backend migration 0051): the
+ * row is a DETERMINISTIC code-composed reply — the persisted greeting, the
+ * at-cap notice, an escalation ack — so scoring never applied to it. That is a
+ * different truth from `'not_scored_legacy'` ("predates scoring"): a fresh
+ * greeting row used to render "Not scored (before scoring existed)", a temporal
+ * claim that was false for a row minutes old. Unscored rows persisted before
+ * the backend marker existed honestly keep `'not_scored_legacy'`. */
+export const scoringStatus = z.enum(['scored', 'not_scored_legacy', 'not_applicable']);
 export type ScoringStatus = z.infer<typeof scoringStatus>;
 
 /** `AnswerEvidenceOut.attributionStatus` (Harmony wave 2, item 6b/backend item 2a) — a

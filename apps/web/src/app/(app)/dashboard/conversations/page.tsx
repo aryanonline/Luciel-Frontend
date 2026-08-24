@@ -118,6 +118,11 @@ function describeDelivery(result: SendMessageResult): Delivery {
  * "Grounded 0.50" states a specific measurement that was never taken. Those
  * rows must read "Not scored (before scoring existed)" instead — an honest
  * "we don't know", distinct from both "Grounded" and "Weakly grounded".
+ *
+ * `'not_applicable'` (#5c, live-caught 2026-08-23): a fixed, code-composed
+ * message — the greeting, the at-cap notice, an escalation ack — was never a
+ * knowledge answer, so scoring doesn't apply. Those rows used to fall into the
+ * legacy branch and claim they predated scoring, false for a row minutes old.
  */
 function GroundingBadge({
   score,
@@ -126,6 +131,14 @@ function GroundingBadge({
   score: number | null;
   scoringStatus: AnswerEvidence['scoringStatus'];
 }) {
+  if (scoringStatus === 'not_applicable') {
+    return (
+      <span className="inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label text-vm-text-muted">
+        <span aria-hidden="true">?</span>
+        <span>Not scored — a fixed message, not a knowledge answer</span>
+      </span>
+    );
+  }
   if (scoringStatus === 'not_scored_legacy' || score === null) {
     return (
       <span className="inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label text-vm-text-muted">

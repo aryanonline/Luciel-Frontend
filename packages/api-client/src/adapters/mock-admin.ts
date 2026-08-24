@@ -1037,6 +1037,15 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async getMessages(sessionId) {
         guardVerified();
         const transcript: Message[] = [
+          // The persisted opening greeting — a deterministic code-composed row
+          // whose evidence is scoringStatus 'not_applicable' (#5c), so the UI's
+          // fixed-message badge path is exercisable in mock mode.
+          {
+            messageId: 'm0',
+            role: 'luciel',
+            text: "Hi! I'm an AI assistant for this business. How can I help?",
+            at: '2026-06-13T23:41:50Z',
+          },
           {
             messageId: 'm1',
             role: 'lead',
@@ -1096,6 +1105,18 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async getAnswerEvidence(_sessionId, messageId) {
         guardVerified();
+        if (messageId === 'm0') {
+          // The greeting: composed in code, never a knowledge answer — scoring
+          // does not apply and no attribution was captured (#5c).
+          return ok({
+            messageId,
+            groundingScore: null,
+            scoringStatus: 'not_applicable' as const,
+            sourceChunks: [],
+            attributionStatus: 'attribution_unavailable' as const,
+            flaggedByAdmin: false,
+          });
+        }
         return ok({
           messageId,
           groundingScore: 0.82,

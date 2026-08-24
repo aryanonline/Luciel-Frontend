@@ -119,6 +119,26 @@ describe('Harmony wave 2, item 6b: scoringStatus', () => {
     expect(screen.queryByText(/0\.50/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Backed by your knowledge/)).not.toBeInTheDocument();
   });
+
+  it('renders the fixed-message badge for scoringStatus: not_applicable — never the false "before scoring existed" claim (#5c)', async () => {
+    // Live-caught 2026-08-23: a BRAND-NEW session's greeting row claimed it was
+    // written "before scoring existed". A deterministic code-composed reply
+    // (greeting, at-cap notice, escalation ack) was never a knowledge answer.
+    getAnswerEvidence.mockResolvedValue(
+      evidence({
+        scoringStatus: 'not_applicable',
+        groundingScore: null,
+        sourceChunks: [],
+        attributionStatus: 'attribution_unavailable',
+      }),
+    );
+    await openConversation();
+    expect(
+      await screen.findByText('Not scored — a fixed message, not a knowledge answer'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/before scoring existed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Backed by your knowledge/)).not.toBeInTheDocument();
+  });
 });
 
 describe('Harmony wave 2, item 6b: attributionStatus', () => {

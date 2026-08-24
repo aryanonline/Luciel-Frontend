@@ -14,6 +14,7 @@ import {
 import {
   useConnectionLifecycle,
   useConnectionProviders,
+  useSwapConnection,
   type StartedConnectFlow,
 } from '@/lib/hooks';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
@@ -151,8 +152,15 @@ export function ConnectionControl({
   disabledReason,
 }: ConnectionControlProps) {
   const providers = useConnectionProviders(connectionType);
-  const { connect, switchTo, reconnect, disconnect, bindDestination, submitCredentials } =
+  const { connect, reconnect, disconnect, bindDestination, submitCredentials } =
     useConnectionLifecycle();
+  // Switching accounts/providers rides the proven-before-cutover SWAP (Arch
+  // §3.8.7 B), the same flow Overview's "Change connected account" uses — the
+  // live connection keeps serving until the replacement verifies. The old
+  // switch endpoint disconnected FIRST, so abandoning the new provider's
+  // consent screen left the tool dead until a manual reconnect (live-caught
+  // on the 2026-08-23 dev walkthrough).
+  const swap = useSwapConnection();
 
   // ONLY this connection type's providers, matched by type rather than taken
   // positionally: the first group in the response is not necessarily ours.
@@ -212,7 +220,7 @@ export function ConnectionControl({
   const isLive = status === 'connected' && !needsDestination;
   const busy =
     connect.isPending ||
-    switchTo.isPending ||
+    swap.isPending ||
     reconnect.isPending ||
     disconnect.isPending ||
     submitCredentials.isPending;
@@ -268,14 +276,15 @@ export function ConnectionControl({
     const targetOption = choices.find((o) => o.provider === targetProvider);
     const targetName = targetOption?.displayName ?? label;
     const targetIsCredentialForm = targetOption?.authKind === 'credential_form';
-    // An existing row is re-credentialed in place: switch when the account or
-    // provider is changing, reconnect when it is the same one expiring.
+    // An existing row is re-credentialed in place: SWAP when the account or
+    // provider is changing (staged alongside the live one; cutover only after
+    // the replacement verifies), reconnect when it is the same one expiring.
     if (connection && (boundElsewhere || switching)) {
+      const held = connection.connectionId;
       void runFlow(
-        switchTo.mutateAsync({
-          connectionId: connection.connectionId,
-          provider: targetProvider === connection.provider ? null : targetProvider,
-        }),
+        swap
+          .mutateAsync({ connectionId: held, provider: targetProvider })
+          .then((res) => ({ ...res, connectionId: held })),
         targetProvider,
         targetName,
         targetIsCredentialForm,
@@ -394,12 +403,16 @@ export function ConnectionControl({
         </p>
       )}
 
-      {/* Server-derived, read-only: why the dependent tool is being held off. */}
+      {/* Server-derived, read-only: why the dependent tool is being held off.
+          The server writes `{connection_type}_disconnected` (service.py) — the
+          old prefix match never fired, so the raw enum reached the owner
+          ("Held off by your CRM: crm_disconnected", live-caught 2026-08-23).
+          Unknown future reasons are de-snaked, never shown as wire enums. */}
       {disabledReason && !isLive && (
         <p className="text-vm-0 text-vm-text-muted" role="note">
-          {disabledReason.startsWith('connection_disconnected')
+          {disabledReason.endsWith('_disconnected')
             ? `Luciel cannot use this until you connect ${label} again.`
-            : `Held off by ${label}: ${disabledReason}.`}
+            : `Held off by ${label}: ${disabledReason.replace(/_/g, ' ')}.`}
         </p>
       )}
 
@@ -450,6 +463,14 @@ export function ConnectionControl({
           information, never as disabled controls. */}
       {(!isLive || switching) && !nothingAvailable && !pinned && connectable.length > 1 && (
         <div className="rounded-vm-card border border-vm-border p-vm-3">
+          {/* Proven-before-cutover reassurance (Arch §3.8.7 B): the switch is
+              staged, so abandoning the new provider's sign-in costs nothing. */}
+          {switching && (
+            <p className="mb-vm-2 text-vm-0 text-vm-text-muted">
+              Your current connection stays live until the new one is verified — backing out of
+              the sign-in changes nothing.
+            </p>
+          )}
           <div className="grid gap-vm-2">
             {connectable.map((option) => (
               <div key={option.provider} className="flex flex-wrap items-center gap-vm-2">
