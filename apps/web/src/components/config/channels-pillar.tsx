@@ -103,6 +103,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     updateTools,
     startConnection,
     reverifySmsNumber,
+    attestSmsRegistration,
   } = useLucielMutations();
   const connections = useConnections();
   const { connect, reconnect, submitCredentials } = useConnectionLifecycle();
@@ -503,6 +504,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     onConnectOauth={() => void connectTwilioOauth()}
                     onUseKeyForm={() => setUseKeyForm(true)}
                     reverify={reverifySmsNumber}
+                    attest={attestSmsRegistration}
                   />
                 </div>
               )}
@@ -718,6 +720,12 @@ interface PhoneNumberPanelProps {
   onConnectOauth: () => void;
   onUseKeyForm: () => void;
   reverify: ReturnType<typeof useLucielMutations>['reverifySmsNumber'];
+  /**
+   * The owner's carrier-registration attestation (round 5B item 10) — the
+   * other exit from pending: texting turns on on their word, behind an
+   * explicit async-confirm modal.
+   */
+  attest: ReturnType<typeof useLucielMutations>['attestSmsRegistration'];
   /** The connection row's served detail — carries the manual webhook URLs when auto-config failed. */
   connectionDetail?: string | null;
 }
@@ -762,7 +770,12 @@ function PhoneNumberPanel({
   onConnectOauth,
   onUseKeyForm,
   reverify,
+  attest,
 }: PhoneNumberPanelProps) {
+  // The attestation is a deliberate legal statement, so it sits behind the
+  // Modal's async-confirm contract: pending label while the write settles, and
+  // a failed write keeps the dialog open with the served reason.
+  const [attestOpen, setAttestOpen] = React.useState(false);
   return (
     <div className="rounded-vm-card border border-vm-border p-vm-4">
       <span className="text-vm-2 font-label">Your business phone number (SMS &amp; Voice)</span>
@@ -791,6 +804,16 @@ function PhoneNumberPanel({
             >
               {reverify.isPending ? 'Re-verifying…' : 'Re-verify'}
             </Button>
+            {/* Round 5B item 10: the owner's attestation is the other exit —
+                the platform cannot read campaign approval, so texting turns on
+                on their word, stated plainly in the modal below. */}
+            <Button
+              variant="secondary"
+              onClick={() => setAttestOpen(true)}
+              disabled={attest.isPending}
+            >
+              My carrier registration is approved
+            </Button>
             <a
               href={A2P_GUIDE_URL}
               target="_blank"
@@ -810,6 +833,41 @@ function PhoneNumberPanel({
               again in a moment.
             </p>
           )}
+          {/* The attestation gate (round 5B item 10). Async-confirm contract:
+              confirm passes the mutation promise to the Modal, which owns the
+              pending label and keeps the dialog open with the reason on
+              failure — a refused attestation can never look accepted. */}
+          <Modal
+            open={attestOpen}
+            onOpenChange={setAttestOpen}
+            title="Turn on texting — your attestation"
+            description="Texting turns on on your word. Please read this before confirming."
+            confirmLabel="I attest — turn on texting"
+            confirmPendingLabel="Turning on texting…"
+            onConfirm={async () => {
+              await attest.mutateAsync();
+              setAttestOpen(false);
+            }}
+          >
+            <div className="space-y-vm-3 text-vm-1">
+              <p>
+                <strong>This is your attestation, as the owner.</strong> You confirm that your A2P
+                10DLC Brand and Campaign registration is approved in your own carrier account.
+                VantageMind cannot verify campaign approval on your behalf — texting turns on on
+                your word, and the attestation is recorded under your account.
+              </p>
+              <p>
+                If your recipients aren&apos;t reached through US carriers — for example, you
+                message Canadian numbers only — US A2P 10DLC may not apply to you, and you may
+                attest on that basis instead. The carrier rules of the places you do send still
+                apply.
+              </p>
+              <p>
+                Re-verify keeps checking that the number itself remains operable on your Twilio
+                account; it never checks the registration.
+              </p>
+            </div>
+          </Modal>
         </div>
       ) : needsTwilio || credentialRefresh || rotating ? (
         /* The ONE Twilio credential form, three doors in (Arch §3.1.4 +

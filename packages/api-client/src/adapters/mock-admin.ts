@@ -387,6 +387,37 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
         state.luciel.escalation = clone(contact);
+        // Round 5B item 13, mirroring the backend's save hook: a newly saved
+        // email contact enters the confirmation loop; an already-verified one
+        // keeps its state. Health is server-owned and never rides in the PUT.
+        const emails = [contact.primaryEmail, contact.secondaryEmail].filter(
+          (a): a is string => Boolean(a),
+        );
+        const previous = state.luciel.escalationContactHealth;
+        state.luciel.escalationContactHealth = emails.map(
+          (address) =>
+            previous.find((h) => h.address === address && h.state === 'verified') ?? {
+              address,
+              state: 'pending_confirmation' as const,
+              verifiedAt: null,
+              lastBouncedAt: null,
+            },
+        );
+        return ok(state.luciel);
+      },
+      async resendContactConfirmation(address) {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        const entry = state.luciel.escalationContactHealth.find((h) => h.address === address);
+        if (!entry) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'That address is not currently configured as an escalation contact.',
+          });
+        }
+        // Re-minting restarts the loop — a bouncing address goes back to pending
+        // until the recipient clicks the fresh link (re-verifying un-suppresses).
+        if (entry.state !== 'verified') entry.state = 'pending_confirmation';
         return ok(state.luciel);
       },
       async updatePersonality(config) {
@@ -694,6 +725,77 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           }
         }
         return ok({ status: 'connected' as const, statusDetail: null });
+      },
+      async attestSmsRegistration() {
+        guardVerified();
+        // Round 5B item 10: the OWNER attests their A2P 10DLC registration is
+        // approved (or does not apply to their recipients) — texting enables on
+        // their word, never on a fabricated verification. Mirrors the backend:
+        // 404 with no sms row, 422 (validation_error) when the row isn't ready.
+        const sender = state.connections.find(
+          (x) => x.connectionType === 'sms_sender' && x.status !== 'revoked',
+        );
+        if (!sender) {
+          throw new LucielApiError({
+            code: 'not_found',
+            message: 'No SMS number connection to attest for.',
+          });
+        }
+        const cfg = (sender.nonSecretConfig ?? {}) as Record<string, unknown>;
+        if (!cfg.destination) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Add and verify your number first — attestation applies to a working number.',
+          });
+        }
+        if (sender.status !== 'pending_carrier_registration' && sender.status !== 'connected') {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message:
+              'This connection needs repair first (re-verify the number or fix its ' +
+              'credentials), then attest.',
+          });
+        }
+        sender.status = 'connected';
+        sender.statusDetail =
+          'Texting is enabled on your attestation that your A2P 10DLC carrier registration ' +
+          'is approved (or does not apply to your recipients). VantageMind cannot verify ' +
+          'campaign approval on your behalf. Re-verify still checks that the number remains ' +
+          'operable on your account.';
+        sender.nonSecretConfig = {
+          ...cfg,
+          carrier_registration_attested_at: new Date().toISOString(),
+        };
+        if (state.luciel) {
+          for (const ch of state.luciel.channels) {
+            if (ch.connectionStatus === 'pending_carrier_registration') {
+              ch.connectionStatus = 'connected';
+            }
+          }
+        }
+        return ok({ status: 'connected' as const, statusDetail: sender.statusDetail });
+      },
+      async reverifyEmail() {
+        guardVerified();
+        // Mirrors the backend (§3.1.6a): re-run the MX probe against the
+        // CURRENTLY provisioned address. Only own_domain has a DNS step; the
+        // mock models the probe passing, so pending_email_routing clears.
+        // vm_subdomain / byo_mailbox rows are returned unchanged.
+        if (!state.emailProvisioning) {
+          throw new LucielApiError({
+            code: 'not_found',
+            message: 'No email address provisioned to re-verify.',
+          });
+        }
+        if (
+          state.emailProvisioning.mode === 'own_domain' &&
+          state.emailProvisioning.status === 'pending_email_routing'
+        ) {
+          state.emailProvisioning.status = 'connected';
+          const row = state.connections.find((x) => x.connectionType === 'email_sender');
+          if (row && row.status === 'pending_email_routing') row.status = 'connected';
+        }
+        return ok({ status: state.emailProvisioning.status, statusDetail: null });
       },
       async listTwilioNumbers(connectionId) {
         guardVerified();
@@ -1253,6 +1355,31 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           });
         }
         return ok({ ok: true });
+      },
+    },
+    escalationContact: {
+      /**
+       * Public and token-authorized (round 5B item 13) — no session guard, the
+       * recipient is usually not the account owner. `expired` models the one
+       * refusal the page must render distinctly from success.
+       */
+      async confirm(req) {
+        await delay();
+        if (!req.token || req.token === 'expired') {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'This confirmation link has expired — ask for a new one.',
+          });
+        }
+        if (state.luciel) {
+          for (const h of state.luciel.escalationContactHealth) {
+            if (h.state === 'pending_confirmation') {
+              h.state = 'verified';
+              h.verifiedAt = '2026-08-25T12:00:00Z';
+            }
+          }
+        }
+        return { status: 'confirmed' };
       },
     },
   };

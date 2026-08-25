@@ -309,6 +309,21 @@ export const personalityConfig = z.object({
 });
 export type PersonalityConfig = z.infer<typeof personalityConfig>;
 
+/**
+ * Per-address deliverability truth for the configured escalation email
+ * contacts (round 5B item 13). Served as a SIBLING of the editable escalation
+ * blob — the pillar PUT is a strict full-replace, so server-owned state never
+ * rides inside the object the frontend echoes back.
+ */
+export const escalationContactHealth = z.object({
+  address: z.string(),
+  /** `bouncing` means mail to this address is failing and escalations skip it. */
+  state: z.enum(['unverified', 'pending_confirmation', 'verified', 'bouncing']),
+  verifiedAt: isoTimestamp.nullable(),
+  lastBouncedAt: isoTimestamp.nullable(),
+});
+export type EscalationContactHealth = z.infer<typeof escalationContactHealth>;
+
 // --- The Luciel instance ------------------------------------------------------
 export const luciel = z.object({
   instanceId: uuid,
@@ -320,6 +335,8 @@ export const luciel = z.object({
   channels: z.array(channelConfig),
   tools: z.array(addonTool),
   escalation: escalationContact,
+  /** Round 5B item 13: server-owned confirmation/bounce state per email contact. */
+  escalationContactHealth: z.array(escalationContactHealth).default([]),
   personality: personalityConfig,
   /** Grace window stamp when state = luciel_grace_window (Arch §3.6.4). */
   graceWindowStartedAt: isoTimestamp.optional(),

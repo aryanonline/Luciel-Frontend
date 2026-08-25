@@ -246,6 +246,13 @@ export default function LeadsPage() {
                   <div className="text-vm-0 text-vm-text-muted">
                     {l.contactIdentifier ?? '—'} · {l.intent ?? 'No stated intent'}
                   </div>
+                  {/* LeadOut.email (round 5): a second identifier when the
+                      captured email is a different handle than the transport
+                      identifier — repeating the same string tells the owner
+                      nothing. */}
+                  {l.email && l.email !== l.contactIdentifier && (
+                    <div className="truncate text-vm-0 text-vm-text-muted">also: {l.email}</div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-vm-2">
@@ -356,8 +363,8 @@ export default function LeadsPage() {
         title={pruneCount > 1 ? `Prune ${pruneCount} leads?` : 'Prune this lead?'}
         description={
           pruneCount > 1
-            ? `This permanently deletes ${pruneCount} leads and forgets those people — it can't be undone. If any of them contact you again, they'll be treated as brand new. To keep leads out of your active view without deleting, use Archive instead.`
-            : "This permanently deletes the lead and forgets the person — it can't be undone. If they contact you again, they'll be treated as brand new. To keep them out of your active view without deleting, use Archive instead."
+            ? `This permanently deletes ${pruneCount} leads and forgets those people — it can't be undone. If any of them contact you again, they'll be treated as brand new. To keep leads out of your active view without deleting, use Archive instead. Leads already pushed to your CRM stay in your CRM — deleting those records there is up to you.`
+            : "This permanently deletes the lead and forgets the person — it can't be undone. If they contact you again, they'll be treated as brand new. To keep them out of your active view without deleting, use Archive instead. If this lead was pushed to your CRM, the record inside your CRM is yours to delete there — erasing here removes everything we hold, including our link to that record."
         }
         confirmLabel={pruneCount > 1 ? `Prune ${pruneCount} permanently` : 'Prune permanently'}
         confirmVariant="danger"

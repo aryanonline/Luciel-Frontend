@@ -107,6 +107,22 @@ export function useProvisionEmail() {
 }
 
 /**
+ * Re-run the own-domain MX routing probe (Arch §3.1.6a). Stateless and
+ * repeatable; with no background poller this is the only exit from
+ * `pending_email_routing`, so the pending card offers it explicitly.
+ */
+export function useReverifyEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.connections.reverifyEmail(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.emailProvisioning });
+      qc.invalidateQueries({ queryKey: qk.connections });
+    },
+  });
+}
+
+/**
  * The ONE connection lifecycle (Decision #5) every tool and channel shares:
  * connect → disconnect → switch account/provider → reconnect. Each mutation
  * invalidates the Luciel too, because a disconnect switches dependent tools and
@@ -240,6 +256,10 @@ export function useLucielMutations() {
       mutationFn: (e: EscalationContact) => api.luciel.updateEscalation(e),
       onSuccess: invalidate,
     }),
+    resendContactConfirmation: useMutation({
+      mutationFn: (address: string) => api.luciel.resendContactConfirmation(address),
+      onSuccess: invalidate,
+    }),
     updatePersonality: useMutation({
       mutationFn: (p: PersonalityConfig) => api.luciel.updatePersonality(p),
       onSuccess: invalidate,
@@ -276,6 +296,17 @@ export function useLucielMutations() {
     // pending_carrier_registration once the tenant has registered it themselves.
     reverifySmsNumber: useMutation({
       mutationFn: () => api.connections.reverifySms(),
+      onSuccess: () => {
+        invalidate();
+        qc.invalidateQueries({ queryKey: qk.connections });
+      },
+    }),
+    // The OWNER's attestation that their A2P 10DLC carrier registration is
+    // approved (or does not apply to their recipients) — the other exit from
+    // pending_carrier_registration. The platform cannot verify campaign
+    // approval on their behalf; texting turns on on their word (audited).
+    attestSmsRegistration: useMutation({
+      mutationFn: () => api.connections.attestSmsRegistration(),
       onSuccess: () => {
         invalidate();
         qc.invalidateQueries({ queryKey: qk.connections });

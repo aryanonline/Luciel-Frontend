@@ -40,8 +40,16 @@ type RoutingRule = NonNullable<EscalationContact['routing']>[number];
 /** A cleared field must go back as absent, not as an empty string. */
 const orUndefined = (value: string) => (value.trim() === '' ? undefined : value.trim());
 
+/** Human copy for the server-owned per-address confirmation state (5B #13). */
+const HEALTH_COPY: Record<string, string> = {
+  verified: 'Confirmed',
+  pending_confirmation: 'Confirmation sent — waiting for the click',
+  unverified: 'Not confirmed yet',
+  bouncing: 'Bouncing — mail to this address is failing',
+};
+
 export function EscalationPillar({ luciel }: { luciel: Luciel }) {
-  const { updateEscalation } = useLucielMutations();
+  const { updateEscalation, resendContactConfirmation } = useLucielMutations();
   const {
     draft,
     dirty,
@@ -56,6 +64,10 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
   // high-value-lead page into nothing — the option stays visible but disabled,
   // with the reason, until the channel is on.
   const smsRoutable = luciel.channels.some((c) => c.id === 'sms' && c.enabled);
+
+  // Server-owned sibling of the escalation blob (5B #13); tolerate its absence
+  // so a payload from before the field existed still renders the pillar.
+  const contactHealth = luciel.escalationContactHealth ?? [];
 
   const ruleFor = (signal: EscalationSignal): RoutingRule | undefined =>
     draft.routing?.find((r) => r.signal === signal);
@@ -136,6 +148,44 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
       <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
         The backup contact is only used if the primary one on that channel can&apos;t be reached.
       </p>
+
+      {/* Server-owned deliverability truth per email contact (round 5B item 13).
+          A hot lead routed to a typo'd or bouncing inbox vanishes silently —
+          this is where the owner sees it and restarts the confirmation loop. */}
+      {contactHealth.length > 0 && (
+        <ul className="mt-vm-3 space-y-vm-2" aria-label="Email contact confirmation status">
+          {contactHealth.map((h) => (
+            <li
+              key={h.address}
+              className="flex flex-wrap items-center justify-between gap-vm-2 text-vm-0"
+            >
+              <span className={h.state === 'bouncing' ? 'text-vm-danger' : undefined}>
+                {h.address} — {HEALTH_COPY[h.state] ?? h.state}
+              </span>
+              {h.state !== 'verified' && (
+                <Button
+                  variant="secondary"
+                  disabled={resendContactConfirmation.isPending}
+                  onClick={() =>
+                    void run(async () => {
+                      await resendContactConfirmation.mutateAsync(h.address);
+                      return `Confirmation email sent to ${h.address}. The link stays valid for 7 days.`;
+                    }, 'We could not send the confirmation email. If one just went out, wait a few minutes and retry.')
+                  }
+                >
+                  {h.state === 'bouncing' ? 'Re-confirm address' : 'Resend confirmation'}
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {contactHealth.some((h) => h.state === 'bouncing') && (
+        <Banner tone="warning" className="mt-vm-2">
+          Escalations skip a bouncing address and fall back to your account email, so you still
+          hear about hot leads — but fix or replace the address to page the right person.
+        </Banner>
+      )}
 
       <div className="mt-vm-3 sm:max-w-xs">
         <Field

@@ -8,6 +8,7 @@ import {
   useConnectionProviders,
   useConnections,
   useEmailProvisioning,
+  useReverifyEmail,
   useSwapConnection,
   type StartedConnectFlow,
 } from '@/lib/hooks';
@@ -45,6 +46,9 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
   const providers = useConnectionProviders('email_sender');
   const swap = useSwapConnection();
   const { connect, reconnect } = useConnectionLifecycle();
+  // Legacy own-domain routing (§3.1.6a): nothing polls DNS in the background,
+  // so the pending card offers the on-demand MX re-probe explicitly.
+  const reverifyEmail = useReverifyEmail();
   const [mailboxNotice, setMailboxNotice] = React.useState<ActionNotice | null>(null);
 
   const senderRow = connections.data?.find((c) => c.connectionType === 'email_sender');
@@ -304,6 +308,34 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
                       </li>
                     ))}
                   </ul>
+                  {/* Nothing polls DNS in the background (mirrors the SMS
+                      Re-verify): once the records are published, this is the
+                      only exit from pending_email_routing. Pending, success and
+                      failure are each visible — a probe that did not pass can
+                      never read as one that did. */}
+                  <div className="mt-vm-3">
+                    <Button
+                      variant="secondary"
+                      onClick={() => reverifyEmail.mutate()}
+                      disabled={reverifyEmail.isPending}
+                    >
+                      {reverifyEmail.isPending ? 'Re-verifying…' : 'Re-verify email routing'}
+                    </Button>
+                  </div>
+                  {reverifyEmail.isSuccess &&
+                    reverifyEmail.data?.status === 'pending_email_routing' && (
+                      <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
+                        Still pending — your domain doesn&apos;t route here yet. DNS changes can
+                        take a while to publish; nothing was changed, try again once your records
+                        are live.
+                      </p>
+                    )}
+                  {reverifyEmail.isError && (
+                    <p className="mt-vm-2 text-vm-1 text-vm-danger">
+                      We couldn&apos;t check your email routing just now. Your address is unchanged
+                      — please try again in a moment.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="mt-vm-2 text-vm-1 text-vm-text-muted">

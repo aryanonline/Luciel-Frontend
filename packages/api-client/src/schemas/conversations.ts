@@ -29,6 +29,12 @@ export const lead = z.object({
   /** Captured contact info (where available). */
   name: z.string().optional(),
   contactIdentifier: z.string().optional(),
+  /**
+   * `LeadOut.email` (round 5): the lead's captured email, served alongside
+   * whatever transport identifier the session carried. Nullable/optional so a
+   * backend that has no email for the lead (or predates the field) parses fine.
+   */
+  email: z.string().nullable().optional(),
   intent: z.string().optional(),
   state: leadState,
   outcome: leadOutcome.default('in_progress'),
