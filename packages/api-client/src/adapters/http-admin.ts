@@ -42,6 +42,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       updateTools: (tools) => t.put('/api/v1/admin/luciel/tools', { tools }),
       capabilities: () => t.get('/api/v1/admin/luciel/capabilities'),
       updateEscalation: (contact) => t.put('/api/v1/admin/luciel/escalation', contact),
+      resendContactConfirmation: (address) =>
+        t.post('/api/v1/admin/luciel/escalation/resend-confirmation', { address }),
       updatePersonality: (config) => t.put('/api/v1/admin/luciel/personality', config),
       updateLeadRetention: (days) =>
         t.put('/api/v1/admin/luciel/lead-retention', { leadRetentionDays: days }),
@@ -101,6 +103,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         }),
       reconnect: (connectionId) => t.post(`/api/v1/admin/connections/${connectionId}/reconnect`),
       reverifySms: () => t.post('/api/v1/admin/connections/sms/reverify'),
+      attestSmsRegistration: () => t.post('/api/v1/admin/connections/sms/attest-registration'),
+      reverifyEmail: () => t.post('/api/v1/admin/connections/email/reverify'),
       listTwilioNumbers: (connectionId) =>
         t.get(`/api/v1/admin/connections/${connectionId}/twilio/numbers`),
       uploadRecordSourceCsv: (file) =>
@@ -169,6 +173,10 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     },
     contact: {
       submit: (req) => t.post('/api/v1/contact', req),
+    },
+    escalationContact: {
+      // Public route — token-authorized, no session (round 5B item 13).
+      confirm: (req) => t.post('/api/v1/escalation-contact/confirm', req),
     },
   };
 }

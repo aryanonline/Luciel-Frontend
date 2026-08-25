@@ -37,6 +37,14 @@ describe('leads page: business outcome per lead', () => {
     expect(screen.queryByText(/We could not save that outcome/)).not.toBeInTheDocument();
   });
 
+  it('shows the served email as a second identifier line when it differs (round 5)', async () => {
+    renderWithQuery(<LeadsPage />);
+    // The seeded lead's transport identifier is a phone number; the captured
+    // email is different information, so it renders as "also: …".
+    await screen.findByText(/416-555-0143/);
+    expect(screen.getByText('also: jordan.p@example.com')).toBeInTheDocument();
+  });
+
   it('shows an error and keeps the lead unchanged when the write fails', async () => {
     renderWithQuery(<LeadsPage />);
     await screen.findByLabelText('Outcome for Jordan P.');

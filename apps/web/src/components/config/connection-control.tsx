@@ -91,9 +91,32 @@ function chipDetail(status: ConnectionStatus | undefined, label: string): string
       return `connect ${label}`;
     case 'error':
       return `${label} is having trouble`;
+    // Downgrade grace (billing): the backend refuses a connect on a dormant row
+    // until a payment method is added, so the honest ask is the card — never a
+    // Connect button that would be refused.
+    case 'dormant':
+      return 'paused until a payment method is added';
     default:
       return undefined;
   }
+}
+
+/**
+ * The served `statusDetail` for a NOT-live row (round 5, contract item 3):
+ * the backend's own words about why, rendered as a muted note. Two exceptions
+ * never render: the internal `reconnect_pending:` staged-swap marker, and the
+ * raw `*_disconnected` enums the disabledReason block already translates.
+ * A sentence (contains a space) renders verbatim; a lone snake_case token is
+ * de-snaked so a wire enum never reaches the owner as-is.
+ */
+function statusDetailNote(detail: string | null | undefined): string | null {
+  const trimmed = detail?.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('reconnect_pending:')) return null;
+  if (/^[a-z0-9]+(?:_[a-z0-9]+)*_disconnected$/.test(trimmed)) return null;
+  if (trimmed.includes(' ')) return trimmed;
+  const words = trimmed.replace(/[_-]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** Human names for whatever a disconnect took down with it (contract §1). */
@@ -117,23 +140,27 @@ function crmMappingCopy(provider: string | undefined): string | null {
       'What Luciel writes: one HubSpot contact per lead, keyed by the lead’s email. ' +
       'It records the facts captured in conversation (name, phone, what they asked for) ' +
       'and updates that same contact as new facts surface — never a duplicate, and it ' +
-      'never reads your CRM.'
+      'never reads your CRM. Erasing or pruning a lead here does not delete the record ' +
+      'inside your CRM.'
     );
   }
   if (provider === 'salesforce') {
     return (
       'What Luciel writes: one Salesforce Lead per person, keyed by the lead’s email. ' +
       'A captured name and business fill Last Name and Company — Salesforce requires ' +
-      'both, so until a lead shares them Luciel writes “Unknown” rather than inventing ' +
-      'details. Phone and other facts ride along, and the same Lead is updated as new ' +
-      'facts surface — never a duplicate, and it never reads your CRM.'
+      'both at record creation, so a brand-new record without them says “Unknown” — ' +
+      'later updates only touch facts that changed and never overwrite what you’ve ' +
+      'edited in Salesforce. Phone and other facts ride along, and the same Lead is ' +
+      'updated as new facts surface — never a duplicate, and it never reads your CRM. ' +
+      'Erasing or pruning a lead here does not delete the record inside your CRM.'
     );
   }
   if (provider === 'custom_webhook') {
     return (
       'What Luciel sends: each captured lead’s stable key (their email) plus the facts ' +
       'from the conversation, delivered to your endpoint. The key is how your system ' +
-      'recognizes the same lead again — deduping is your endpoint’s half of the contract.'
+      'recognizes the same lead again — deduping is your endpoint’s half of the contract. ' +
+      'Erasing or pruning a lead here does not delete the record inside your CRM.'
     );
   }
   return null;
@@ -218,6 +245,11 @@ export function ConnectionControl({
   // Contract §2 UI rule: connected without a destination is NOT live.
   const needsDestination = Boolean(destinationField) && status === 'connected' && !destination;
   const isLive = status === 'connected' && !needsDestination;
+  // Downgrade grace: the backend refuses connects on a dormant row (validation
+  // error naming the free allowance), so no connect/switch surface renders —
+  // the chip's billing note is the honest action instead of a dead button.
+  const isDormant = status === 'dormant';
+  const offerConnect = (!isLive || switching) && !isDormant;
   const busy =
     connect.isPending ||
     swap.isPending ||
@@ -394,6 +426,16 @@ export function ConnectionControl({
         )}
       </div>
 
+      {/* The server's own words about a not-live row (round 5, item 3):
+          `statusDetail` renders as a muted note under the chip, minus the
+          internal reconnect_pending marker and the `*_disconnected` enums the
+          disabledReason note below already translates. */}
+      {!isLive && statusDetailNote(connection?.statusDetail) && (
+        <p className="text-vm-0 text-vm-text-muted" role="note">
+          {statusDetailNote(connection?.statusDetail)}
+        </p>
+      )}
+
       {/* CRM field-mapping disclosure (Phase 6.5, Customer Journey "confirms
           the field mapping"): once connected, say exactly WHAT Luciel writes
           and how it dedupes — read-only, because the mapping is fixed. */}
@@ -427,7 +469,7 @@ export function ConnectionControl({
       {/* Honest-disabled: nothing here can be connected yet, so there is no
           connect button to press. The choices stay visible so the owner can see
           what this will offer (contract §1). */}
-      {(!isLive || switching) && nothingAvailable && (
+      {offerConnect && nothingAvailable && (
         <div className="rounded-vm-card border border-vm-border p-vm-3">
           <p className="text-vm-1">
             Not available yet
@@ -461,7 +503,7 @@ export function ConnectionControl({
           sign-in on the click; a credential_form provider's click reveals its
           details form below. Not-yet-available options are listed quietly as
           information, never as disabled controls. */}
-      {(!isLive || switching) && !nothingAvailable && !pinned && connectable.length > 1 && (
+      {offerConnect && !nothingAvailable && !pinned && connectable.length > 1 && (
         <div className="rounded-vm-card border border-vm-border p-vm-3">
           {/* Proven-before-cutover reassurance (Arch §3.8.7 B): the switch is
               staged, so abandoning the new provider's sign-in costs nothing. */}
@@ -523,7 +565,7 @@ export function ConnectionControl({
           a sign-in, and those details are saved to this connection (§1a). With
           multiple connectable providers the form appears only after its named
           button was pressed (chosen), never as a default-open form. */}
-      {(!isLive || switching) &&
+      {offerConnect &&
         !nothingAvailable &&
         isCredentialForm &&
         !providedElsewhere &&
@@ -541,7 +583,7 @@ export function ConnectionControl({
       {/* The single action row. With multiple connectable providers the named
           buttons above ARE the action, so this renders only to submit a chosen
           credential form. */}
-      {(!isLive || switching) &&
+      {offerConnect &&
         !nothingAvailable &&
         (!multiConnect || (chosen !== null && isCredentialForm && !providedElsewhere)) && (
           <div className="flex flex-wrap items-center gap-vm-2">
@@ -583,7 +625,7 @@ export function ConnectionControl({
       {/* With a single connectable provider the radios are gone, but the owner
           should still see what else is on the way — as information, not as a
           disabled control pretending to be a choice. */}
-      {(!isLive || switching) &&
+      {offerConnect &&
         !nothingAvailable &&
         !pinned &&
         connectable.length === 1 &&

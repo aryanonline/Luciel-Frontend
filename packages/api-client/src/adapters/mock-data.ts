@@ -73,6 +73,15 @@ export const seedLuciel: Luciel = {
     primaryEmail: 'sarah@sarahchen.com',
     preferredChannel: 'email',
   },
+  // Steady state: the seeded contact confirmed its link long ago (round 5B #13).
+  escalationContactHealth: [
+    {
+      address: 'sarah@sarahchen.com',
+      state: 'verified',
+      verifiedAt: '2026-07-01T09:00:00Z',
+      lastBouncedAt: null,
+    },
+  ],
   personality: {
     preset: 'warm_concierge',
     businessContext: 'I specialize in first-time clients and small-business owners in Markham.',
@@ -460,6 +469,9 @@ export const seedLeads: Lead[] = [
     leadId: '99999999-9999-4999-8999-999999999999',
     name: 'Jordan P.',
     contactIdentifier: '416-555-0143',
+    // LeadOut.email (round 5): captured alongside the transport identifier, so
+    // the leads page exercises the second identifier line.
+    email: 'jordan.p@example.com',
     intent: 'Intro call request — small business launch',
     state: 'active',
     outcome: 'in_progress',

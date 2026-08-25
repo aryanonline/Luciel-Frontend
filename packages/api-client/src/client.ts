@@ -92,6 +92,12 @@ export interface LucielApiClient {
      */
     capabilities(): Promise<CapabilityGroup[]>;
     updateEscalation(contact: EscalationContact): Promise<Luciel>;
+    /**
+     * Re-send the confirmation email for one configured escalation contact
+     * (round 5B item 13). Inside the 5-minute per-address cooldown the server
+     * answers `validation_error` with a try-again-shortly message.
+     */
+    resendContactConfirmation(address: string): Promise<Luciel>;
     updatePersonality(config: PersonalityConfig): Promise<Luciel>;
     /**
      * Set (`days` ≥ 1) or clear (`null`) the lead auto-prune rule — the Admin's
@@ -174,6 +180,29 @@ export interface LucielApiClient {
      * and repeatable.
      */
     reverifySms(): Promise<ReverifySmsResult>;
+    /**
+     * The OWNER attests their A2P 10DLC carrier registration is approved (round
+     * 5B item 10) — the honest exit from `pending_carrier_registration`, since
+     * the platform cannot verify campaign approval on their behalf. Texting
+     * turns on on their word (audited server-side); senders whose recipients
+     * aren't US-carrier-bound (e.g. Canada-only) may attest that 10DLC does not
+     * apply. Idempotent. Throws `not_found` with no sms row and
+     * `validation_error` (422) when the row isn't ready (no confirmed number,
+     * or a credential/operability problem to repair first). The backend answers
+     * the full connection row; the tolerant reverify result shape reads the
+     * `status`/`statusDetail` the UI needs.
+     */
+    attestSmsRegistration(): Promise<ReverifySmsResult>;
+    /**
+     * Re-run the own-domain MX routing probe for the provisioned email address
+     * (Arch §3.1.6a). Mirrors `reverifySms`: stateless and repeatable, with no
+     * background poller — the tenant triggers this after publishing the DNS
+     * records, and only a confirmed live result moves the address out of
+     * `pending_email_routing`. Throws `not_found` when nothing is provisioned.
+     * Same tolerant result shape as `reverifySms` (the backend serves the full
+     * connection row).
+     */
+    reverifyEmail(): Promise<ReverifySmsResult>;
     /**
      * List the numbers in the tenant's OWN Twilio account for the designate
      * picker (C9). `numbers: null` means listing wasn't possible (no usable
@@ -337,5 +366,15 @@ export interface LucielApiClient {
      * captcha) and `rate_limited` are both expected outcomes to surface.
      */
     submit(req: ContactRequest): Promise<ContactResult>;
+  };
+
+  escalationContact: {
+    /**
+     * PUBLIC escalation-contact confirmation (round 5B item 13). The contact
+     * may not be the account owner and has no session — the emailed single-use
+     * token IS the authorization. An expired, replayed, or superseded link
+     * answers `validation_error`; the page offers "ask the owner to re-send".
+     */
+    confirm(req: { token: string }): Promise<{ status: string }>;
   };
 }
