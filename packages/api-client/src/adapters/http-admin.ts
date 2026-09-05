@@ -58,6 +58,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       getChunks: (sourceId) => t.get(`/api/v1/admin/knowledge/sources/${sourceId}/chunks`),
       quota: () => t.get('/api/v1/admin/knowledge/quota'),
       deleteSource: (sourceId) => t.del(`/api/v1/admin/knowledge/sources/${sourceId}`),
+      restoreSource: (sourceId) =>
+        t.post(`/api/v1/admin/knowledge/sources/${sourceId}/restore`),
       resyncSource: (sourceId) => t.post(`/api/v1/admin/knowledge/sources/${sourceId}/resync`),
       uploadFile: (file, name) =>
         t.postForm('/api/v1/admin/knowledge/sources/upload', formData(file, name)),

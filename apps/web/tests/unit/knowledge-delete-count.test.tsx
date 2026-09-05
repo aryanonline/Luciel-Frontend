@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { screen, fireEvent, within } from '@testing-library/react';
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { KnowledgePillar } from '@/components/config/knowledge-pillar';
 
@@ -38,5 +38,26 @@ describe('knowledge source delete confirmation states the real 7-day usage', () 
       await screen.findByText(/No customer questions in the last 7 days used this source\./),
     ).toBeInTheDocument();
     expect(screen.queryByText(/\d+ customer questions? in the last 7 days/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 2026-09-05 audit F109: a delete is a tombstone for 30 days, so the notice that
+ * confirms it carries an Undo, and undoing brings the source back into the list.
+ */
+describe('knowledge source delete is undoable for 30 days', () => {
+  it('offers Undo after a delete and restores the source when clicked', async () => {
+    renderWithQuery(<KnowledgePillar />);
+    await screen.findByText('Services brochure.pdf');
+    deleteRow(/Services brochure\.pdf/);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete source' }));
+    await screen.findByText(/You can undo this for 30 days/);
+    await waitFor(() =>
+      expect(screen.queryByText('Services brochure.pdf')).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await screen.findByText(/Restored “Services brochure\.pdf”/);
+    expect(await screen.findByText('Services brochure.pdf')).toBeInTheDocument();
   });
 });

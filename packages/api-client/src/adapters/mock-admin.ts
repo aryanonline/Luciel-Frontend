@@ -149,6 +149,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     account: clone(seed.seedAccount),
     luciel: clone(seed.seedLuciel) as Luciel | null,
     billing: clone(seed.seedBilling),
+    deletedKnowledge: [] as KnowledgeSource[],
     connections: clone(seed.seedConnections),
     /**
      * Provider staged by `swap()` per connection id (Arch §3.8.7 B, Decision
@@ -495,8 +496,28 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async deleteSource(sourceId) {
         guardVerified();
+        const gone = state.knowledge.find((s) => s.sourceId === sourceId);
         state.knowledge = state.knowledge.filter((s) => s.sourceId !== sourceId);
+        // Tombstoned, not destroyed: the 30-day undo window (Arch §3.2.2).
+        if (gone) state.deletedKnowledge.push(gone);
         await delay();
+      },
+      async restoreSource(sourceId) {
+        guardVerified();
+        const idx = state.deletedKnowledge.findIndex((s) => s.sourceId === sourceId);
+        if (idx < 0) {
+          throw new LucielApiError({
+            code: 'not_found',
+            message: 'Nothing to restore: the source is not in its undo window.',
+          });
+        }
+        const back = state.deletedKnowledge[idx];
+        if (!back) {
+          throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
+        }
+        state.deletedKnowledge.splice(idx, 1);
+        state.knowledge.push(back);
+        return ok(back);
       },
       async resyncSource(sourceId) {
         guardVerified();

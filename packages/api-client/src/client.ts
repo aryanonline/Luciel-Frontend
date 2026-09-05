@@ -118,7 +118,10 @@ export interface LucielApiClient {
     listSources(): Promise<KnowledgeSource[]>;
     getChunks(sourceId: string): Promise<KnowledgeChunk[]>;
     quota(): Promise<KnowledgeQuota>;
+    /** Tombstones the source; undo-able for 30 days via restoreSource (Arch §3.2.2). */
     deleteSource(sourceId: string): Promise<void>;
+    /** Undo a delete inside its 30-day window. 404 once the window has closed. */
+    restoreSource(sourceId: string): Promise<KnowledgeSource>;
     resyncSource(sourceId: string): Promise<KnowledgeSource>;
     /** Multipart upload — PDF/DOCX/TXT/CSV, parsed server-side (Arch §3.2.2). */
     uploadFile(file: File, name: string): Promise<KnowledgeSource>;
