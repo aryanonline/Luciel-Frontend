@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mountWidget } from './mount';
+import { mountWidget, WIDGET_TEXT_MAX_CHARS } from './mount';
 import { createWidgetClient, LucielApiError, type WidgetApiClient } from '@luciel/api-client/widget';
 
 /** Stub client so a reply with markdown in it can be asserted on. */
@@ -452,6 +452,13 @@ describe('widget mount', () => {
     const text = await sendAndReadTranscript(new Error('network down'));
     expect(text).toContain('Sorry — something went wrong. Please try again.');
     expect(text).not.toContain('One moment');
+  });
+
+  it("caps the composer at the server's 4000-character message limit", async () => {
+    const shadow = await mountOpen(clientReplying('ok'));
+    const input = shadow.querySelector('.vm-input') as HTMLInputElement;
+    expect(WIDGET_TEXT_MAX_CHARS).toBe(4000);
+    expect(input.maxLength).toBe(4000);
   });
 
   it('ignores a second Enter while the first message is still in flight', async () => {

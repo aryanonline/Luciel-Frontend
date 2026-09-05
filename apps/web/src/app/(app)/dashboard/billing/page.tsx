@@ -17,7 +17,10 @@ import { useQueryClient } from '@tanstack/react-query';
 
 /**
  * Billing (Customer Journey §6; Arch §3.4.1b, §3.6.7; Legal §A3). Single plan:
- * free 50/month, then PAYG $39/100 rounded up per 100-block. Adding a card =
+ * free 50 per billing period, then PAYG $39/100 rounded up per 100-block. The
+ * period is the Stripe billing cycle once a card exists (the calendar month
+ * before that) — so the copy says "billing period", never "month", which read
+ * as a calendar promise the product does not make (audit F007). Adding a card =
  * Stripe Checkout, no charge at save, no re-setup. Removing a card reverts to
  * free-cap with NO data loss. Dunning degrades to free-cap, never deletes data.
  * Never implies tiers or feature-gating — there are none.
@@ -62,7 +65,7 @@ export default function BillingPage() {
     <div className="space-y-vm-5">
       <PageHeader
         title="Billing"
-        description="One plan: 50 free conversations a month, then $39 per 100. Adding a card never changes your Luciel — only whether it can work past the free 50."
+        description="One plan: 50 free conversations each billing period, then $39 per 100. Adding a card never changes your Luciel — only whether it can work past the free 50."
       />
 
       {b?.dunningState === 'retrying' && (
@@ -81,7 +84,7 @@ export default function BillingPage() {
       )}
 
       <Card>
-        <CardTitle>This month</CardTitle>
+        <CardTitle>This billing period</CardTitle>
         {/* A blank card reads as "nothing to bill"; say which of the three it is (P1-11). */}
         {loading ? (
           <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
@@ -108,10 +111,13 @@ export default function BillingPage() {
               value={b.conversationsThisPeriod}
               max={Math.max(b.freeAllowance, b.conversationsThisPeriod)}
               tone={b.atCap ? 'warning' : 'accent'}
-              label={`${luciel.data.name}: ${b.conversationsThisPeriod} conversation${b.conversationsThisPeriod === 1 ? '' : 's'} this month (${b.freeAllowance} free + ${b.billedThisPeriod} billed)`}
+              label={`${luciel.data.name}: ${b.conversationsThisPeriod} conversation${b.conversationsThisPeriod === 1 ? '' : 's'} this billing period (${b.freeAllowance} free + ${b.billedThisPeriod} billed)`}
             />
             <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
-              Resets {new Date(b.periodResetsAt).toLocaleDateString()} (your billing-cycle date).
+              Resets {new Date(b.periodResetsAt).toLocaleDateString()}
+              {b.billingState === 'payg_enabled'
+                ? ' (your billing-cycle date).'
+                : ' (the calendar month until a card sets your billing-cycle date).'}
               {b.billedThisPeriod > 0 &&
                 // Spelled out, not "PAYG" — an owner shouldn't need our acronyms
                 // to read their own bill.
@@ -154,21 +160,35 @@ export default function BillingPage() {
               {billing.data.paymentMethod.expYear}
             </CardDescription>
             <Banner tone="info" className="mt-vm-3">
-              Pay-as-you-go is on. Conversations 1–50 each month stay free; above that bills at $39
-              / 100, rounded up per 100-block, at the close of the cycle.
+              Pay-as-you-go is on. Conversations 1–50 each billing period stay free; above that
+              bills at $39 / 100, rounded up per 100-block, at the close of the cycle.
             </Banner>
             <Button variant="secondary" className="mt-vm-3" onClick={() => setConfirmRemove(true)}>
               Remove payment method
             </Button>
             <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
-              Removing your card reverts to the free 50/month cap. Your Luciel, knowledge, and
-              connections are retained — nothing is deleted.
+              Removing your card bills any pay-as-you-go usage already run this period, then
+              reverts to the free 50 per billing period. Your Luciel, knowledge, and connections
+              are retained — nothing is deleted.
             </p>
+          </>
+        ) : billing.data?.paymentsAvailable === false ? (
+          /* The server says its Stripe posture is mock: the checkout URL would go
+             nowhere, so say so instead of offering a button that pretends to work
+             (audit F026). */
+          <>
+            <CardDescription>
+              No card on file — your Luciel is capped at 50 free conversations per billing period.
+            </CardDescription>
+            <Banner tone="info" className="mt-vm-3">
+              Payments aren&apos;t live yet in this environment, so a card can&apos;t be added here
+              for now. Your Luciel keeps working within the free 50; nothing else changes.
+            </Banner>
           </>
         ) : (
           <>
             <CardDescription>
-              No card on file — your Luciel is capped at 50 free conversations/month.
+              No card on file — your Luciel is capped at 50 free conversations per billing period.
             </CardDescription>
             <Banner tone="info" className="mt-vm-3">
               Adding a payment method doesn&apos;t hire a second employee. Your Luciel keeps its
@@ -187,13 +207,13 @@ export default function BillingPage() {
         )}
       </Card>
 
-      {/* Removing the card changes what the account can do next month, so it is
-          confirmed and reported like every other consequential action (P1-12). */}
+      {/* Removing the card changes what the account can do for the rest of the period,
+          so it is confirmed and reported like every other consequential action (P1-12). */}
       <Modal
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
         title="Remove your payment method?"
-        description="Your account reverts to the free 50 conversations a month. Your Luciel, its knowledge, your leads, and your connections all stay exactly as they are — nothing is deleted. You can add a card again at any time, with no re-setup."
+        description="Any pay-as-you-go usage already run this period is billed now, then your account reverts to the free 50 conversations per billing period. Your Luciel, its knowledge, your leads, and your connections all stay exactly as they are — nothing is deleted. You can add a card again at any time, with no re-setup."
         confirmLabel="Remove card"
         confirmPendingLabel="Removing…"
         confirmVariant="danger"

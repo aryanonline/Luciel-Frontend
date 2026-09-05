@@ -30,6 +30,9 @@ import { widgetStyles } from './styles';
  * notice — gentler for a rate limit, generic for everything else.
  */
 
+/** Per-message cap, identical to the API's WidgetSendRequest.text max_length. */
+export const WIDGET_TEXT_MAX_CHARS = 4000;
+
 export interface MountOptions {
   embedKey: string;
   host: HTMLElement;
@@ -200,6 +203,10 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   input.className = 'vm-input';
   input.setAttribute('aria-label', 'Type your message');
   input.placeholder = 'Type your message…';
+  // Mirrors the server's per-message cap (WidgetSendRequest.text max 4000 chars):
+  // the browser stops the visitor at the limit instead of the API refusing a
+  // pasted essay with a 422 the widget would have to explain (2026-09-05 audit).
+  input.maxLength = WIDGET_TEXT_MAX_CHARS;
   const send = document.createElement('button');
   send.className = 'vm-send';
   send.type = 'button';
@@ -221,7 +228,7 @@ export async function mountWidget(options: MountOptions): Promise<void> {
 
   let sending = false;
   const doSend = async () => {
-    const text = input.value.trim();
+    const text = input.value.trim().slice(0, WIDGET_TEXT_MAX_CHARS);
     // The in-flight guard is what stops a second Enter duplicating the message.
     // at_cap still SENDS: the backend answers with the graceful no-LLM at-cap
     // reply and captures the message (Arch §3.4.1b — "no conversation is

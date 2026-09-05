@@ -16,7 +16,6 @@ import { chipForConnection, type Connection, type ConnectionProviders } from '@l
 import {
   useLuciel,
   useBilling,
-  useConversations,
   useLeads,
   useConnections,
   useConnectionProviders,
@@ -63,7 +62,6 @@ function isProviderConfigured(
 export default function DashboardPage() {
   const luciel = useLuciel();
   const billing = useBilling();
-  const conversations = useConversations();
   const leads = useLeads();
   const connections = useConnections();
   // Same served registry Configure reads (contract §1): a provider it is not
@@ -153,7 +151,8 @@ export default function DashboardPage() {
       {/* At-cap honesty (Customer Journey §6) — only when the server says so. */}
       {b?.atCap && (
         <Banner tone="warning">
-          You&apos;ve reached your 50 free conversations this month. Your Luciel is still capturing
+          You&apos;ve reached your 50 free conversations this billing period. Your Luciel is still
+          capturing
           leads and escalating them to you, but it&apos;s replying at-capacity to new visitors.{' '}
           <Link href="/dashboard/billing" className="underline">
             Add a payment method
@@ -163,7 +162,9 @@ export default function DashboardPage() {
         </Banner>
       )}
       {nearCap && (
-        <Banner tone="info">You&apos;re approaching your 50 free conversations this month.</Banner>
+        <Banner tone="info">
+          You&apos;re approaching your 50 free conversations this billing period.
+        </Banner>
       )}
       {nearNextBlock && (
         <Banner tone="info">
@@ -211,7 +212,7 @@ export default function DashboardPage() {
                 value={b.conversationsThisPeriod}
                 max={Math.max(b.freeAllowance, b.conversationsThisPeriod)}
                 tone={b.atCap ? 'warning' : 'accent'}
-                label={`${luciel.data.name}: ${b.conversationsThisPeriod} conversation${b.conversationsThisPeriod === 1 ? '' : 's'} this month (${b.freeAllowance} free + ${b.billedThisPeriod} billed)`}
+                label={`${luciel.data.name}: ${b.conversationsThisPeriod} conversation${b.conversationsThisPeriod === 1 ? '' : 's'} this billing period (${b.freeAllowance} free + ${b.billedThisPeriod} billed)`}
               />
               <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
                 {b.billingState === 'payg_enabled'
@@ -220,10 +221,14 @@ export default function DashboardPage() {
                     // read this line mid-word on dev ("...it never changes your
                     // L..."), so "Luciel" is deliberately the last word — nothing
                     // after it to catch on a truncating container by accident.
-                    'Free plan: 50 conversations a month. Add a card to keep it answering past 50 — adding a card never changes your Luciel.'}
+                    'Free plan: 50 conversations per billing period. Add a card to keep it answering past 50 — adding a card never changes your Luciel.'}
               </p>
+              {/* ONE conversation number (audit F015): the budget bar above and this stat
+                  used to disagree — the bar counted billed sessions this period while the
+                  stat counted every conversation row the list happened to return. A
+                  conversation means the same thing here, on Billing and in Analytics. */}
               <div className="mt-vm-4 grid grid-cols-2 gap-vm-4 border-t border-vm-border pt-vm-4">
-                <Stat label="Conversations" value={conversations.data?.length ?? '—'} />
+                <Stat label="Conversations this billing period" value={b.conversationsThisPeriod} />
                 <Stat label="Leads captured" value={leads.data?.length ?? '—'} />
               </div>
             </>

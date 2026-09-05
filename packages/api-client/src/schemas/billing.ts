@@ -63,6 +63,14 @@ export const billingInfo = z.object({
   budget,
   /** Present only when billingState = payg_enabled. */
   paymentMethod: paymentMethod.optional(),
+  /**
+   * Whether a card can actually be saved through this deployment. False while
+   * the platform's Stripe posture is "mock" — the checkout URL then goes nowhere,
+   * and the dashboard must say payments are not live yet instead of rendering a
+   * button that pretends to work (2026-09-05 audit F026). Additive/optional:
+   * an older server that omits it is treated as available.
+   */
+  paymentsAvailable: z.boolean().optional(),
 });
 export type BillingInfo = z.infer<typeof billingInfo>;
 

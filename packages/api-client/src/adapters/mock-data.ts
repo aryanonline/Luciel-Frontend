@@ -91,6 +91,7 @@ export const seedLuciel: Luciel = {
 };
 
 export const seedBilling: BillingInfo = {
+  paymentsAvailable: true,
   budget: {
     billingState: 'free_cap',
     dunningState: 'none',
