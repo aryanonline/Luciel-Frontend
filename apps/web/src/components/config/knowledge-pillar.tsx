@@ -69,7 +69,12 @@ const SYNC_CONNECTORS: { provider: KnowledgeSyncProvider; label: string }[] = [
   { provider: 'notion', label: 'Notion' },
 ];
 
-type Notice = { tone: 'info' | 'danger'; text: string };
+type Notice = {
+  tone: 'info' | 'danger';
+  text: string;
+  /** Present right after a delete: the 30-day undo handle (Arch §3.2.2). */
+  undo?: { sourceId: string; name: string };
+};
 
 export function KnowledgePillar() {
   const sources = useKnowledge();
@@ -213,12 +218,27 @@ export function KnowledgePillar() {
   const onDelete = async () => {
     if (!toDelete) return;
     const name = toDelete.name;
-    await api.knowledge.deleteSource(toDelete.sourceId);
+    const sourceId = toDelete.sourceId;
+    await api.knowledge.deleteSource(sourceId);
     setToDelete(null);
-    setNotice({ tone: 'info', text: `Deleted “${name}” from your knowledge base.` });
+    // A delete is a tombstone for 30 days (Arch §3.2.2): Luciel stops using the
+    // source at once, and the owner can change their mind from this notice.
+    setNotice({
+      tone: 'info',
+      text: `Deleted “${name}” — Luciel no longer answers from it. You can undo this for 30 days.`,
+      undo: { sourceId, name },
+    });
     qc.invalidateQueries({ queryKey: qk.knowledge });
     qc.invalidateQueries({ queryKey: qk.quota });
   };
+
+  const onUndoDelete = (sourceId: string, name: string) =>
+    run(async () => {
+      await api.knowledge.restoreSource(sourceId);
+      qc.invalidateQueries({ queryKey: qk.knowledge });
+      qc.invalidateQueries({ queryKey: qk.quota });
+      return `Restored “${name}” — Luciel is answering from it again.`;
+    });
 
   return (
     <Card>
@@ -285,6 +305,18 @@ export function KnowledgePillar() {
       {notice && !busy && (
         <Banner className="mt-vm-3" tone={notice.tone}>
           {notice.text}
+          {notice.undo && (
+            <>
+              {' '}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => void onUndoDelete(notice.undo!.sourceId, notice.undo!.name)}
+              >
+                Undo
+              </button>
+            </>
+          )}
         </Banner>
       )}
 

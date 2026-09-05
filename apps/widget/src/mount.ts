@@ -33,6 +33,60 @@ import { widgetStyles } from './styles';
 /** Per-message cap, identical to the API's WidgetSendRequest.text max_length. */
 export const WIDGET_TEXT_MAX_CHARS = 4000;
 
+/**
+ * The server ends a widget session after this much silence (app/runtime/sessions.py
+ * INACTIVITY_TIMEOUT["widget"]). A stored session older than this is not resumed —
+ * the server has already closed and summarized it.
+ */
+export const WIDGET_SESSION_IDLE_MS = 30 * 60 * 1000;
+/** Poll cadence for replies a person sends from the dashboard (§3.4.12). */
+export const WIDGET_POLL_OPEN_MS = 5_000;
+export const WIDGET_POLL_HIDDEN_MS = 20_000;
+export const WIDGET_POLL_BACKOFF_MS = 60_000;
+
+const storageKey = (embedKey: string) => `luciel:session:${embedKey}`;
+
+interface StoredSession {
+  sessionId: string;
+  lastActivity: number;
+}
+
+/** sessionStorage is per-tab: a visit that spans pages stays ONE conversation. */
+const readStoredSession = (embedKey: string): StoredSession | undefined => {
+  try {
+    const raw = sessionStorage.getItem(storageKey(embedKey));
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as Partial<StoredSession>;
+    if (typeof parsed.sessionId !== 'string' || typeof parsed.lastActivity !== 'number') {
+      return undefined;
+    }
+    if (Date.now() - parsed.lastActivity > WIDGET_SESSION_IDLE_MS) {
+      sessionStorage.removeItem(storageKey(embedKey));
+      return undefined;
+    }
+    return { sessionId: parsed.sessionId, lastActivity: parsed.lastActivity };
+  } catch {
+    return undefined;
+  }
+};
+
+const writeStoredSession = (embedKey: string, sessionId: string) => {
+  try {
+    const value: StoredSession = { sessionId, lastActivity: Date.now() };
+    sessionStorage.setItem(storageKey(embedKey), JSON.stringify(value));
+  } catch {
+    // Storage blocked (private mode, quota): the session still works for this page.
+  }
+};
+
+const clearStoredSession = (embedKey: string) => {
+  try {
+    sessionStorage.removeItem(storageKey(embedKey));
+  } catch {
+    // nothing to clear
+  }
+};
+
 export interface MountOptions {
   embedKey: string;
   host: HTMLElement;
@@ -114,34 +168,24 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   root.setAttribute('aria-label', `${boot.businessName} chat assistant`);
   root.setAttribute('data-open', 'false');
 
-  // Session state for the chat loop.
-  let sessionId: string | undefined;
+  // Session state for the chat loop. The session id is restored from this tab's
+  // sessionStorage so a visit that spans several pages is ONE conversation — one
+  // billed session, one transcript (Arch §3.4.8; 2026-09-05 audit F049: the widget
+  // used to end the session on every tab-hide and navigation, and each new page
+  // started a fresh billed conversation with no memory of the last one).
+  //
+  // Nothing ends the session from here any more: a page leave is indistinguishable
+  // from a navigation, and the server closes the session deterministically by
+  // inactivity (30 minutes) and summarizes it then. A stored session older than
+  // that window is not resumed.
+  const stored = readStoredSession(options.embedKey);
+  let sessionId: string | undefined = stored?.sessionId;
   let renderState: WidgetBootstrap['renderState'] = boot.renderState;
-
-  // Explicit end-of-session signal (Arch §3.4.8): when the visitor leaves the
-  // page, tell the backend the session is over. sendBeacon is the only
-  // transport that reliably outlives an unloading page, so it is used instead
-  // of the client — and where the browser lacks it, silence is the honest
-  // fallback: the backend ends the session by inactivity anyway. The endpoint
-  // is idempotent, but one signal per session is still the contract; the flag
-  // keys on the session id, so a NEW session issued later on this page signals
-  // its own end.
-  let endSignaledFor: string | undefined;
-  const signalSessionEnd = () => {
-    if (!sessionId || sessionId === endSignaledFor) return;
-    if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
-    navigator.sendBeacon(
-      `${__WIDGET_API_BASE_URL__}/api/v1/chat-widget/sessions/${sessionId}/end?embedKey=${encodeURIComponent(options.embedKey)}`,
-    );
-    endSignaledFor = sessionId;
-  };
-  // pagehide is the reliable leave event (it also fires into bfcache);
-  // visibilitychange→hidden is the fallback for mobile, where a discarded tab
-  // may never get pagehide.
-  window.addEventListener('pagehide', signalSessionEnd);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') signalSessionEnd();
-  });
+  // Every transcript row the panel has rendered (or deliberately skipped), so a
+  // poll never repeats a message. Visitor rows the widget itself sent have no
+  // known id until they come back from history; they are skipped on poll and
+  // rendered only on a restore.
+  const seenIds = new Set<string>();
 
   // Header carries the persistent "AI assistant" label (Arch §3.4.16) and the
   // close affordance. The label sits before the close button so it stays
@@ -196,6 +240,65 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   const live = a11yLiveRegion(markdownToPlainText(boot.openingMessage));
   body.appendChild(live);
 
+  /**
+   * Bring the transcript up to date from the server (§3.4.12: a takeover reply
+   * reaches the visitor on the next poll). `restoring` renders the visitor's own
+   * earlier turns too — that is the page-to-page continuity; a routine poll only
+   * appends what someone else said.
+   */
+  const syncHistory = async (restoring: boolean): Promise<boolean> => {
+    if (!sessionId) return false;
+    const rows = await client.history(options.embedKey, sessionId);
+    let appended = false;
+    for (const row of rows) {
+      if (seenIds.has(row.messageId)) continue;
+      seenIds.add(row.messageId);
+      if (row.role === 'visitor' && !restoring) continue;
+      appendMessage(row.role, row.text);
+      if (row.role === 'assistant') live.textContent = markdownToPlainText(row.text);
+      appended = true;
+    }
+    return appended;
+  };
+
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let pollFailures = 0;
+  const pollDelay = () => {
+    if (pollFailures >= 3) return WIDGET_POLL_BACKOFF_MS;
+    const visible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
+    const open = root.getAttribute('data-open') === 'true';
+    return visible && open ? WIDGET_POLL_OPEN_MS : WIDGET_POLL_HIDDEN_MS;
+  };
+  const schedulePoll = () => {
+    if (pollTimer !== undefined) clearTimeout(pollTimer);
+    if (!sessionId) return;
+    pollTimer = setTimeout(async () => {
+      pollTimer = undefined;
+      if (!sending) {
+        try {
+          await syncHistory(false);
+          pollFailures = 0;
+        } catch {
+          pollFailures += 1;
+        }
+      }
+      schedulePoll();
+    }, pollDelay());
+  };
+
+  if (sessionId) {
+    // Same tab, new page: replay what was said so far, then keep listening. A
+    // history the server no longer serves (the session closed, the key rotated)
+    // means a fresh start — never a half-restored transcript.
+    try {
+      await syncHistory(true);
+      schedulePoll();
+    } catch {
+      clearStoredSession(options.embedKey);
+      sessionId = undefined;
+    }
+  }
+
   // Input row + working send loop.
   const inputRow = document.createElement('div');
   inputRow.className = 'vm-input-row';
@@ -245,8 +348,11 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       const res = await client.send(options.embedKey, { sessionId, text });
       sessionId = res.sessionId;
       renderState = res.renderState;
+      writeStoredSession(options.embedKey, sessionId);
+      seenIds.add(res.reply.messageId);
       appendMessage('assistant', res.reply.text);
       live.textContent = markdownToPlainText(res.reply.text); // announce incoming (Arch §5.16)
+      schedulePoll();
     } catch (err) {
       // A 429 means Luciel is catching its breath, not that something broke —
       // the HTTP transport surfaces it as a typed LucielApiError, so say so
@@ -303,7 +409,12 @@ export async function mountWidget(options: MountOptions): Promise<void> {
     launcher.setAttribute('aria-label', open ? 'Close chat' : `Chat with ${boot.businessName}`);
     if (open && !input.disabled) input.focus();
     else if (!open) launcher.focus();
+    // Cadence follows the panel: fast while the visitor is looking, slow otherwise.
+    schedulePoll();
   };
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => schedulePoll());
+  }
 
   launcher.addEventListener('click', () => {
     setOpen(root.getAttribute('data-open') !== 'true');

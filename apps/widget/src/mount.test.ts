@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { mountWidget, WIDGET_TEXT_MAX_CHARS } from './mount';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { mountWidget, WIDGET_POLL_OPEN_MS, WIDGET_TEXT_MAX_CHARS } from './mount';
 import { createWidgetClient, LucielApiError, type WidgetApiClient } from '@luciel/api-client/widget';
 
 /** Stub client so a reply with markdown in it can be asserted on. */
@@ -354,56 +354,138 @@ describe('widget mount', () => {
     }
   };
 
-  it('fires the end-of-session beacon once on pagehide (§3.4.8)', async () => {
+  it('keeps the session across a page navigation and restores the transcript (F049)', async () => {
+    // 2026-09-05 audit: a visit that spans pages is ONE conversation. Leaving the
+    // page ends nothing (the server closes by inactivity); the next page's widget
+    // resumes the same session from this tab's storage and replays what was said.
     const SESSION = '00000000-0000-4000-8000-0000000000e1';
+    sessionStorage.clear();
     await withBeaconSpy(async (sent) => {
-      const mine = () => sent.filter((url) => url.includes(SESSION));
-      const shadow = await mountOpen(clientWithSession(SESSION));
-
-      // No session yet — leaving before the first message signals nothing.
-      window.dispatchEvent(new Event('pagehide'));
-      expect(mine()).toHaveLength(0);
-
-      (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'hi';
-      (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
-      await flush();
-
-      window.dispatchEvent(new Event('pagehide'));
-      expect(mine()).toEqual([
-        `https://api.vantagemind.ai/api/v1/chat-widget/sessions/${SESSION}/end?embedKey=vm_live_demo`,
-      ]);
-
-      // Once per session: the endpoint is idempotent, but a second hide on the
-      // same session still sends nothing new.
-      window.dispatchEvent(new Event('pagehide'));
-      expect(mine()).toHaveLength(1);
-    });
-  });
-
-  it('falls back to visibilitychange→hidden where pagehide never fires', async () => {
-    const SESSION = '00000000-0000-4000-8000-0000000000e2';
-    await withBeaconSpy(async (sent) => {
-      const mine = () => sent.filter((url) => url.includes(SESSION));
       const shadow = await mountOpen(clientWithSession(SESSION));
       (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'hi';
       (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
       await flush();
 
-      // Still visible → not an end signal.
-      document.dispatchEvent(new Event('visibilitychange'));
-      expect(mine()).toHaveLength(0);
-
-      Object.defineProperty(document, 'visibilityState', {
-        configurable: true,
-        get: () => 'hidden',
-      });
+      window.dispatchEvent(new Event('pagehide'));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
       try {
         document.dispatchEvent(new Event('visibilitychange'));
-        expect(mine()).toHaveLength(1);
       } finally {
         Reflect.deleteProperty(document, 'visibilityState');
       }
+      expect(sent.filter((url) => url.includes(SESSION))).toHaveLength(0);
     });
+    const remembered = JSON.parse(sessionStorage.getItem('luciel:session:vm_live_demo') ?? '{}');
+    expect(remembered.sessionId).toBe(SESSION);
+
+    // "Next page": a fresh mount against a client that serves the history.
+    document.body.innerHTML = '';
+    const sends: Array<{ sessionId?: string }> = [];
+    const client: WidgetApiClient = {
+      ...clientWithSession(SESSION),
+      history: async () => [
+        {
+          messageId: '00000000-0000-4000-8000-0000000000a1',
+          role: 'visitor',
+          text: 'hi',
+          at: '2026-07-30T00:00:00.000Z',
+        },
+        {
+          messageId: '00000000-0000-4000-8000-0000000000a2',
+          role: 'assistant',
+          text: 'Hello again',
+          at: '2026-07-30T00:00:01.000Z',
+        },
+      ],
+      send: async (_key, req) => {
+        sends.push(req);
+        return {
+          sessionId: SESSION,
+          reply: {
+            messageId: '00000000-0000-4000-8000-0000000000a3',
+            role: 'assistant',
+            text: 'still here',
+            at: '2026-07-30T00:00:02.000Z',
+          },
+          renderState: 'active',
+        };
+      },
+    };
+    const shadow2 = await mountOpen(client);
+    const transcript = (shadow2.querySelector('.vm-body') as HTMLElement).textContent ?? '';
+    expect(transcript).toContain('You: hi');
+    expect(transcript).toContain('Hello again');
+    (shadow2.querySelector('.vm-input') as HTMLInputElement).value = 'one more';
+    (shadow2.querySelector('.vm-send') as HTMLButtonElement).click();
+    await flush();
+    expect(sends[0]?.sessionId).toBe(SESSION); // the SAME conversation continues
+  });
+
+  it('does not resume a stored session older than the server inactivity window', async () => {
+    const SESSION = '00000000-0000-4000-8000-0000000000e2';
+    sessionStorage.setItem(
+      'luciel:session:vm_live_demo',
+      JSON.stringify({ sessionId: SESSION, lastActivity: Date.now() - 31 * 60 * 1000 }),
+    );
+    let historyCalls = 0;
+    const client: WidgetApiClient = {
+      ...clientWithSession(SESSION),
+      history: async () => {
+        historyCalls += 1;
+        return [];
+      },
+    };
+    await mountOpen(client);
+    expect(historyCalls).toBe(0);
+    expect(sessionStorage.getItem('luciel:session:vm_live_demo')).toBeNull();
+  });
+
+  it('polls history while open and shows a reply a person sent from the dashboard (F063)', async () => {
+    vi.useFakeTimers();
+    try {
+      sessionStorage.clear();
+      const SESSION = '00000000-0000-4000-8000-0000000000e3';
+      let served: Array<{ messageId: string; role: 'visitor' | 'assistant'; text: string; at: string }> = [];
+      const client: WidgetApiClient = {
+        ...clientWithSession(SESSION),
+        history: async () => served,
+      };
+      const shadow = await mountOpen(client);
+      (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'can I talk to a person?';
+      (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The owner takes over and answers from the dashboard: it lands in history.
+      served = [
+        {
+          messageId: '00000000-0000-4000-8000-0000000000b1',
+          role: 'visitor',
+          text: 'can I talk to a person?',
+          at: '2026-07-30T00:00:00.000Z',
+        },
+        {
+          messageId: '00000000-0000-4000-8000-0000000000b2',
+          role: 'assistant',
+          text: 'Hi, this is Sam from the team — how can I help?',
+          at: '2026-07-30T00:00:05.000Z',
+        },
+      ];
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_OPEN_MS + 50);
+      // Count transcript bubbles, not textContent: the screen-reader live region
+      // deliberately repeats the latest reply as plain prose.
+      const bubbles = (needle: string) =>
+        Array.from(shadow.querySelectorAll('.vm-msg')).filter((m) =>
+          (m.textContent ?? '').includes(needle),
+        ).length;
+      expect(bubbles('this is Sam from the team')).toBe(1);
+      // The visitor's own turn is not rendered twice by the poll.
+      expect(bubbles('can I talk to a person?')).toBe(1);
+      // And the next poll does not repeat the reply.
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_OPEN_MS + 50);
+      expect(bubbles('this is Sam from the team')).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // --- Send-failure honesty: rate limit vs. everything else -----------------
