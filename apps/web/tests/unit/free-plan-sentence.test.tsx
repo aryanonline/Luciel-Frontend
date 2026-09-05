@@ -18,14 +18,14 @@ describe('Harmony FE-H#10: the free-plan budget sentence renders in full', () =>
     renderWithQuery(<DashboardPage />);
     expect(
       await screen.findByText(
-        'Free plan: 50 conversations a month. Add a card to keep it answering past 50 — adding a card never changes your Luciel.',
+        'Free plan: 50 conversations per billing period. Add a card to keep it answering past 50 — adding a card never changes your Luciel.',
       ),
     ).toBeInTheDocument();
   });
 
   it('never renders the truncated fragment the owner saw', async () => {
     renderWithQuery(<DashboardPage />);
-    await screen.findByText(/Free plan: 50 conversations a month/i);
+    await screen.findByText(/Free plan: 50 conversations per billing period/i);
     expect(screen.queryByText(/your L\.\.\.$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/it never changes your Luciel\.$/)).not.toBeInTheDocument();
   });
