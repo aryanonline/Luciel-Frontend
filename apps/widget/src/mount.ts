@@ -225,11 +225,14 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   body.className = 'vm-body';
   body.setAttribute('aria-label', 'Conversation');
   // Opening message INCLUDES the AI-identity disclosure (Arch §3.4.16).
-  const appendMessage = (role: 'visitor' | 'assistant', text: string) => {
+  const appendMessage = (role: 'visitor' | 'assistant' | 'human', text: string) => {
     const msg = document.createElement('div');
     msg.className = 'vm-msg';
     const who = document.createElement('strong');
-    who.textContent = role === 'visitor' ? 'You: ' : `${boot.assistantName}: `;
+    // A person's reply is labelled as the team (E2E-11): the visitor was just told
+    // a team member has the conversation, and their words are not the AI's.
+    who.textContent =
+      role === 'visitor' ? 'You: ' : role === 'human' ? 'Team: ' : `${boot.assistantName}: `;
     msg.appendChild(who);
     if (role === 'assistant') {
       // Assistant replies carry markdown; render it so the visitor doesn't read
@@ -298,7 +301,7 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       if (row.role === 'visitor' && !restoring) continue;
       if (!row.text.trim()) continue; // nothing to show — never a blank bubble
       appendMessage(row.role, row.text);
-      if (row.role === 'assistant') live.textContent = markdownToPlainText(row.text);
+      if (row.role !== 'visitor') live.textContent = markdownToPlainText(row.text);
       appended = true;
     }
     return appended;
