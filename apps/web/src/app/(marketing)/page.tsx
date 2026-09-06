@@ -51,7 +51,7 @@ export default function HomePage() {
                 </Button>
               </div>
               <p className="mt-vm-4 text-vm-1 text-vm-text-muted">
-                50 conversations a month, free. Every feature included.
+                50 conversations free each billing period. Every feature included.
               </p>
             </div>
             <div className="flex justify-center lg:justify-end">
@@ -92,24 +92,30 @@ export default function HomePage() {
               <Eyebrow>Pricing</Eyebrow>
               <h2 className="font-heading text-vm-6 tracking-tight">One plan. No tiers.</h2>
               <p className="mt-vm-3 max-w-xl text-vm-2 leading-relaxed text-vm-text-muted">
-                Start free with 50 conversations a month. Need more? Pay only for what you use.
-                Every feature is included on every account — paying more never means a different or
-                “upgraded” employee, just more hours of work.
+                Start free with 50 conversations each billing period. Need more? Pay only for what
+                you use. Every feature is included on every account — paying more never means a
+                different or “upgraded” employee, just more hours of work.
               </p>
             </div>
             <Card className="p-vm-6">
               <div className="flex items-baseline gap-vm-2">
                 <span className="font-heading text-vm-7 tracking-tight">$0</span>
                 <span className="text-vm-2 text-vm-text-muted">
-                  / first 50 conversations a month
+                  / first 50 conversations each billing period
                 </span>
               </div>
               <div className="mt-vm-3 border-t border-vm-border pt-vm-3 text-vm-2">
                 <span className="font-heading text-vm-4">$39</span>{' '}
                 <span className="text-vm-text-muted">
-                  per 100 conversations after that, billed monthly.
+                  per 100 conversations after that, billed at the end of each period.
                 </span>
               </div>
+              <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
+                Your billing period is the calendar month until you add a card, then your
+                card&apos;s billing cycle. SMS and voice use a phone number you own with your own
+                Twilio account: carrier fees and any A2P 10DLC registration are yours, and we never
+                resell numbers.
+              </p>
               {/* Concise included-features list — attract buyers without overwhelming.
                   Six high-signal items (Vision §5: don't exhaust the reader). */}
               <p className="mt-vm-4 text-vm-0 font-label uppercase tracking-[0.08em] text-vm-text-muted">
@@ -170,8 +176,9 @@ export default function HomePage() {
             <div>
               <h3 className="font-heading text-vm-2">Honest about launch limits</h3>
               <p className="mt-vm-1 text-vm-1 leading-relaxed text-vm-text-muted">
-                Email works on your own domain from day one. The one launch limit: one login per
-                account. See our{' '}
+                Email runs from your own mailbox — connect the Microsoft 365 / Outlook inbox you
+                already use and your Luciel replies as it. SMS and voice use a Twilio number you
+                own. The one launch limit: one login per account. See our{' '}
                 <Link href="/legal/terms" className="text-vm-accent underline">
                   Terms
                 </Link>{' '}

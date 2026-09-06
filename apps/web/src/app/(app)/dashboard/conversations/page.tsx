@@ -19,7 +19,10 @@ import type {
   MessageDeliveryDetail,
 } from '@luciel/api-client';
 import { LucielApiError } from '@luciel/api-client';
+import type { ConversationSummary } from '@luciel/api-client';
 import { useSearchParams } from 'next/navigation';
+import { usePagedTail } from '@/lib/paging';
+import { LoadOlder } from '@/components/load-older';
 import { useConversations, useEscalations } from '@/lib/hooks';
 import { sessionChannelLabel } from '@/components/config/labels';
 import { api } from '@/lib/api';
@@ -98,12 +101,19 @@ function describeDelivery(result: SendMessageResult): Delivery {
     case 'no_recipient':
       return {
         tone: 'warning',
-        text: <>Sent — but we have no contact details for this lead, so there was nowhere to deliver it.{connect}</>,
+        text: (
+          <>
+            Sent — but we have no contact details for this lead, so there was nowhere to deliver it.
+            {connect}
+          </>
+        ),
       };
     case 'channel_not_provisioned':
       return {
         tone: 'warning',
-        text: <>Sent — but this channel has no sender connected yet, so it could not go out.{connect}</>,
+        text: (
+          <>Sent — but this channel has no sender connected yet, so it could not go out.{connect}</>
+        ),
       };
     case 'unsupported_channel':
       return { tone: 'warning', text: 'Sent and saved — this channel cannot send replies out.' };
@@ -130,7 +140,11 @@ function describeDelivery(result: SendMessageResult): Delivery {
     case 'mailbox_reconnect_needed':
       return {
         tone: 'warning',
-        text: <>Saved, but not sent: your mailbox needs reconnecting before replies can go out.{connect}</>,
+        text: (
+          <>
+            Saved, but not sent: your mailbox needs reconnecting before replies can go out.{connect}
+          </>
+        ),
       };
     case 'send_failed':
       return {
@@ -234,8 +248,20 @@ function OpenFromQuery({
   return null;
 }
 
+const conversationKey = (c: ConversationSummary) => c.sessionId;
+const fetchOlderConversations = (opts: { limit?: number; offset?: number }) =>
+  api.conversations.list(opts);
+
 export default function ConversationsPage() {
   const conversations = useConversations();
+  // 2026-09-05 audit WP7: the list is paged server-side (200 per page); older
+  // conversations load on request and join the same rows.
+  const olderConversations = usePagedTail(
+    conversations.data,
+    fetchOlderConversations,
+    conversationKey,
+  );
+  const conversationRows = [...(conversations.data ?? []), ...olderConversations.extra];
   // Escalation badges ride a separate query: its failure degrades to a note and
   // must never hide the conversations list itself.
   const escalations = useEscalations();
@@ -279,8 +305,7 @@ export default function ConversationsPage() {
         const fresh = await api.conversations.getMessages(sessionId);
         if (stopped || openedSession.current !== sessionId) return;
         setMessages((prev) =>
-          prev.length === fresh.length &&
-          prev.every((m, i) => m.messageId === fresh[i]?.messageId)
+          prev.length === fresh.length && prev.every((m, i) => m.messageId === fresh[i]?.messageId)
             ? prev
             : fresh,
         );
@@ -432,7 +457,11 @@ export default function ConversationsPage() {
       <div className="grid gap-vm-4 lg:grid-cols-2">
         <Card>
           <CardTitle>Recent</CardTitle>
-          <div className="mt-vm-2 flex items-center gap-vm-2" role="group" aria-label="Filter conversations">
+          <div
+            className="mt-vm-2 flex items-center gap-vm-2"
+            role="group"
+            aria-label="Filter conversations"
+          >
             <Button
               variant={listFilter === 'all' ? 'primary' : 'secondary'}
               aria-pressed={listFilter === 'all'}
@@ -474,7 +503,7 @@ export default function ConversationsPage() {
             <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
               No conversations yet. They appear here as soon as a visitor talks to your Luciel.
             </p>
-          ) : (conversations.data ?? []).filter(
+          ) : conversationRows.filter(
               (c) => listFilter === 'all' || escalatedSessions.has(c.sessionId),
             ).length === 0 ? (
             <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
@@ -482,55 +511,58 @@ export default function ConversationsPage() {
             </p>
           ) : (
             <ul className="mt-vm-3 divide-y divide-vm-border">
-              {(conversations.data ?? [])
+              {conversationRows
                 .filter((c) => listFilter === 'all' || escalatedSessions.has(c.sessionId))
                 .map((c) => {
-                const busy = modeBusy === c.sessionId;
-                const held = c.mode === 'human_controlled';
-                return (
-                  <li key={c.sessionId} className="py-vm-3">
-                    <div className="flex items-center justify-between gap-vm-3">
-                      <button
-                        className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vm-focus"
-                        onClick={() => void open(c.sessionId)}
-                      >
-                        <div className="truncate text-vm-2">
-                          {c.summary ??
-                            `In progress — started ${new Date(c.startedAt).toLocaleTimeString()}`}
-                        </div>
-                        {/* Human channel label, never the raw wire id — and
+                  const busy = modeBusy === c.sessionId;
+                  const held = c.mode === 'human_controlled';
+                  return (
+                    <li key={c.sessionId} className="py-vm-3">
+                      <div className="flex items-center justify-between gap-vm-3">
+                        <button
+                          className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vm-focus"
+                          onClick={() => void open(c.sessionId)}
+                        >
+                          <div className="truncate text-vm-2">
+                            {c.summary ??
+                              `In progress — started ${new Date(c.startedAt).toLocaleTimeString()}`}
+                          </div>
+                          {/* Human channel label, never the raw wire id — and
                             read-tolerant of old sessions still carrying the
                             retired combined `instagram_messenger` id. The #ref
                             matches the escalation email's "Conversation #". */}
-                        <div className="text-vm-0 text-vm-text-muted">
-                          {sessionChannelLabel(c.channel)} · {new Date(c.startedAt).toLocaleString()}{' '}
-                          · #{c.sessionId.slice(0, 8)}
-                          {escalatedSessions.has(c.sessionId) && (
-                            <span className="ml-vm-2 inline-flex items-center rounded-vm-pill border border-vm-border px-vm-2 py-vm-1 font-label text-vm-warning">
-                              Escalated
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                      <Button
-                        variant="secondary"
-                        disabled={modeBusy !== null}
-                        onClick={() => void setMode(c.sessionId, held ? 'hand_back' : 'take_over')}
-                      >
-                        {busy
-                          ? held
-                            ? 'Handing back…'
-                            : 'Taking over…'
-                          : held
-                            ? 'Hand back'
-                            : 'Take over'}
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
+                          <div className="text-vm-0 text-vm-text-muted">
+                            {sessionChannelLabel(c.channel)} ·{' '}
+                            {new Date(c.startedAt).toLocaleString()} · #{c.sessionId.slice(0, 8)}
+                            {escalatedSessions.has(c.sessionId) && (
+                              <span className="ml-vm-2 inline-flex items-center rounded-vm-pill border border-vm-border px-vm-2 py-vm-1 font-label text-vm-warning">
+                                Escalated
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                        <Button
+                          variant="secondary"
+                          disabled={modeBusy !== null}
+                          onClick={() =>
+                            void setMode(c.sessionId, held ? 'hand_back' : 'take_over')
+                          }
+                        >
+                          {busy
+                            ? held
+                              ? 'Handing back…'
+                              : 'Taking over…'
+                            : held
+                              ? 'Hand back'
+                              : 'Take over'}
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
             </ul>
           )}
+          <LoadOlder label="Load older conversations" tail={olderConversations} />
         </Card>
 
         <Card>

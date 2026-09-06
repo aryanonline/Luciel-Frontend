@@ -18,7 +18,7 @@ export default function TermsPage() {
         {
           heading: 'The plan',
           body: [
-            'VantageMind is a single plan. The first 50 conversations each month are free. Above that, usage is billed pay-as-you-go at $39 per 100 conversations, rounded up to the next whole 100-conversation block, billed monthly in arrears.',
+            'VantageMind is a single plan. The first 50 conversations each billing period are free. Your billing period is the calendar month until you save a card, and your card’s billing cycle from then on. Above the free 50, usage is billed pay-as-you-go at $39 per 100 conversations, rounded up to the next whole 100-conversation block, at the close of each billing period.',
             'There is no feature gating — every feature is available on every account. A payment method on file is what enables usage above the free 50; without one, the account stays capped at 50 with a graceful at-capacity reply.',
             'Your free-allowance counter resets on your billing-cycle date, not the calendar month. Unused conversations do not roll over.',
             'The free starter allowance is an ongoing feature, not a time-limited trial. We reserve the right to change it, but if we ever reduce it we will give all existing accounts at least 30 days’ notice before the change takes effect — sent by email and shown in your dashboard on your next login, so a stale email address cannot cause you to miss it. Increases need no notice.',
@@ -30,13 +30,13 @@ export default function TermsPage() {
             'SMS and Voice are bring-your-own-number. You supply a phone number you already control; we never provision, pool, resell, or acquire numbers for you. The number stays yours with your own carrier, and all of its carrier costs — number rental and usage — are paid to your carrier directly. We are never in that billing path.',
             'If your number is not already carrier-registered, you complete the required A2P 10DLC Brand and Campaign registration yourself, in your own carrier account and in your business’s legal name — carrier rules require the registered sender to be the party actually messaging the consumer, which is you. We provide guidance and verify your number’s status before treating the channel as send-ready, but we do not perform, submit, or operate the registration for you, and any registration fees are yours. Until registration is complete and verified, the channel shows “Action needed: complete carrier registration” and does not send.',
             'You are responsible for the lawfulness of your opt-in and for honoring opt-out — the consent and opt-out obligations of CASL in Canada and, where applicable, the US TCPA. The platform enforces STOP and HELP handling at the channel layer, but the lawful basis for contacting any given recipient is yours as the sender. If you message only Canadian recipients, US A2P 10DLC may not apply, but Canadian carrier requirements and CASL obligations still do.',
-            'Sending outbound email from your own domain requires you to complete sender-domain authentication (SPF/DKIM, with DMARC recommended) through a DNS step we walk you through; until it verifies, outbound on your domain is not enabled. You are responsible for sending only to recipients you have a lawful basis to contact, and for list hygiene.',
+            'Email is bring-your-own-mailbox: you connect a Microsoft 365 / Outlook mailbox you control, and your Luciel sends and receives as that mailbox under your provider’s terms. We do not send customer email on your behalf from our own infrastructure or your domain. Until a mailbox is connected and verified, the email channel shows “Action needed” and does not send. You are responsible for sending only to recipients you have a lawful basis to contact, and for list hygiene.',
           ],
         },
         {
           heading: 'Payment and failed payments',
           body: [
-            'By saving a payment method you authorize us to charge it for pay-as-you-go usage at the close of each billing cycle. There is no recurring subscription charge — if you use 50 or fewer conversations in a month, there is no charge.',
+            'By saving a payment method you authorize us to charge it for pay-as-you-go usage at the close of each billing period. There is no recurring subscription charge — if you use 50 or fewer conversations in a billing period, there is no charge.',
             'If an end-of-cycle charge fails, your Luciel does not go offline immediately. We retry over a short grace window and notify you at each attempt. If payment still has not succeeded by the end of that window, the account gracefully reverts to free-cap behavior — it does not delete data and does not stop responding. Updating a valid card restores full capability immediately.',
           ],
         },

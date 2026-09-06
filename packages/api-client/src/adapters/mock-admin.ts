@@ -1,4 +1,4 @@
-import type { LucielApiClient } from '../client';
+import type { LucielApiClient, PageOptions } from '../client';
 import { LucielApiError } from '../schemas';
 import type {
   Account,
@@ -139,6 +139,13 @@ const toolsForConnectionType = (connectionType: ConnectionType): AddonToolId[] =
 
 const channelsForConnection = (connection: Connection): ChannelId[] =>
   CHANNELS_BY_CONNECTION_TYPE[connection.connectionType] ?? [];
+
+/** The server's paging, mirrored: offset/limit over the newest-first list. */
+const pageOf = <T>(rows: T[], page?: PageOptions): T[] => {
+  const offset = page?.offset ?? 0;
+  const limit = page?.limit ?? rows.length;
+  return rows.slice(offset, offset + limit);
+};
 
 export function createMockAdminClient(options: MockAdminOptions = {}): LucielApiClient {
   const latency = options.latencyMs ?? 0;
@@ -1231,9 +1238,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     },
 
     conversations: {
-      async list() {
+      async list(page) {
         guardVerified();
-        return ok(state.conversations);
+        return ok(pageOf(state.conversations, page));
       },
       async getMessages(sessionId) {
         guardVerified();
@@ -1337,16 +1344,16 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         await delay();
       },
-      async listEscalations() {
+      async listEscalations(page) {
         guardVerified();
-        return ok(state.escalations);
+        return ok(pageOf(state.escalations, page));
       },
     },
 
     leads: {
-      async list() {
+      async list(page) {
         guardVerified();
-        return ok(state.leads);
+        return ok(pageOf(state.leads, page));
       },
       async erase(leadId) {
         guardVerified();
@@ -1427,9 +1434,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         return ok(state.analytics);
       },
-      async auditLog() {
+      async auditLog(page) {
         guardVerified();
-        return ok(state.audit);
+        return ok(pageOf(state.audit, page));
       },
     },
 

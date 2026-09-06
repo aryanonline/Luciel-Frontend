@@ -14,6 +14,8 @@ import {
 import { useBilling, useLuciel, qk } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'next/navigation';
+import { cardExpiryWarning } from '@/lib/card-expiry';
 
 /**
  * Billing (Customer Journey §6; Arch §3.4.1b, §3.6.7; Legal §A3). Single plan:
@@ -25,6 +27,38 @@ import { useQueryClient } from '@tanstack/react-query';
  * free-cap with NO data loss. Dunning degrades to free-cap, never deletes data.
  * Never implies tiers or feature-gating — there are none.
  */
+/**
+ * Stripe sends the owner back to /dashboard/billing?checkout=success|cancel
+ * (2026-09-05 audit F160). Say what happened; on success refresh the billing read
+ * so the new card shows without a manual reload. Under Suspense because Next
+ * requires a boundary around useSearchParams consumers.
+ */
+function CheckoutReturnNotice() {
+  const params = useSearchParams();
+  const qc = useQueryClient();
+  const outcome = params.get('checkout');
+  React.useEffect(() => {
+    if (outcome === 'success') void qc.invalidateQueries({ queryKey: qk.billing });
+  }, [outcome, qc]);
+  if (outcome === 'success') {
+    return (
+      <Banner tone="info">
+        Your card was saved. Pay-as-you-go is on: conversations 1–50 each billing period stay free,
+        and nothing about your Luciel changed.
+      </Banner>
+    );
+  }
+  if (outcome === 'cancel') {
+    return (
+      <Banner tone="info">
+        Checkout was cancelled — no card was saved and nothing changed. You can add one whenever you
+        like.
+      </Banner>
+    );
+  }
+  return null;
+}
+
 export default function BillingPage() {
   const billing = useBilling();
   const luciel = useLuciel();
@@ -67,6 +101,9 @@ export default function BillingPage() {
         title="Billing"
         description="One plan: 50 free conversations each billing period, then $39 per 100. Adding a card never changes your Luciel — only whether it can work past the free 50."
       />
+      <React.Suspense fallback={null}>
+        <CheckoutReturnNotice />
+      </React.Suspense>
 
       {b?.dunningState === 'retrying' && (
         <Banner tone="warning">
@@ -159,6 +196,11 @@ export default function BillingPage() {
               {billing.data.paymentMethod.last4} · expires {billing.data.paymentMethod.expMonth}/
               {billing.data.paymentMethod.expYear}
             </CardDescription>
+            {cardExpiryWarning(billing.data.paymentMethod) && (
+              <Banner tone="warning" className="mt-vm-3">
+                {cardExpiryWarning(billing.data.paymentMethod)}
+              </Banner>
+            )}
             <Banner tone="info" className="mt-vm-3">
               Pay-as-you-go is on. Conversations 1–50 each billing period stay free; above that
               bills at $39 / 100, rounded up per 100-block, at the close of the cycle.
@@ -167,9 +209,9 @@ export default function BillingPage() {
               Remove payment method
             </Button>
             <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
-              Removing your card bills any pay-as-you-go usage already run this period, then
-              reverts to the free 50 per billing period. Your Luciel, knowledge, and connections
-              are retained — nothing is deleted.
+              Removing your card bills any pay-as-you-go usage already run this period, then reverts
+              to the free 50 per billing period. Your Luciel, knowledge, and connections are
+              retained — nothing is deleted.
             </p>
           </>
         ) : billing.data?.paymentsAvailable === false ? (

@@ -1,7 +1,11 @@
 'use client';
 
 import { Card, CardTitle, CardDescription, PageHeader, Banner } from '@luciel/ui';
+import type { AuditEvent } from '@luciel/api-client';
 import { useAudit } from '@/lib/hooks';
+import { api } from '@/lib/api';
+import { usePagedTail } from '@/lib/paging';
+import { LoadOlder } from '@/components/load-older';
 
 /**
  * Audit log view — read-only (Arch §5.2). The append-only, tamper-evident log is
@@ -35,8 +39,15 @@ const EVENT_LABEL: Record<string, string> = {
 const eventLabel = (type: string) =>
   EVENT_LABEL[type] ?? type.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
+const auditKey = (e: AuditEvent) => e.eventId;
+const fetchOlderAudit = (opts: { limit?: number; offset?: number }) => api.analytics.auditLog(opts);
+
 export default function AuditPage() {
-  const { data, isPending, isError, refetch } = useAudit();
+  const { data: firstPage, isPending, isError, refetch } = useAudit();
+  // 2026-09-05 audit F170: the log is paged server-side; older entries load on
+  // request instead of the first 200 rows silently standing in for the record.
+  const older = usePagedTail(firstPage, fetchOlderAudit, auditKey);
+  const data = firstPage ? [...firstPage, ...older.extra] : firstPage;
 
   return (
     <div className="space-y-vm-5">
@@ -85,6 +96,7 @@ export default function AuditPage() {
             ))}
           </ul>
         )}
+        <LoadOlder label="Load older entries" tail={older} />
       </Card>
     </div>
   );

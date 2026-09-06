@@ -53,7 +53,9 @@ export default function SignupPage() {
     } catch (err) {
       setServerError(
         err instanceof LucielApiError &&
-          (err.code === 'validation_error' || err.code === 'conflict' || err.code === 'rate_limited')
+          (err.code === 'validation_error' ||
+            err.code === 'conflict' ||
+            err.code === 'rate_limited')
           ? err.message
           : 'Something went wrong creating your account. Please try again.',
       );
@@ -113,7 +115,8 @@ export default function SignupPage() {
         <Link href="/legal/privacy" className="text-vm-accent underline">
           Privacy Policy
         </Link>
-        .
+        . Both are published as drafts while we launch; we will give you at least 30 days&apos;
+        notice before any change to them takes effect.
       </p>
       <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
         Already have an account?{' '}
