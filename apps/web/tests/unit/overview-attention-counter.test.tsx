@@ -130,6 +130,21 @@ describe('Overview Connections attention counter agrees with the rows it renders
     expect(screen.getByText(/All connected and healthy\./i)).toBeInTheDocument();
   });
 
+  it('an expired connection (Reconnect needed) counts as attention — never "all healthy" over it (F059)', async () => {
+    served.connections = [
+      {
+        ...actionNeededRow('88888888-8888-4888-8888-888888888888', 'calendar', 'google_calendar'),
+        status: 'expired',
+      },
+    ];
+    served.providers = [];
+
+    renderWithQuery(<DashboardPage />);
+
+    expect(await screen.findByText(/^1 needs attention\.?$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/All connected and healthy\./i)).not.toBeInTheDocument();
+  });
+
   it('all-actionable fixture still counts every row (no false negatives from the fix)', async () => {
     served.connections = [
       actionNeededRow('66666666-6666-4666-8666-666666666666', 'crm', 'hubspot'),

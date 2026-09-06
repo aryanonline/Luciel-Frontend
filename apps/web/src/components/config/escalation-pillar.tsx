@@ -126,7 +126,7 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
         secondarySms: orUndefined(draft.secondarySms ?? ''),
       });
       saved();
-      return 'Saved. Escalations route to these contacts from now on.';
+      return 'Saved. New conversations escalate to these contacts; one already in progress keeps the contacts it started with.';
     }, 'We could not save your escalation settings. Your existing routing is unchanged — please try again.');
 
   return (
@@ -235,8 +235,8 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
       )}
       {contactHealth.some((h) => h.state === 'bouncing') && (
         <Banner tone="warning" className="mt-vm-2">
-          Escalations skip a bouncing address and fall back to your account email, so you still
-          hear about hot leads — but fix or replace the address to page the right person.
+          Escalations skip a bouncing address and fall back to your account email, so you still hear
+          about hot leads — but fix or replace the address to page the right person.
         </Banner>
       )}
 
