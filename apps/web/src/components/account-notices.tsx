@@ -26,6 +26,7 @@ const tone: Record<AccountNotice['kind'], 'info' | 'warning'> = {
   allowance_reduction: 'warning',
   price_change: 'warning',
   terms_change: 'info',
+  model_updated: 'info',
 };
 
 export function AccountNotices() {
