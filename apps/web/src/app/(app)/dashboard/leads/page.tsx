@@ -19,6 +19,8 @@ import { useLeads, useLuciel, useLucielMutations, qk } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { saveBlob } from '@/lib/download';
 import { describeCrmDetail } from '@/lib/crm-detail';
+import { usePagedTail } from '@/lib/paging';
+import { LoadOlder } from '@/components/load-older';
 import { useQueryClient } from '@tanstack/react-query';
 
 /**
@@ -57,6 +59,9 @@ const RETENTION_LABEL: Record<number, string> = {
 
 const retentionLabel = (days: number) => RETENTION_LABEL[days] ?? `${days} days`;
 
+const leadKey = (l: Lead) => l.leadId;
+const fetchOlderLeads = (opts: { limit?: number; offset?: number }) => api.leads.list(opts);
+
 export default function LeadsPage() {
   const leads = useLeads();
   const luciel = useLuciel();
@@ -82,7 +87,9 @@ export default function LeadsPage() {
   // makes a 12-month "stale" label a lie); otherwise a year.
   const staleAfterDays = retentionDays ?? DEFAULT_STALE_AFTER_DAYS;
 
-  const all = leads.data ?? [];
+  // 2026-09-05 audit WP7: paged server-side (200 per page); older leads load on request.
+  const olderLeads = usePagedTail(leads.data, fetchOlderLeads, leadKey);
+  const all = [...(leads.data ?? []), ...olderLeads.extra];
   const cutoff = staleCutoff(staleAfterDays);
   const isStale = (l: Lead) => new Date(l.lastActivityAt).getTime() < cutoff;
   const archivedCount = all.filter((l) => l.state === 'archived').length;
@@ -450,6 +457,7 @@ export default function LeadsPage() {
               </li>
             ))}
         </ul>
+        <LoadOlder label="Load older leads" tail={olderLeads} />
       </Card>
 
       {luciel.data && (

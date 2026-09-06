@@ -1,4 +1,4 @@
-import type { LucielApiClient } from '../client';
+import type { LucielApiClient, PageOptions } from '../client';
 import type { BillingInfo } from '../schemas';
 import { createTransport, type TransportOptions } from './transport';
 
@@ -23,6 +23,14 @@ function formData(file: File, name: string): FormData {
  */
 export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
   const t = createTransport(opts);
+  // Paged lists (2026-09-05 audit WP7): only the params the caller set ride the URL.
+  const pageQuery = (page?: PageOptions) => {
+    const params = new URLSearchParams();
+    if (page?.limit !== undefined) params.set('limit', String(page.limit));
+    if (page?.offset !== undefined) params.set('offset', String(page.offset));
+    const s = params.toString();
+    return s ? `?${s}` : '';
+  };
 
   return {
     auth: {
@@ -148,7 +156,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         t.post(`/api/v1/admin/connections/${connectionId}/swap`, { provider }),
     },
     conversations: {
-      list: () => t.get('/api/v1/dashboard/conversations'),
+      list: (page) => t.get(`/api/v1/dashboard/conversations${pageQuery(page)}`),
       getMessages: (sessionId) => t.get(`/api/v1/dashboard/conversations/${sessionId}/messages`),
       takeOver: (sessionId) => t.post(`/api/v1/dashboard/conversations/${sessionId}/take-over`),
       handBack: (sessionId) => t.post(`/api/v1/dashboard/conversations/${sessionId}/hand-back`),
@@ -158,10 +166,10 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         t.get(`/api/v1/dashboard/conversations/${sessionId}/messages/${messageId}/evidence`),
       flagAnswer: (sessionId, messageId) =>
         t.post(`/api/v1/dashboard/conversations/${sessionId}/messages/${messageId}/flag`),
-      listEscalations: () => t.get('/api/v1/dashboard/escalations'),
+      listEscalations: (page) => t.get(`/api/v1/dashboard/escalations${pageQuery(page)}`),
     },
     leads: {
-      list: () => t.get('/api/v1/dashboard/leads'),
+      list: (page) => t.get(`/api/v1/dashboard/leads${pageQuery(page)}`),
       erase: (leadId) => t.del(`/api/v1/dashboard/leads/${leadId}`),
       prune: (leadIds) => t.post('/api/v1/dashboard/leads/prune', { leadIds }),
       archive: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/archive`),
@@ -180,7 +188,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     },
     analytics: {
       overview: () => t.get('/api/v1/admin/usage/overview'),
-      auditLog: () => t.get('/api/v1/admin/usage/audit-log'),
+      auditLog: (page) => t.get(`/api/v1/admin/usage/audit-log${pageQuery(page)}`),
     },
     account: {
       requestExport: () => t.post('/api/v1/admin/account/export'),

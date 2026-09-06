@@ -22,11 +22,13 @@ describe('marketing landing page', () => {
     expect(screen.getByText(/Every feature is included on every account/)).toBeInTheDocument();
   });
 
-  it('states the honest launch limit (own-domain email supported; one login)', () => {
+  it('states the honest launch limits (BYO mailbox and BYO number; one login)', () => {
     render(<HomePage />);
-    // Own-domain email is a launch capability now (Arch §3.1.6a, Decision #49) —
-    // no longer listed as a limit. The one remaining launch limit is one login.
-    expect(screen.getByText(/Email works on your own domain from day one/)).toBeInTheDocument();
+    // 2026-09-05 audit F146: email is bring-your-own-mailbox (Outlook), never
+    // "your own domain from day one"; SMS/voice use a Twilio number you own. The
+    // one remaining launch limit is one login.
+    expect(screen.getByText(/Email runs from your own mailbox/)).toBeInTheDocument();
+    expect(screen.getByText(/SMS and voice use a Twilio number you\s+own/)).toBeInTheDocument();
     expect(screen.getByText(/one login per\s+account/)).toBeInTheDocument();
     expect(screen.queryByText(/VantageMind subdomain/)).not.toBeInTheDocument();
   });

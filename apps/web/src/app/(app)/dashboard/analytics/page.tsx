@@ -94,7 +94,7 @@ export default function AnalyticsPage() {
             <Stat
               label="Conversations (period)"
               value={a.conversationsThisPeriod}
-              note={`${a.conversationsTotal} all time · ${Math.round(a.budgetUtilization * 100)}% of the free 50 used this period`}
+              note={`${a.conversationsTotal} all time · ${Math.min(100, Math.round(a.budgetUtilization * 100))}% of the free 50 used this period${a.budgetUtilization > 1 ? ' (past the free 50 — pay-as-you-go)' : ''}`}
             />
             <Stat label="Leads (period)" value={a.leadsThisPeriod} />
             <Stat
@@ -264,10 +264,7 @@ export default function AnalyticsPage() {
             {a.topKnowledgeSources && a.topKnowledgeSources.length > 0 ? (
               <ul className="mt-vm-3 space-y-vm-2">
                 {a.topKnowledgeSources.map((src) => (
-                  <li
-                    key={src.sourceId}
-                    className="flex items-center justify-between text-vm-1"
-                  >
+                  <li key={src.sourceId} className="flex items-center justify-between text-vm-1">
                     <span>{src.name}</span>
                     <span className="font-label">{src.retrievalCount}</span>
                   </li>
@@ -276,7 +273,7 @@ export default function AnalyticsPage() {
             ) : (
               <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
                 {a.topKnowledgeSourcesNote ??
-                  "Nothing to show yet — this fills in as Luciel answers from your documents."}
+                  'Nothing to show yet — this fills in as Luciel answers from your documents.'}
               </p>
             )}
           </Card>

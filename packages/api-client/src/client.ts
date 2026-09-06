@@ -67,6 +67,13 @@ import type {
  * This interface lives in the CONTROL PLANE. The widget never imports it
  * (Space Instructions §1, §6.3); the widget uses WidgetApiClient (./widget).
  */
+/** Offset paging for the list endpoints (2026-09-05 audit WP7): the server caps
+ *  `limit` at 500 and defaults to 200; omit both for the first page. */
+export interface PageOptions {
+  limit?: number;
+  offset?: number;
+}
+
 export interface LucielApiClient {
   auth: {
     signup(req: SignupRequest): Promise<SignupResult>;
@@ -321,7 +328,8 @@ export interface LucielApiClient {
   };
 
   conversations: {
-    list(): Promise<ConversationSummary[]>;
+    /** Newest first. Paged (2026-09-05 audit WP7): default 200, max 500 per call. */
+    list(opts?: PageOptions): Promise<ConversationSummary[]>;
     getMessages(sessionId: string): Promise<Message[]>;
     /** Live takeover (Arch §3.4.12). */
     takeOver(sessionId: string): Promise<ConversationSummary>;
@@ -337,11 +345,12 @@ export interface LucielApiClient {
     /** Answer review — source chunks + grounding score (Arch §3.4.13). */
     getAnswerEvidence(sessionId: string, messageId: string): Promise<AnswerEvidence>;
     flagAnswer(sessionId: string, messageId: string): Promise<void>;
-    listEscalations(): Promise<EscalationEvent[]>;
+    listEscalations(opts?: PageOptions): Promise<EscalationEvent[]>;
   };
 
   leads: {
-    list(): Promise<Lead[]>;
+    /** Newest activity first. Paged (default 200, max 500 per call). */
+    list(opts?: PageOptions): Promise<Lead[]>;
     /** Per-lead erasure (data-subject rights, Arch §3.4.11). */
     erase(leadId: string): Promise<void>;
     /** Prune = permanent delete (Arch §3.4.10a). */
@@ -374,7 +383,8 @@ export interface LucielApiClient {
 
   analytics: {
     overview(): Promise<AnalyticsOverview>;
-    auditLog(): Promise<AuditEvent[]>;
+    /** Newest first. Paged (2026-09-05 audit F170): default 200, max 500 per call. */
+    auditLog(opts?: PageOptions): Promise<AuditEvent[]>;
   };
 
   account: {
