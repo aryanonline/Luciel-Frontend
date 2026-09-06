@@ -13,29 +13,35 @@ import {
   Field,
   Select,
 } from '@luciel/ui';
+import { LucielApiError } from '@luciel/api-client';
 import type { Lead, LeadExportFormat, LeadOutcome } from '@luciel/api-client';
 import { useLeads, useLuciel, useLucielMutations, qk } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { saveBlob } from '@/lib/download';
+import { describeCrmDetail } from '@/lib/crm-detail';
 import { useQueryClient } from '@tanstack/react-query';
 
 /**
  * Leads + lead-store maintenance (Customer Journey §7; Arch §3.4.10a, §3.4.11).
  * The product NEVER blurs prune vs archive:
  *   - Prune = permanent delete (and the per-lead data-subject erasure).
- *   - Archive = kept in cold storage, NOT deleted; a returning archived lead is
- *     recognized.
- * Per-lead erasure (data-subject rights) is the same destructive delete.
+ *   - Archive = kept out of the active list, NOT deleted; a returning archived
+ *     lead is recognized.
+ * Per-lead erasure (data-subject rights, Legal §A7 / Arch §3.4.11) is the same
+ * destructive delete, named for what it is.
  *
- * The stale window is computed here from `lastActivityAt` because the list
- * endpoint takes no filter params — the whole list is already client-side.
+ * 2026-09-05 audit (WP6):
+ *   - a lead that did not reach the CRM says so on its row and can be retried
+ *     (F134); the reason the backend records is shown, never a bare "failed";
+ *   - archived leads stay out of the active view unless asked for (F112);
+ *   - the stale window is the tenant's own auto-prune window when one is set,
+ *     otherwise a year — the "stale" label and the auto-prune rule can no longer
+ *     disagree with each other.
  */
-const STALE_AFTER_MONTHS = 12;
+const DEFAULT_STALE_AFTER_DAYS = 365;
 
-function staleCutoff(): number {
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - STALE_AFTER_MONTHS);
-  return cutoff.getTime();
+function staleCutoff(days: number): number {
+  return Date.now() - days * 24 * 60 * 60 * 1000;
 }
 
 /** Offered auto-prune windows. Any whole number ≥ 1 is valid server-side, so a
@@ -57,25 +63,43 @@ export default function LeadsPage() {
   const { updateLeadRetention } = useLucielMutations();
   const qc = useQueryClient();
   const [staleOnly, setStaleOnly] = React.useState(false);
+  const [showArchived, setShowArchived] = React.useState(false);
   const [selected, setSelected] = React.useState<string[]>([]);
   const [pruneIds, setPruneIds] = React.useState<string[] | null>(null);
+  const [pruneMode, setPruneMode] = React.useState<'prune' | 'erase'>('prune');
   const [exportError, setExportError] = React.useState<string | null>(null);
   const [exporting, setExporting] = React.useState(false);
   const [archiving, setArchiving] = React.useState<string | null>(null);
   const [archiveError, setArchiveError] = React.useState<string | null>(null);
+  const [retrying, setRetrying] = React.useState<string | null>(null);
+  const [retryError, setRetryError] = React.useState<string | null>(null);
+  const [retryNotice, setRetryNotice] = React.useState<string | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: qk.leads });
 
+  const retentionDays = luciel.data?.leadRetentionDays ?? null;
+  // The tenant's own window when they set one (an "auto-prune in 90 days" rule
+  // makes a 12-month "stale" label a lie); otherwise a year.
+  const staleAfterDays = retentionDays ?? DEFAULT_STALE_AFTER_DAYS;
+
   const all = leads.data ?? [];
-  const cutoff = staleCutoff();
+  const cutoff = staleCutoff(staleAfterDays);
   const isStale = (l: Lead) => new Date(l.lastActivityAt).getTime() < cutoff;
-  const staleCount = all.filter(isStale).length;
-  const visible = staleOnly ? all.filter(isStale) : all;
+  const archivedCount = all.filter((l) => l.state === 'archived').length;
+  const inView = all.filter((l) => showArchived || l.state !== 'archived');
+  const staleCount = inView.filter(isStale).length;
+  const visible = staleOnly ? inView.filter(isStale) : inView;
+  const notInCrm = all.filter((l) => l.crmStatus === 'failed');
   const selectedVisible = visible.filter((l) => selected.includes(l.leadId));
   const allVisibleSelected = visible.length > 0 && selectedVisible.length === visible.length;
 
   const toggleFilter = (next: boolean) => {
     setStaleOnly(next);
+    setSelected([]);
+  };
+
+  const toggleArchived = (next: boolean) => {
+    setShowArchived(next);
     setSelected([]);
   };
 
@@ -95,6 +119,33 @@ export default function LeadsPage() {
       setArchiveError('We could not archive that lead. It is unchanged — please try again.');
     } finally {
       setArchiving(null);
+    }
+  };
+
+  /** F134: push the lead's current facts again. A 409 carries the reason nothing
+   *  was attempted (tool off, connection not ready) and is shown verbatim. */
+  const retryCrm = async (lead: Lead) => {
+    setRetryError(null);
+    setRetryNotice(null);
+    setRetrying(lead.leadId);
+    try {
+      const updated = await api.leads.retryCrmPush(lead.leadId);
+      if (updated.crmStatus === 'synced') {
+        setRetryNotice(`${lead.name ?? 'The lead'} is now in your CRM.`);
+      } else {
+        setRetryError(
+          `Still not in your CRM — ${describeCrmDetail(updated.crmDetail)}. Nothing else changed.`,
+        );
+      }
+      refresh();
+    } catch (err) {
+      setRetryError(
+        err instanceof LucielApiError
+          ? err.message
+          : 'We could not retry that push just now. Nothing changed — please try again.',
+      );
+    } finally {
+      setRetrying(null);
     }
   };
 
@@ -129,6 +180,16 @@ export default function LeadsPage() {
     refresh();
   };
 
+  const openErase = (leadId: string) => {
+    setPruneMode('erase');
+    setPruneIds([leadId]);
+  };
+
+  const openPrune = (ids: string[]) => {
+    setPruneMode('prune');
+    setPruneIds(ids);
+  };
+
   const pruneCount = pruneIds?.length ?? 0;
 
   const exportLeads = async (format: LeadExportFormat) => {
@@ -144,7 +205,6 @@ export default function LeadsPage() {
     }
   };
 
-  const retentionDays = luciel.data?.leadRetentionDays ?? null;
   const retentionOptions =
     retentionDays !== null && !RETENTION_PRESETS.includes(retentionDays)
       ? [...RETENTION_PRESETS, retentionDays].sort((a, b) => a - b)
@@ -153,6 +213,27 @@ export default function LeadsPage() {
   const changeRetention = (value: string) => {
     updateLeadRetention.mutate(value === 'off' ? null : Number(value));
   };
+
+  const modalTitle =
+    pruneMode === 'erase'
+      ? "Erase this lead's data?"
+      : pruneCount > 1
+        ? `Prune ${pruneCount} leads?`
+        : 'Prune this lead?';
+  const modalDescription =
+    pruneMode === 'erase'
+      ? 'This is the right-to-erasure action (Privacy Policy, your customers’ data rights). It permanently deletes the lead and everything we hold about them — their conversations, summaries, scheduled callbacks and our link to your CRM record — and cannot be undone. If they contact you again, they will be treated as brand new. The record inside your own CRM is yours to delete there; erasing here removes everything on our side, including the link to it.'
+      : pruneCount > 1
+        ? `This permanently deletes ${pruneCount} leads and forgets those people — it can't be undone. If any of them contact you again, they'll be treated as brand new. To keep leads out of your active view without deleting, use Archive instead. Leads already pushed to your CRM stay in your CRM — deleting those records there is up to you.`
+        : "This permanently deletes the lead and forgets the person — it can't be undone. If they contact you again, they'll be treated as brand new. To keep them out of your active view without deleting, use Archive instead. If this lead was pushed to your CRM, the record inside your CRM is yours to delete there — erasing here removes everything we hold, including our link to that record.";
+  const modalConfirm =
+    pruneMode === 'erase'
+      ? 'Erase permanently'
+      : pruneCount > 1
+        ? `Prune ${pruneCount} permanently`
+        : 'Prune permanently';
+  const modalPending =
+    pruneMode === 'erase' ? 'Erasing…' : pruneCount > 1 ? `Pruning ${pruneCount}…` : 'Pruning…';
 
   return (
     <div className="space-y-vm-5">
@@ -163,27 +244,46 @@ export default function LeadsPage() {
 
       <Banner tone="info">
         Keeping your list tidy: <strong>Prune</strong> permanently deletes a lead (and forgets the
-        person). <strong>Archive</strong> keeps them in cheaper storage — a returning archived lead
-        is recognized automatically. The two are never the same.
+        person). <strong>Archive</strong> keeps them out of your active list — nothing is deleted,
+        and a returning archived lead is recognized automatically. The two are never the same.
       </Banner>
+
+      {notInCrm.length > 0 && (
+        <Banner tone="warning">
+          {notInCrm.length} lead{notInCrm.length === 1 ? '' : 's'} did not reach your CRM. The leads
+          are safe here; use <strong>Retry CRM push</strong> on a row once your CRM connection is
+          healthy. Luciel also retries on its own the next time it learns something new about them.
+        </Banner>
+      )}
 
       <Card>
         <CardTitle>All leads</CardTitle>
         <CardDescription>Captured automatically by cognition — no tool to enable.</CardDescription>
 
         <div className="mt-vm-3 flex flex-wrap items-center justify-between gap-vm-3">
-          <label className="flex items-center gap-vm-2 text-vm-1">
-            <input
-              type="checkbox"
-              checked={staleOnly}
-              onChange={(e) => toggleFilter(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <span>
-              Show only stale leads — no activity for over {STALE_AFTER_MONTHS} months (
-              {staleCount})
-            </span>
-          </label>
+          <div className="flex flex-col gap-vm-2">
+            <label className="flex items-center gap-vm-2 text-vm-1">
+              <input
+                type="checkbox"
+                checked={staleOnly}
+                onChange={(e) => toggleFilter(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <span>
+                Show only stale leads — no activity for over {staleAfterDays} days
+                {retentionDays !== null ? ' (your auto-prune window)' : ''} ({staleCount})
+              </span>
+            </label>
+            <label className="flex items-center gap-vm-2 text-vm-1">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => toggleArchived(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <span>Show archived leads ({archivedCount})</span>
+            </label>
+          </div>
           <div className="flex flex-wrap items-center gap-vm-2">
             <Button variant="ghost" disabled={exporting} onClick={() => void exportLeads('csv')}>
               {exporting ? 'Preparing…' : 'Export CSV'}
@@ -194,7 +294,7 @@ export default function LeadsPage() {
             {selectedVisible.length > 0 && (
               <Button
                 variant="ghost"
-                onClick={() => setPruneIds(selectedVisible.map((l) => l.leadId))}
+                onClick={() => openPrune(selectedVisible.map((l) => l.leadId))}
               >
                 Prune {selectedVisible.length} selected
               </Button>
@@ -215,6 +315,16 @@ export default function LeadsPage() {
         {outcomeError && (
           <Banner tone="danger" className="mt-vm-3">
             {outcomeError}
+          </Banner>
+        )}
+        {retryError && (
+          <Banner tone="danger" className="mt-vm-3">
+            {retryError}
+          </Banner>
+        )}
+        {retryNotice && (
+          <Banner tone="info" className="mt-vm-3">
+            {retryNotice}
           </Banner>
         )}
 
@@ -253,10 +363,35 @@ export default function LeadsPage() {
                   {l.email && l.email !== l.contactIdentifier && (
                     <div className="truncate text-vm-0 text-vm-text-muted">also: {l.email}</div>
                   )}
+                  {/* LeadOut.phone (F111): the volunteered number beside a
+                      non-phone key. */}
+                  {l.phone && l.phone !== l.contactIdentifier && (
+                    <div className="truncate text-vm-0 text-vm-text-muted">also: {l.phone}</div>
+                  )}
+                  {l.crmStatus === 'failed' && (
+                    <div className="text-vm-0 text-vm-warning">
+                      Not in your CRM — {describeCrmDetail(l.crmDetail)}.
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-vm-2">
                 {isStale(l) && <span className="text-vm-0 text-vm-text-muted">stale</span>}
+                {l.crmStatus === 'synced' && (
+                  <span className="text-vm-0 text-vm-text-muted">in your CRM</span>
+                )}
+                {l.crmStatus === 'failed' && (
+                  <>
+                    <StatusChip kind="action_needed" detail="not in your CRM" />
+                    <Button
+                      variant="ghost"
+                      disabled={retrying === l.leadId}
+                      onClick={() => void retryCrm(l)}
+                    >
+                      {retrying === l.leadId ? 'Retrying…' : 'Retry CRM push'}
+                    </Button>
+                  </>
+                )}
                 {/* Business outcome (Vision §7; C14): what Conversion-by-source
                     reads. Reversible on purpose — deals change. */}
                 <Select
@@ -279,8 +414,12 @@ export default function LeadsPage() {
                     {archiving === l.leadId ? 'Archiving…' : 'Archive'}
                   </Button>
                 )}
-                <Button variant="ghost" onClick={() => setPruneIds([l.leadId])}>
-                  Prune
+                <Button
+                  variant="ghost"
+                  aria-label={`Erase ${l.name ?? 'lead'}'s data`}
+                  onClick={() => openErase(l.leadId)}
+                >
+                  Erase
                 </Button>
               </div>
             </li>
@@ -303,9 +442,11 @@ export default function LeadsPage() {
               </li>
             ) : (
               <li className="py-vm-4 text-vm-1 text-vm-text-muted">
-                {staleOnly && all.length > 0
-                  ? `No leads have been inactive for over ${STALE_AFTER_MONTHS} months.`
-                  : 'No leads yet.'}
+                {staleOnly && inView.length > 0
+                  ? `No leads have been inactive for over ${staleAfterDays} days.`
+                  : !showArchived && archivedCount > 0 && all.length === archivedCount
+                    ? `All ${archivedCount} of your leads are archived. Tick “Show archived leads” to see them.`
+                    : 'No leads yet.'}
               </li>
             ))}
         </ul>
@@ -360,15 +501,11 @@ export default function LeadsPage() {
       <Modal
         open={Boolean(pruneIds)}
         onOpenChange={(o) => !o && setPruneIds(null)}
-        title={pruneCount > 1 ? `Prune ${pruneCount} leads?` : 'Prune this lead?'}
-        description={
-          pruneCount > 1
-            ? `This permanently deletes ${pruneCount} leads and forgets those people — it can't be undone. If any of them contact you again, they'll be treated as brand new. To keep leads out of your active view without deleting, use Archive instead. Leads already pushed to your CRM stay in your CRM — deleting those records there is up to you.`
-            : "This permanently deletes the lead and forgets the person — it can't be undone. If they contact you again, they'll be treated as brand new. To keep them out of your active view without deleting, use Archive instead. If this lead was pushed to your CRM, the record inside your CRM is yours to delete there — erasing here removes everything we hold, including our link to that record."
-        }
-        confirmLabel={pruneCount > 1 ? `Prune ${pruneCount} permanently` : 'Prune permanently'}
+        title={modalTitle}
+        description={modalDescription}
+        confirmLabel={modalConfirm}
         confirmVariant="danger"
-        confirmPendingLabel={pruneCount > 1 ? `Pruning ${pruneCount}…` : 'Pruning…'}
+        confirmPendingLabel={modalPending}
         onConfirm={prune}
       />
     </div>

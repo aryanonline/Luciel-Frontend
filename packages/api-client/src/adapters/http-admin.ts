@@ -167,6 +167,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       archive: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/archive`),
       markOutcome: (leadId, outcome) =>
         t.post(`/api/v1/dashboard/leads/${leadId}/outcome`, { outcome }),
+      retryCrmPush: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/crm-retry`),
       export: async (format) => {
         const file = await t.getFile(`/api/v1/dashboard/leads/export?format=${format}`);
         return { blob: file.blob, filename: file.filename ?? `leads.${format}` };
