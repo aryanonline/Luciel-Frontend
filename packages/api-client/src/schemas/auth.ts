@@ -50,6 +50,7 @@ export const accountNoticeKind = z.enum([
   'allowance_reduction', // Legal §A5 — 30 days' notice before the change takes effect
   'price_change', // Legal §A10 — PAYG rate increase / capacity reduction
   'terms_change', // Legal §A10 / §B10 — material change to Terms or Privacy
+  'model_updated', // §3.4.3 — the provider retired a model and the platform swapped it
 ]);
 export type AccountNoticeKind = z.infer<typeof accountNoticeKind>;
 
