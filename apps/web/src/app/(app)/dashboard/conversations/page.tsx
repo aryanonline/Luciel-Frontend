@@ -650,7 +650,7 @@ export default function ConversationsPage() {
                                 ) : answer.attributionStatus === 'attribution_unavailable' ? (
                                   "Source attribution isn't available yet."
                                 ) : answer.attributionStatus === 'retrieval_unavailable' ? (
-                                  "Your knowledge couldn't be searched for this reply (the search provider was unavailable), so Luciel handed off instead of guessing."
+                                  "Your knowledge couldn't be searched for this reply (the search provider was unavailable), so Luciel answered without it and never guessed."
                                 ) : (
                                   'No knowledge source backed this answer.'
                                 )}

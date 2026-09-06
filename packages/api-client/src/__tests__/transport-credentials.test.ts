@@ -54,6 +54,19 @@ describe('transport cookie mode per plane', () => {
     expect(credentialsOf(fetchMock)).toBe('omit');
   });
 
+  it('the widget bootstrap carries the stored session id when the tab has one (2026-09-06 E2E walk)', async () => {
+    const fetchMock = stubFetch(VALID_BOOTSTRAP);
+    const client = createWidgetClient({ adapter: 'http', baseUrl: BASE_URL });
+    await client.bootstrap('vm_live_demo', '00000000-0000-4000-8000-0000000000e9');
+    await client.bootstrap('vm_live_demo');
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)));
+    expect(bodies[0]).toEqual({
+      embedKey: 'vm_live_demo',
+      sessionId: '00000000-0000-4000-8000-0000000000e9',
+    });
+    expect(bodies[1]).toEqual({ embedKey: 'vm_live_demo' });
+  });
+
   it('the widget bootstrap fails closed on a response the schema does not recognize', async () => {
     // A 200 whose body carries an unknown renderState (or is missing the
     // AI-disclosure chrome) must REJECT — the widget then renders nothing on
