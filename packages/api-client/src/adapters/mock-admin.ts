@@ -391,6 +391,17 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         return ok(seed.seedCapabilities);
       },
+      async rotateEmbedKey() {
+        guardVerified();
+        if (!state.luciel)
+          throw new LucielApiError({ code: 'not_found', message: 'No Luciel yet.' });
+        await delay();
+        state.luciel = {
+          ...state.luciel,
+          embedKeyPublicId: `vm_live_${Math.random().toString(16).slice(2, 14)}`,
+        };
+        return ok(state.luciel);
+      },
       async updateEscalation(contact) {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
@@ -1037,6 +1048,13 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // A connected Meta channel is not a working one until its destination is
         // bound (contract §2), so nothing flips the channel live here.
         return ok(c);
+      },
+      async rotateSmsCapability() {
+        guardVerified();
+        const sms = state.connections.find((c) => c.connectionType === 'sms_sender');
+        if (!sms) throw new LucielApiError({ code: 'not_found', message: 'No SMS connection.' });
+        await delay();
+        return ok(sms);
       },
       async disconnect(connectionId) {
         guardVerified();

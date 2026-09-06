@@ -102,6 +102,11 @@ export interface LucielApiClient {
     capabilities(): Promise<CapabilityGroup[]>;
     updateEscalation(contact: EscalationContact): Promise<Luciel>;
     /**
+     * Mint a fresh public embed key (2026-09-05 audit F142). The old key stops
+     * working the moment this returns; every embedded site must update its snippet.
+     */
+    rotateEmbedKey(): Promise<Luciel>;
+    /**
      * Re-send the confirmation email for one configured escalation contact
      * (round 5B item 13). Inside the 5-minute per-address cooldown the server
      * answers `validation_error` with a try-again-shortly message.
@@ -325,6 +330,11 @@ export interface LucielApiClient {
      * re-auth). Returns the connect flow for the replacement.
      */
     swap(connectionId: string, provider: string): Promise<StartConnectionResult>;
+    /**
+     * Rotate the SMS webhook capability token and re-point the designated number's
+     * webhooks at the new URL (2026-09-05 audit F142). Returns the SMS connection.
+     */
+    rotateSmsCapability(): Promise<Connection>;
   };
 
   conversations: {
