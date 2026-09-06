@@ -98,15 +98,14 @@ beforeEach(() => {
 
 describe('Harmony wave 2, item 6b: scoringStatus', () => {
   it('renders the plain-language badge with the real number preserved in the tooltip', async () => {
-    getAnswerEvidence.mockResolvedValue(evidence({ scoringStatus: 'scored', groundingScore: 0.82 }));
+    getAnswerEvidence.mockResolvedValue(
+      evidence({ scoringStatus: 'scored', groundingScore: 0.82 }),
+    );
     await openConversation();
     // Owner-facing copy is plain language, not a raw model-eval score…
     const badge = await screen.findByText('Backed by your knowledge');
     // …but the real measurement is preserved one hover away, never fabricated.
-    expect(badge.closest('span[title]')).toHaveAttribute(
-      'title',
-      expect.stringContaining('0.82'),
-    );
+    expect(badge.closest('span[title]')).toHaveAttribute('title', expect.stringContaining('0.82'));
     expect(screen.queryByText(/Not scored/)).not.toBeInTheDocument();
   });
 
@@ -171,6 +170,17 @@ describe('Harmony wave 2, item 6b: attributionStatus', () => {
     await openConversation();
     expect(await screen.findByText(/Source attribution isn't available yet/)).toBeInTheDocument();
     expect(screen.queryByText(/No knowledge source backed this answer/)).not.toBeInTheDocument();
+  });
+
+  it('renders "couldn\'t be searched" for attributionStatus: retrieval_unavailable — never "no source" and never "weakly backed" (2026-09-06 E2E: embedding provider at quota)', async () => {
+    getAnswerEvidence.mockResolvedValue(
+      evidence({ attributionStatus: 'retrieval_unavailable', sourceChunks: [], groundingScore: 0 }),
+    );
+    await openConversation();
+    expect(await screen.findByText(/couldn't be searched for this reply/)).toBeInTheDocument();
+    expect(screen.getByText(/knowledge was unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText(/No knowledge source backed this answer/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Weakly backed/)).not.toBeInTheDocument();
   });
 
   it('does not decide the copy from sourceChunks.length alone: attribution_unavailable and no_sources_retrieved both carry an empty array but render different copy', async () => {

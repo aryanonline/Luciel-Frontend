@@ -236,8 +236,9 @@ export async function mountWidget(options: MountOptions): Promise<void> {
     }
     body.appendChild(msg);
     body.scrollTop = body.scrollHeight;
+    return msg;
   };
-  appendMessage('assistant', boot.openingMessage);
+  const greeting = appendMessage('assistant', boot.openingMessage);
 
   // §3.4.12: an EMPTY reply means a person holds this conversation — their answer
   // arrives through the poll. Say so once, in the transcript; never render a blank
@@ -310,7 +311,11 @@ export async function mountWidget(options: MountOptions): Promise<void> {
     // history the server no longer serves (the session closed, the key rotated)
     // means a fresh start — never a half-restored transcript.
     try {
-      await syncHistory(true);
+      const replayed = await syncHistory(true);
+      // The server's transcript already holds the greeting that opened this
+      // conversation; keeping the static one too showed the visitor two
+      // greetings on every page after the first (2026-09-06 E2E walk).
+      if (replayed) greeting.remove();
       schedulePoll();
     } catch {
       clearStoredSession(options.embedKey);

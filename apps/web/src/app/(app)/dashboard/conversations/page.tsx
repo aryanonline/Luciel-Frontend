@@ -179,10 +179,24 @@ function describeDelivery(result: SendMessageResult): Delivery {
 function GroundingBadge({
   score,
   scoringStatus,
+  attributionStatus,
 }: {
   score: number | null;
   scoringStatus: AnswerEvidence['scoringStatus'];
+  attributionStatus?: AnswerEvidence['attributionStatus'];
 }) {
+  if (attributionStatus === 'retrieval_unavailable') {
+    // 2026-09-06 E2E walk: the knowledge base could not be searched for this
+    // turn, so a low score here measures the outage, not the answer — and
+    // "Weakly backed — worth reviewing" would send the owner to re-read a
+    // source that was never consulted.
+    return (
+      <span className="inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label text-vm-text-muted">
+        <span aria-hidden="true">?</span>
+        <span>Not scored — knowledge was unavailable</span>
+      </span>
+    );
+  }
   if (scoringStatus === 'not_applicable') {
     return (
       <span className="inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label text-vm-text-muted">
@@ -635,6 +649,8 @@ export default function ConversationsPage() {
                                   </>
                                 ) : answer.attributionStatus === 'attribution_unavailable' ? (
                                   "Source attribution isn't available yet."
+                                ) : answer.attributionStatus === 'retrieval_unavailable' ? (
+                                  "Your knowledge couldn't be searched for this reply (the search provider was unavailable), so Luciel handed off instead of guessing."
                                 ) : (
                                   'No knowledge source backed this answer.'
                                 )}
@@ -642,6 +658,7 @@ export default function ConversationsPage() {
                               <GroundingBadge
                                 score={answer.groundingScore}
                                 scoringStatus={answer.scoringStatus}
+                                attributionStatus={answer.attributionStatus}
                               />
                             </div>
 
