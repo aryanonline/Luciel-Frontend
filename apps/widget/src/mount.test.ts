@@ -596,7 +596,7 @@ describe('widget mount', () => {
       const SESSION = '00000000-0000-4000-8000-0000000000e3';
       let served: Array<{
         messageId: string;
-        role: 'visitor' | 'assistant';
+        role: 'visitor' | 'assistant' | 'human';
         text: string;
         at: string;
       }> = [];
@@ -619,12 +619,18 @@ describe('widget mount', () => {
         },
         {
           messageId: '00000000-0000-4000-8000-0000000000b2',
-          role: 'assistant',
+          role: 'human',
           text: 'Hi, this is Sam from the team — how can I help?',
           at: '2026-07-30T00:00:05.000Z',
         },
       ];
       await vi.advanceTimersByTimeAsync(WIDGET_POLL_OPEN_MS + 50);
+      // A person's words carry the team label, never the AI assistant's name (E2E-11).
+      const samBubble = Array.from(shadow.querySelectorAll('.vm-msg')).find((m) =>
+        (m.textContent ?? '').includes('this is Sam from the team'),
+      );
+      expect(samBubble?.textContent?.startsWith('Team: ')).toBe(true);
+      expect(samBubble?.textContent).not.toContain('Luciel:');
       // Count transcript bubbles, not textContent: the screen-reader live region
       // deliberately repeats the latest reply as plain prose.
       const bubbles = (needle: string) =>

@@ -46,7 +46,9 @@ export type WidgetBootstrap = z.infer<typeof widgetBootstrap>;
 
 export const widgetMessage = z.object({
   messageId: uuid,
-  role: z.enum(['visitor', 'assistant']),
+  // 'human': a person's reply from the dashboard (2026-09-06 E2E walk, E2E-11) —
+  // rendered as the team, never under the AI assistant's name.
+  role: z.enum(['visitor', 'assistant', 'human']),
   text: z.string(),
   at: isoTimestamp,
 });
