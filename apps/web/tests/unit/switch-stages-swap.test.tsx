@@ -22,7 +22,7 @@ vi.mock('@/lib/oauth-connect', async (importOriginal) => {
   return { ...actual, authorizeOrExplain: (start: unknown) => authorizeOrExplain(start) };
 });
 
-const listProviders = vi.fn<[], Promise<ProviderGroup[]>>();
+const listProviders = vi.fn<() => Promise<ProviderGroup[]>>();
 const swap = vi.fn();
 const switchAccount = vi.fn();
 

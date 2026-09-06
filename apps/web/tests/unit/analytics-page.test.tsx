@@ -15,7 +15,7 @@ import type { AnalyticsOverview } from '@luciel/api-client';
  *    narration) reaches the page.
  */
 
-const overview = vi.fn<[], Promise<AnalyticsOverview>>();
+const overview = vi.fn<() => Promise<AnalyticsOverview>>();
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();

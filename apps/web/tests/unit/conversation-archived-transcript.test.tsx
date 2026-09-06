@@ -17,8 +17,8 @@ import type { ConversationSummary, Message } from '@luciel/api-client';
  * exact error shape each scenario needs.
  */
 
-const list = vi.fn<[], Promise<ConversationSummary[]>>();
-const getMessages = vi.fn<[string], Promise<Message[]>>();
+const list = vi.fn<() => Promise<ConversationSummary[]>>();
+const getMessages = vi.fn<(a0: string) => Promise<Message[]>>();
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();

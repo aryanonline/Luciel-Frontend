@@ -16,8 +16,8 @@ import { LucielApiError } from '@luciel/api-client';
  *  - a refused shrink turns into a confirmable action.
  */
 
-const listSources = vi.fn<[], Promise<KnowledgeSource[]>>();
-const quota = vi.fn<[], Promise<KnowledgeQuota>>();
+const listSources = vi.fn<() => Promise<KnowledgeSource[]>>();
+const quota = vi.fn<() => Promise<KnowledgeQuota>>();
 const pasteText = vi.fn();
 const renameSource = vi.fn();
 const uploadFile = vi.fn();
