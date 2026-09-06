@@ -69,6 +69,9 @@ type TranscriptError = { tone: 'info' | 'danger'; text: string };
  * sees it on their next refresh. `no_recipient` / `channel_not_provisioned` are
  * actionable: the admin needs contact details or a sender connection.
  */
+/** Transcript poll cadence while a person holds the conversation (F147). */
+const TAKEOVER_POLL_MS = 5000;
+
 function describeDelivery(result: SendMessageResult): Delivery {
   if (result.delivered) {
     // A caller has no chat to reply into: the reply reached them as a TEXT on
@@ -261,6 +264,36 @@ export default function ConversationsPage() {
   const openedSession = React.useRef<string | null>(null);
 
   const openConversation = conversations.data?.find((c) => c.sessionId === openSession);
+
+  // §3.4.12 / 2026-09-05 audit F147: while a person holds the conversation, the
+  // visitor keeps typing — poll the transcript so the owner sees each new turn
+  // without a refresh. Polling only (never a push claim); a failed poll is not a
+  // failed transcript, the next tick simply tries again.
+  const held = openConversation?.mode === 'human_controlled';
+  React.useEffect(() => {
+    if (!held || !openSession) return undefined;
+    const sessionId = openSession;
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const fresh = await api.conversations.getMessages(sessionId);
+        if (stopped || openedSession.current !== sessionId) return;
+        setMessages((prev) =>
+          prev.length === fresh.length &&
+          prev.every((m, i) => m.messageId === fresh[i]?.messageId)
+            ? prev
+            : fresh,
+        );
+      } catch {
+        /* retried on the next tick */
+      }
+    };
+    const id = window.setInterval(() => void tick(), TAKEOVER_POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [held, openSession]);
 
   /**
    * Evidence still comes one request per answer — that is the only endpoint —
