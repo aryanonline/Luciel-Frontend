@@ -264,11 +264,7 @@ export interface LucielApiClient {
      * PERSISTED on the row, so re-read the connection and show its
      * `statusDetail` rather than leaving the reason in a toast.
      */
-    completeConnectionOauth(
-      connectionId: string,
-      code: string,
-      state: string,
-    ): Promise<Connection>;
+    completeConnectionOauth(connectionId: string, code: string, state: string): Promise<Connection>;
     /**
      * Hand a connection back (contract §1): the stored credential is destroyed
      * and the row returns to a reconnectable `not_connected`. The returned
@@ -357,6 +353,11 @@ export interface LucielApiClient {
      * analytics group by. Reversible; audited server-side without lead PII.
      */
     markOutcome(leadId: string, outcome: LeadOutcome): Promise<Lead>;
+    /**
+     * Push the lead's current facts to the CRM again (2026-09-05 audit F134).
+     * Same broker gates as a capture push; a 409 says why nothing was attempted.
+     */
+    retryCrmPush(leadId: string): Promise<Lead>;
     /**
      * Download this tenant's leads. Export exists so an Admin is never asked to
      * prune what they cannot first take with them (Legal §B5, §A7).

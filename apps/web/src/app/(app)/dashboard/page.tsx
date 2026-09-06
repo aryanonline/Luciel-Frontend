@@ -22,7 +22,11 @@ import {
   useSwapConnection,
 } from '@/lib/hooks';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
-import { connectionTypeLabel, providerConfigured, providerDisplayName } from '@/components/config/labels';
+import {
+  connectionTypeLabel,
+  providerConfigured,
+  providerDisplayName,
+} from '@/components/config/labels';
 
 /**
  * Dashboard overview. Imports ONLY the typed client hooks (§7). Renders the
@@ -77,6 +81,9 @@ export default function DashboardPage() {
   const nearCap = b && b.billingState === 'free_cap' && b.conversationsThisPeriod >= 40 && !b.atCap;
   const nearNextBlock = b && b.billingState === 'payg_enabled' && b.nearNextBlock;
   const largeLeadStore = (leads.data?.length ?? 0) >= LARGE_LEAD_STORE;
+  // 2026-09-05 audit F134: a captured lead that never reached the CRM is owner
+  // attention, surfaced here so it is not discovered weeks later on the Leads page.
+  const leadsNotInCrm = (leads.data ?? []).filter((l) => l.crmStatus === 'failed').length;
   /**
    * "N need attention" must count exactly the rows the list below renders
    * with the "Action needed" chip — nothing else. The prior `status !==
@@ -93,7 +100,8 @@ export default function DashboardPage() {
    */
   const needsAttention =
     connections.data?.filter(
-      (c) => chipForConnection(c.status, isProviderConfigured(c, providers.data)) === 'action_needed',
+      (c) =>
+        chipForConnection(c.status, isProviderConfigured(c, providers.data)) === 'action_needed',
     ) ?? [];
   const hasConnected = (connections.data ?? []).some((c) => c.status === 'connected');
 
@@ -152,8 +160,8 @@ export default function DashboardPage() {
       {b?.atCap && (
         <Banner tone="warning">
           You&apos;ve reached your 50 free conversations this billing period. Your Luciel is still
-          capturing
-          leads and escalating them to you, but it&apos;s replying at-capacity to new visitors.{' '}
+          capturing leads and escalating them to you, but it&apos;s replying at-capacity to new
+          visitors.{' '}
           <Link href="/dashboard/billing" className="underline">
             Add a payment method
           </Link>{' '}
@@ -168,8 +176,9 @@ export default function DashboardPage() {
       )}
       {nearNextBlock && (
         <Banner tone="info">
-          You&apos;re about 80% through your current billed block. Once you pass it, usage rolls into
-          the next $39 / 100 block — this is just a heads-up, not a cap; your Luciel keeps answering.
+          You&apos;re about 80% through your current billed block. Once you pass it, usage rolls
+          into the next $39 / 100 block — this is just a heads-up, not a cap; your Luciel keeps
+          answering.
         </Banner>
       )}
       {/* Lead-store soft threshold nudge (Arch §3.4.10a, Customer Journey §7). */}
@@ -178,6 +187,15 @@ export default function DashboardPage() {
           Your lead store is getting large —{' '}
           <Link href="/dashboard/leads" className="underline">
             review stale leads
+          </Link>
+          .
+        </Banner>
+      )}
+      {leadsNotInCrm > 0 && (
+        <Banner tone="warning">
+          {leadsNotInCrm} lead{leadsNotInCrm === 1 ? '' : 's'} did not reach your CRM —{' '}
+          <Link href="/dashboard/leads" className="underline">
+            review and retry
           </Link>
           .
         </Banner>

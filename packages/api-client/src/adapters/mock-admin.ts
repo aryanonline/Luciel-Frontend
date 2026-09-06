@@ -409,8 +409,8 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // Round 5B item 13, mirroring the backend's save hook: a newly saved
         // email contact enters the confirmation loop; an already-verified one
         // keeps its state. Health is server-owned and never rides in the PUT.
-        const emails = [contact.primaryEmail, contact.secondaryEmail].filter(
-          (a): a is string => Boolean(a),
+        const emails = [contact.primaryEmail, contact.secondaryEmail].filter((a): a is string =>
+          Boolean(a),
         );
         const previous = state.luciel.escalationContactHealth;
         state.luciel.escalationContactHealth = emails.map(
@@ -569,7 +569,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (!s) throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
         const trimmed = name.trim();
         if (!trimmed) {
-          throw new LucielApiError({ code: 'validation_error', message: 'Give the source a name.' });
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Give the source a name.',
+          });
         }
         s.name = trimmed;
         s.lastUpdatedAt = new Date().toISOString();
@@ -918,7 +921,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const text = await file.text();
         const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
         const records = Math.max(0, lines.length - 1); // minus the header row
-        const columns = (lines[0] ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+        const columns = (lines[0] ?? '')
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean);
         let row = state.connections.find((x) => x.connectionType === 'record_source');
         if (!row) {
           row = {
@@ -1364,6 +1370,18 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const l = state.leads.find((x) => x.leadId === leadId);
         if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
         l.outcome = outcome;
+        return ok(l);
+      },
+      async retryCrmPush(leadId) {
+        guardVerified();
+        const l = state.leads.find((x) => x.leadId === leadId);
+        if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
+        // The mock CRM always accepts; the live adapter surfaces a 409 with the
+        // reason when nothing could be attempted.
+        l.crmStatus = 'synced';
+        l.crmDetail = null;
+        l.crmPushedAt = new Date().toISOString();
+        await delay();
         return ok(l);
       },
       async export(format) {

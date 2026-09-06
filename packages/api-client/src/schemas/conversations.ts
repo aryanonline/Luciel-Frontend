@@ -40,6 +40,16 @@ export const lead = z.object({
   outcome: leadOutcome.default('in_progress'),
   lastActivityAt: isoTimestamp,
   createdAt: isoTimestamp,
+  /** 2026-09-05 audit F111: the volunteered phone (E.164) beside a non-phone key. */
+  phone: z.string().nullable().optional(),
+  /**
+   * F134: the honest CRM state of this record. Absent/null = never attempted
+   * (no CRM, tool off, or no key the CRM accepts); 'synced' / 'failed' with the
+   * non-secret reason and the time of the last successful push.
+   */
+  crmStatus: z.enum(['synced', 'failed']).nullable().optional(),
+  crmDetail: z.string().nullable().optional(),
+  crmPushedAt: isoTimestamp.nullable().optional(),
 });
 export type Lead = z.infer<typeof lead>;
 
