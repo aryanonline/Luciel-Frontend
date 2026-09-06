@@ -563,6 +563,33 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         s.syncStatus = 'synced';
         return ok(s);
       },
+      async renameSource(sourceId, name) {
+        guardVerified();
+        const s = state.knowledge.find((k) => k.sourceId === sourceId);
+        if (!s) throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
+        const trimmed = name.trim();
+        if (!trimmed) {
+          throw new LucielApiError({ code: 'validation_error', message: 'Give the source a name.' });
+        }
+        s.name = trimmed;
+        s.lastUpdatedAt = new Date().toISOString();
+        return ok(s);
+      },
+      async replaceSource(sourceId, file) {
+        guardVerified();
+        const s = state.knowledge.find((k) => k.sourceId === sourceId);
+        if (!s) throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
+        if (file.size > PER_FILE_MAX_BYTES) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Knowledge quota: file exceeds the 50 MB per-file limit.',
+          });
+        }
+        s.sizeBytes = file.size;
+        s.ingestionStatus = 'ready';
+        s.lastUpdatedAt = new Date().toISOString();
+        return ok(s);
+      },
       async uploadFile(file, name) {
         guardVerified();
         if (file.size > PER_FILE_MAX_BYTES) {
@@ -611,9 +638,18 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         return ok(addSyncConnection('website_crawl', 'connected', { crawlUrls }));
       },
-      async syncConnection(connectionId) {
+      async syncConnection(connectionId, opts) {
         guardVerified();
         const c = state.syncConnections.find((x) => x.connectionId === connectionId);
+        // The mock models the shrink refusal (F107) so the UI's confirm path is
+        // exercisable: a crawl re-synced after its pages were removed at the source.
+        if (c && c.nonSecretConfig?.mockShrink && !opts?.confirmShrink) {
+          throw new LucielApiError({
+            code: 'conflict',
+            message:
+              'The source now reports 1 item(s) where 4 are synced, so nothing was removed. If you did remove them at the source, sync again and confirm the shrink.',
+          });
+        }
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
         if (c.status !== 'connected') {
           throw new LucielApiError({
