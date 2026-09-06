@@ -32,7 +32,7 @@ describe('escalation SMS contacts: E.164 hint, save-time validation, test text',
     const sms = await screen.findByLabelText('Primary SMS (optional)');
     fireEvent.change(sms, { target: { value: '+1 (604) 555-1234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save escalation settings' }));
-    await screen.findByText(/Saved\. Escalations route to these contacts from now on\./);
+    await screen.findByText(/Saved\. New conversations escalate to these contacts/);
 
     // The saved (normalised) number shows with its test affordance.
     await waitFor(() =>

@@ -98,11 +98,15 @@ export default function DashboardPage() {
    * wins regardless of status) instead of re-deriving "is this actionable"
    * with separate logic that could drift from what the chip actually shows.
    */
+  // 2026-09-05 audit F059: an EXPIRED connection renders "Reconnect needed" — the
+  // owner has to act on it just as much as on "Action needed" — yet the header
+  // said "All connected and healthy" over it. Both actionable chips count; the
+  // non-actionable "Not available yet" still does not.
   const needsAttention =
-    connections.data?.filter(
-      (c) =>
-        chipForConnection(c.status, isProviderConfigured(c, providers.data)) === 'action_needed',
-    ) ?? [];
+    connections.data?.filter((c) => {
+      const chip = chipForConnection(c.status, isProviderConfigured(c, providers.data));
+      return chip === 'action_needed' || chip === 'reconnect_needed';
+    }) ?? [];
   const hasConnected = (connections.data ?? []).some((c) => c.status === 'connected');
 
   /**

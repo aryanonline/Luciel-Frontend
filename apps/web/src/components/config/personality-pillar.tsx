@@ -55,7 +55,7 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
     void run(async () => {
       await updatePersonality.mutateAsync(draft);
       saved();
-      return 'Saved. Your Luciel sounds like this from its next reply on.';
+      return 'Saved. New conversations use this voice from now on; a conversation already in progress keeps the voice it started with.';
     }, 'We could not save your personality settings. Nothing was changed — please try again.');
 
   return (
@@ -88,7 +88,10 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
             const pct = Math.round(value * 100);
             return (
               <div key={id}>
-                <label className="mb-vm-1 block text-vm-1 font-label capitalize" htmlFor={`axis-${id}`}>
+                <label
+                  className="mb-vm-1 block text-vm-1 font-label capitalize"
+                  htmlFor={`axis-${id}`}
+                >
                   {id}
                 </label>
                 <input
@@ -145,8 +148,8 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
           customization has no field here yet, so it is not promised. */}
       <Banner tone="info">
         Your Luciel always introduces itself as an AI assistant for your business, on every channel.
-        That disclosure can&apos;t be turned off; the personality settings above shape how it sounds.
-        Model selection is handled by the platform — there&apos;s no model to pick.
+        That disclosure can&apos;t be turned off; the personality settings above shape how it
+        sounds. Model selection is handled by the platform — there&apos;s no model to pick.
       </Banner>
 
       {notice && (
