@@ -60,9 +60,18 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       getChunks: (sourceId) => t.get(`/api/v1/admin/knowledge/sources/${sourceId}/chunks`),
       quota: () => t.get('/api/v1/admin/knowledge/quota'),
       deleteSource: (sourceId) => t.del(`/api/v1/admin/knowledge/sources/${sourceId}`),
-      restoreSource: (sourceId) =>
-        t.post(`/api/v1/admin/knowledge/sources/${sourceId}/restore`),
-      resyncSource: (sourceId) => t.post(`/api/v1/admin/knowledge/sources/${sourceId}/resync`),
+      restoreSource: (sourceId) => t.post(`/api/v1/admin/knowledge/sources/${sourceId}/restore`),
+      resyncSource: (sourceId, opts) =>
+        t.post(
+          `/api/v1/admin/knowledge/sources/${sourceId}/resync${opts?.confirmShrink ? '?confirmShrink=true' : ''}`,
+        ),
+      renameSource: (sourceId, name) =>
+        t.put(`/api/v1/admin/knowledge/sources/${sourceId}`, { name }),
+      replaceSource: (sourceId, file) =>
+        t.postForm(
+          `/api/v1/admin/knowledge/sources/${sourceId}/replace`,
+          formData(file, file.name),
+        ),
       uploadFile: (file, name) =>
         t.postForm('/api/v1/admin/knowledge/sources/upload', formData(file, name)),
       pasteText: (req) => t.post('/api/v1/admin/knowledge/sources/paste', req),
@@ -75,8 +84,10 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
           provider: 'website_crawl',
           crawlUrls,
         }),
-      syncConnection: (connectionId) =>
-        t.post(`/api/v1/admin/knowledge/sync-connections/${connectionId}/sync`),
+      syncConnection: (connectionId, opts) =>
+        t.post(
+          `/api/v1/admin/knowledge/sync-connections/${connectionId}/sync${opts?.confirmShrink ? '?confirmShrink=true' : ''}`,
+        ),
       getScope: (connectionId) =>
         t.get(`/api/v1/admin/knowledge/sync-connections/${connectionId}/scope`),
       listScopeCandidates: (connectionId) =>
@@ -120,8 +131,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         }),
       completeConnectionOauth: (connectionId, code, state) =>
         t.post(`/api/v1/admin/connections/${connectionId}/oauth-callback`, { code, state }),
-      disconnect: (connectionId) =>
-        t.post(`/api/v1/admin/connections/${connectionId}/disconnect`),
+      disconnect: (connectionId) => t.post(`/api/v1/admin/connections/${connectionId}/disconnect`),
       switchAccount: (connectionId, provider) =>
         t.post(`/api/v1/admin/connections/${connectionId}/switch`, { provider: provider ?? null }),
       bindDestination: (connectionId, destination, channel) =>

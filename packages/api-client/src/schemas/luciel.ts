@@ -146,6 +146,8 @@ export const knowledgeSource = z.object({
   /** Live-sync sources only (Arch §3.2.3). */
   lastSyncedAt: isoTimestamp.optional(),
   syncStatus: knowledgeSyncStatus.optional(),
+  /** The sync connection a live source belongs to (2026-09-05 audit F107). */
+  connectionId: uuid.nullable().optional(),
   /**
    * §3.2.2 delete-confirmation truth (C14): answers in the last 7 days that
    * drew on this source, from the durable retrieval trace. A real 0 for a
