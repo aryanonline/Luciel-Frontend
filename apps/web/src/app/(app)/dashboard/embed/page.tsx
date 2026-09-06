@@ -2,8 +2,10 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Card, CardTitle, CardDescription, Button, Banner } from '@luciel/ui';
-import { useLuciel } from '@/lib/hooks';
+import { Card, CardTitle, CardDescription, Button, Banner, Modal } from '@luciel/ui';
+import { useQueryClient } from '@tanstack/react-query';
+import { useLuciel, qk } from '@/lib/hooks';
+import { api } from '@/lib/api';
 import { WidgetPreview } from '@/components/widget-preview';
 
 /**
@@ -73,6 +75,19 @@ function selectSnippetNode(node: HTMLPreElement | null) {
 
 export default function EmbedPage() {
   const { data: luciel, isPending, isError, refetch } = useLuciel();
+  const qc = useQueryClient();
+  // 2026-09-05 audit F142: a leaked embed key used to be unfixable short of
+  // delete-and-recreate. Rotation mints a new public key; the old one stops
+  // loading the widget immediately, so the modal says exactly that.
+  const [rotateOpen, setRotateOpen] = React.useState(false);
+  const [rotated, setRotated] = React.useState(false);
+  const rotateKey = async () => {
+    // Throws on failure on purpose — the Modal shows it and stays open.
+    await api.luciel.rotateEmbedKey();
+    await qc.invalidateQueries({ queryKey: qk.luciel });
+    setRotateOpen(false);
+    setRotated(true);
+  };
   const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'failed'>('idle');
   const [testing, setTesting] = React.useState(false);
   const snippetRef = React.useRef<HTMLPreElement | null>(null);
@@ -258,13 +273,41 @@ export default function EmbedPage() {
         {testing && luciel?.embedKeyPublicId && (
           <div className="mt-vm-4">
             <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
-              This is your Luciel, answering from your knowledge. Ask it something a customer
-              would.
+              This is your Luciel, answering from your knowledge. Ask it something a customer would.
             </p>
             <WidgetPreview embedKey={luciel.embedKeyPublicId} />
           </div>
         )}
       </Card>
+      {snippet && (
+        <Card>
+          <CardTitle>Embed key</CardTitle>
+          <CardDescription>
+            The key in your snippet is public by design, but if it ends up somewhere it should not
+            be, you can replace it. The old key stops loading the widget the moment you confirm, so
+            update the snippet on your site right after.
+          </CardDescription>
+          {rotated && (
+            <Banner tone="info" className="mt-vm-3">
+              New embed key issued. Copy the updated snippet above onto your website — the previous
+              key no longer loads the widget.
+            </Banner>
+          )}
+          <Button variant="secondary" className="mt-vm-3" onClick={() => setRotateOpen(true)}>
+            Rotate embed key
+          </Button>
+          <Modal
+            open={rotateOpen}
+            onOpenChange={setRotateOpen}
+            title="Rotate your embed key?"
+            description="A new public key is issued right away and your current key stops loading the widget immediately. Your website shows no chat until you paste the updated snippet. Nothing else — conversations, knowledge, connections — changes."
+            confirmLabel="Rotate key"
+            confirmVariant="danger"
+            confirmPendingLabel="Rotating…"
+            onConfirm={rotateKey}
+          />
+        </Card>
+      )}
     </div>
   );
 }

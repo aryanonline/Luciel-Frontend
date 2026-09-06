@@ -50,6 +50,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       updateTools: (tools) => t.put('/api/v1/admin/luciel/tools', { tools }),
       capabilities: () => t.get('/api/v1/admin/luciel/capabilities'),
       updateEscalation: (contact) => t.put('/api/v1/admin/luciel/escalation', contact),
+      rotateEmbedKey: () => t.post('/api/v1/admin/luciel/rotate-embed-key'),
       resendContactConfirmation: (address) =>
         t.post('/api/v1/admin/luciel/escalation/resend-confirmation', { address }),
       sendTestEscalationSms: (which) =>
@@ -140,6 +141,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       completeConnectionOauth: (connectionId, code, state) =>
         t.post(`/api/v1/admin/connections/${connectionId}/oauth-callback`, { code, state }),
       disconnect: (connectionId) => t.post(`/api/v1/admin/connections/${connectionId}/disconnect`),
+      rotateSmsCapability: () => t.post('/api/v1/admin/connections/sms/rotate-capability'),
       switchAccount: (connectionId, provider) =>
         t.post(`/api/v1/admin/connections/${connectionId}/switch`, { provider: provider ?? null }),
       bindDestination: (connectionId, destination, channel) =>

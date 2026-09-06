@@ -31,6 +31,7 @@ import {
 import { useActionNotice } from '@/lib/use-action-notice';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
 import { ConnectionControl } from './connection-control';
+import { SmsWebhookTokenRotate } from './sms-webhook-token';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
 import { channelLabel, chipKind, offRowConnectionNote, toolMeta } from './labels';
@@ -498,6 +499,7 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     twilioSubmitting={
                       connect.isPending || reconnect.isPending || submitCredentials.isPending
                     }
+                    webhookTokenControl={<SmsWebhookTokenRotate connection={smsConnection} />}
                     onSubmitTwilio={() => void submitTwilio()}
                     oauthPrimary={twilioOauthPrimary}
                     oauthPending={twilioOauthPending}
@@ -698,6 +700,8 @@ interface PhoneNumberPanelProps {
   phoneValid: boolean;
   saving: boolean;
   onSubmitNumber: () => void;
+  /** 2026-09-05 audit F142: the owner's webhook-token rotation, rendered under the panel. */
+  webhookTokenControl?: React.ReactNode;
   /**
    * The tenant's own Twilio numbers (C9 picker). `null` or empty = listing
    * wasn't possible — the manual E.164 field renders alone (honest fallback,
@@ -754,6 +758,7 @@ function PhoneNumberPanel({
   phoneValid,
   saving,
   onSubmitNumber,
+  webhookTokenControl,
   availableNumbers,
   onPickNumber,
   smsEnabled,
@@ -782,9 +787,9 @@ function PhoneNumberPanel({
       {phonePending ? (
         <div className="mt-vm-2 space-y-vm-3 text-vm-1 text-vm-text-muted">
           <p>
-            Your number is on file and answering phone calls. Texting waits on its A2P 10DLC
-            carrier registration, which you complete yourself, in your own carrier account, in
-            your business&apos;s name. VantageMind guides and verifies but never registers on your
+            Your number is on file and answering phone calls. Texting waits on its A2P 10DLC carrier
+            registration, which you complete yourself, in your own carrier account, in your
+            business&apos;s name. VantageMind guides and verifies but never registers on your
             behalf, and no shared or platform number is used.
           </p>
           <p>
@@ -1082,6 +1087,7 @@ function PhoneNumberPanel({
           message to a recipient carries an AI-identity and STOP notice.
         </p>
       )}
+      {webhookTokenControl}
     </div>
   );
 }
