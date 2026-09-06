@@ -13,9 +13,9 @@ import type { ConversationSummary, EscalationEvent, Message } from '@luciel/api-
  * fetch failure degrades to a note without hiding the list.
  */
 
-const list = vi.fn<[], Promise<ConversationSummary[]>>();
-const getMessages = vi.fn<[string], Promise<Message[]>>();
-const listEscalations = vi.fn<[], Promise<EscalationEvent[]>>();
+const list = vi.fn<() => Promise<ConversationSummary[]>>();
+const getMessages = vi.fn<(a0: string) => Promise<Message[]>>();
+const listEscalations = vi.fn<() => Promise<EscalationEvent[]>>();
 
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();

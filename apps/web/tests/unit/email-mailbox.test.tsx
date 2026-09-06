@@ -27,7 +27,7 @@ import type {
 const startConnection = vi.fn();
 const swapConnection = vi.fn();
 const reconnectConnection = vi.fn();
-const catalog = vi.fn<[string | undefined], ConnectionProviders[]>();
+const catalog = vi.fn<(a0: string | undefined) => ConnectionProviders[]>();
 /** Connection rows + provisioning served to the panel, set per test. */
 const served = vi.hoisted(() => ({
   connections: [] as Connection[],

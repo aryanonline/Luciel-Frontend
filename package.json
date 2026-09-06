@@ -2,7 +2,7 @@
   "name": "luciel-frontend",
   "version": "0.0.0",
   "private": true,
-  "description": "VantageMind (Luciel) customer-facing frontend — three artifacts (marketing, admin dashboard, embeddable widget) sharing a design system, never an auth context.",
+  "description": "VantageMind (Luciel) customer-facing frontend \u2014 three artifacts (marketing, admin dashboard, embeddable widget) sharing a design system, never an auth context.",
   "packageManager": "pnpm@9.7.0",
   "engines": {
     "node": ">=20.0.0",
@@ -21,5 +21,18 @@
   "devDependencies": {
     "prettier": "^3.3.3",
     "typescript": "^5.5.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "brace-expansion@1": "^1.1.18",
+      "brace-expansion@2": "^2.1.4",
+      "brace-expansion@>=3 <6": "^5.0.9",
+      "browserslist": "^4.28.7",
+      "glob@10": "^10.5.0",
+      "js-yaml@4": "^4.3.1",
+      "nanoid@3": "^3.3.18",
+      "postcss": "^8.5.18",
+      "vite": "^6.4.3"
+    }
   }
 }

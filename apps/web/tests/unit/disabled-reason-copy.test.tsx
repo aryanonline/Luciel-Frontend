@@ -12,7 +12,7 @@ import type { ProviderGroup } from '@luciel/api-client';
  * reasons are de-snaked, never shown as wire enums.
  */
 
-const listProviders = vi.fn<[], Promise<ProviderGroup[]>>();
+const listProviders = vi.fn<() => Promise<ProviderGroup[]>>();
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();

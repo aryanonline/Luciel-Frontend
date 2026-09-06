@@ -1,0 +1,12 @@
+# Secret scan configuration (the 2026-09-05 audit, F076, added the scan; this file keeps it honest).
+# Extends the default ruleset; only the entries below are waived, each with its reason.
+title = "Luciel frontend"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public-by-design values the default rules read as generic API keys"
+# The hCaptcha SITE key is embedded in every served page (NEXT_PUBLIC_*); the secret
+# key lives in the platform secret and never in this repository.
+regexes = ["6f66ccc8-ae5a-4d20-90f6-e49adfa8c10e"]

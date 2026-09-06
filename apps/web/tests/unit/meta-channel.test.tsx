@@ -21,7 +21,7 @@ import type { Connection, ConnectionProviders, Luciel, ProviderOption } from '@l
  */
 
 const startConnection = vi.fn();
-const catalog = vi.fn<[string | undefined], ConnectionProviders[]>();
+const catalog = vi.fn<(a0: string | undefined) => ConnectionProviders[]>();
 /** Connection rows served to the pillar; null falls through to the mock adapter. */
 const served = vi.hoisted(() => ({ connections: null as Connection[] | null }));
 

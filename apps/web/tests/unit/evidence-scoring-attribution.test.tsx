@@ -26,9 +26,9 @@ import type { AnswerEvidence, ConversationSummary, Message } from '@luciel/api-c
  * one fixed shape and can't drive these branches.
  */
 
-const list = vi.fn<[], Promise<ConversationSummary[]>>();
-const getMessages = vi.fn<[string], Promise<Message[]>>();
-const getAnswerEvidence = vi.fn<[string, string], Promise<AnswerEvidence>>();
+const list = vi.fn<() => Promise<ConversationSummary[]>>();
+const getMessages = vi.fn<(a0: string) => Promise<Message[]>>();
+const getAnswerEvidence = vi.fn<(a0: string, a1: string) => Promise<AnswerEvidence>>();
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();

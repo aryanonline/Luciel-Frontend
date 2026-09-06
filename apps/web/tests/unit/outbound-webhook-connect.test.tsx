@@ -15,7 +15,7 @@ import type { ProviderGroup } from '@luciel/api-client';
  * anywhere in the flow.
  */
 
-const listProviders = vi.fn<[], Promise<ProviderGroup[]>>();
+const listProviders = vi.fn<() => Promise<ProviderGroup[]>>();
 const start = vi.fn();
 const submitCredentials = vi.fn();
 
