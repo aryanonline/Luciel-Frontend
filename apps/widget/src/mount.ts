@@ -31,6 +31,10 @@ import { widgetStyles } from './styles';
  */
 
 /** Per-message cap, identical to the API's WidgetSendRequest.text max_length. */
+/** Shown once when a send comes back empty: a person has the conversation (§3.4.12). */
+export const WIDGET_HUMAN_TAKEOVER_NOTE =
+  'A member of the team has this conversation — their reply will appear here.';
+
 export const WIDGET_TEXT_MAX_CHARS = 4000;
 
 /**
@@ -235,6 +239,20 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   };
   appendMessage('assistant', boot.openingMessage);
 
+  // §3.4.12: an EMPTY reply means a person holds this conversation — their answer
+  // arrives through the poll. Say so once, in the transcript; never render a blank
+  // bubble and never invent a bot line for them (2026-09-05 audit F145).
+  let humanNoteShown = false;
+  const noteHumanHasConversation = () => {
+    if (humanNoteShown) return;
+    humanNoteShown = true;
+    const note = document.createElement('div');
+    note.className = 'vm-msg vm-note';
+    note.textContent = WIDGET_HUMAN_TAKEOVER_NOTE;
+    body.appendChild(note);
+    body.scrollTop = body.scrollHeight;
+  };
+
   // Live region so incoming messages are announced to screen readers. It carries
   // markdown-stripped PROSE — the formatting is visual only.
   const live = a11yLiveRegion(markdownToPlainText(boot.openingMessage));
@@ -254,6 +272,7 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       if (seenIds.has(row.messageId)) continue;
       seenIds.add(row.messageId);
       if (row.role === 'visitor' && !restoring) continue;
+      if (!row.text.trim()) continue; // nothing to show — never a blank bubble
       appendMessage(row.role, row.text);
       if (row.role === 'assistant') live.textContent = markdownToPlainText(row.text);
       appended = true;
@@ -350,8 +369,13 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       renderState = res.renderState;
       writeStoredSession(options.embedKey, sessionId);
       seenIds.add(res.reply.messageId);
-      appendMessage('assistant', res.reply.text);
-      live.textContent = markdownToPlainText(res.reply.text); // announce incoming (Arch §5.16)
+      if (res.reply.text.trim()) {
+        appendMessage('assistant', res.reply.text);
+        live.textContent = markdownToPlainText(res.reply.text); // announce incoming (Arch §5.16)
+      } else {
+        noteHumanHasConversation();
+        live.textContent = WIDGET_HUMAN_TAKEOVER_NOTE;
+      }
       schedulePoll();
     } catch (err) {
       // A 429 means Luciel is catching its breath, not that something broke —

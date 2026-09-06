@@ -13,6 +13,8 @@ import type {
   AddonTool,
   CapabilityGroup,
   EscalationContact,
+  TestSmsWhich,
+  TestSmsResult,
   PersonalityConfig,
   KnowledgeSource,
   KnowledgeChunk,
@@ -98,6 +100,13 @@ export interface LucielApiClient {
      * answers `validation_error` with a try-again-shortly message.
      */
     resendContactConfirmation(address: string): Promise<Luciel>;
+    /**
+     * Text a saved SMS escalation contact through the tenant's own number
+     * (2026-09-05 audit F084) — the phone-side twin of the email confirmation
+     * loop, and proof the number can send. `validation_error` when the slot
+     * is empty; `rate_limited` after a handful in a row.
+     */
+    sendTestEscalationSms(which: TestSmsWhich): Promise<TestSmsResult>;
     updatePersonality(config: PersonalityConfig): Promise<Luciel>;
     /**
      * Set (`days` ≥ 1) or clear (`null`) the lead auto-prune rule — the Admin's

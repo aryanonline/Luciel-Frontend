@@ -44,6 +44,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       updateEscalation: (contact) => t.put('/api/v1/admin/luciel/escalation', contact),
       resendContactConfirmation: (address) =>
         t.post('/api/v1/admin/luciel/escalation/resend-confirmation', { address }),
+      sendTestEscalationSms: (which) =>
+        t.post('/api/v1/admin/luciel/escalation/test-sms', { which }),
       updatePersonality: (config) => t.put('/api/v1/admin/luciel/personality', config),
       updateLeadRetention: (days) =>
         t.put('/api/v1/admin/luciel/lead-retention', { leadRetentionDays: days }),
