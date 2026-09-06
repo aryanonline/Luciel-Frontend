@@ -136,6 +136,9 @@ export const attributionStatus = z.enum([
   'has_sources',
   'no_sources_retrieved',
   'attribution_unavailable',
+  // 2026-09-06 E2E walk: retrieval never RAN for this turn (the embedding provider
+  // failed) — a fourth truth. Render "couldn't be searched", never "no source".
+  'retrieval_unavailable',
 ]);
 export type AttributionStatus = z.infer<typeof attributionStatus>;
 
@@ -161,6 +164,10 @@ export type AttributionStatus = z.infer<typeof attributionStatus>;
  *    attribution isn't available yet" — never "No knowledge source backed
  *    this answer" (that false claim was the live item-2a bug: a verbatim
  *    KB-backed reply scored 0.36 showed "no source").
+ *  - `attributionStatus: 'retrieval_unavailable'`: `sourceChunks` is `[]` because
+ *    the knowledge base could not be SEARCHED for this turn (embedding provider
+ *    failure — 2026-09-06 E2E walk, OpenAI 429 at quota). Luciel handed off
+ *    rather than guess; render "couldn't be searched", never "no source".
  */
 export const answerEvidence = z.object({
   messageId: uuid,

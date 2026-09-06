@@ -5,7 +5,11 @@ import {
   WIDGET_POLL_OPEN_MS,
   WIDGET_TEXT_MAX_CHARS,
 } from './mount';
-import { createWidgetClient, LucielApiError, type WidgetApiClient } from '@luciel/api-client/widget';
+import {
+  createWidgetClient,
+  LucielApiError,
+  type WidgetApiClient,
+} from '@luciel/api-client/widget';
 
 /** Stub client so a reply with markdown in it can be asserted on. */
 const clientReplying = (replyText: string): WidgetApiClient => ({
@@ -372,7 +376,10 @@ describe('widget mount', () => {
       await flush();
 
       window.dispatchEvent(new Event('pagehide'));
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      });
       try {
         document.dispatchEvent(new Event('visibilitychange'));
       } finally {
@@ -426,6 +433,46 @@ describe('widget mount', () => {
     expect(sends[0]?.sessionId).toBe(SESSION); // the SAME conversation continues
   });
 
+  it('shows the greeting ONCE after a page-to-page restore (the server transcript carries it)', async () => {
+    // 2026-09-06 E2E walk: the static greeting plus the replayed greeting row
+    // gave the visitor two identical openers on every page after the first.
+    const SESSION = '00000000-0000-4000-8000-0000000000e3';
+    sessionStorage.clear();
+    sessionStorage.setItem(
+      'luciel:session:vm_live_demo',
+      JSON.stringify({ sessionId: SESSION, lastActivity: Date.now() }),
+    );
+    const OPENER = 'Hi — I am an AI assistant for Northside Auto.';
+    const client: WidgetApiClient = {
+      ...clientWithSession(SESSION),
+      history: async () => [
+        {
+          messageId: '00000000-0000-4000-8000-0000000000b1',
+          role: 'assistant',
+          text: OPENER,
+          at: '2026-07-30T00:00:00.000Z',
+        },
+        {
+          messageId: '00000000-0000-4000-8000-0000000000b2',
+          role: 'visitor',
+          text: 'what are your hours?',
+          at: '2026-07-30T00:00:01.000Z',
+        },
+        {
+          messageId: '00000000-0000-4000-8000-0000000000b3',
+          role: 'assistant',
+          text: 'We open at nine.',
+          at: '2026-07-30T00:00:02.000Z',
+        },
+      ],
+    };
+    const shadow = await mountOpen(client);
+    const transcript = (shadow.querySelector('.vm-body') as HTMLElement).textContent ?? '';
+    expect(transcript.split(OPENER).length - 1).toBe(1);
+    expect(transcript).toContain('You: what are your hours?');
+    expect(transcript).toContain('We open at nine.');
+  });
+
   it('does not resume a stored session older than the server inactivity window', async () => {
     const SESSION = '00000000-0000-4000-8000-0000000000e2';
     sessionStorage.setItem(
@@ -450,7 +497,12 @@ describe('widget mount', () => {
     try {
       sessionStorage.clear();
       const SESSION = '00000000-0000-4000-8000-0000000000e3';
-      let served: Array<{ messageId: string; role: 'visitor' | 'assistant'; text: string; at: string }> = [];
+      let served: Array<{
+        messageId: string;
+        role: 'visitor' | 'assistant';
+        text: string;
+        at: string;
+      }> = [];
       const client: WidgetApiClient = {
         ...clientWithSession(SESSION),
         history: async () => served,
@@ -564,7 +616,11 @@ describe('widget mount', () => {
 
   it('a rate limit reads as "one moment", with the server\'s wait when it sent one', async () => {
     const text = await sendAndReadTranscript(
-      new LucielApiError({ code: 'rate_limited', message: 'Too many requests.', retryAfterSeconds: 30 }),
+      new LucielApiError({
+        code: 'rate_limited',
+        message: 'Too many requests.',
+        retryAfterSeconds: 30,
+      }),
     );
     expect(text).toContain('One moment — please try again in 30 seconds.');
     expect(text).not.toContain('something went wrong');

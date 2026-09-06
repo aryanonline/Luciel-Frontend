@@ -153,11 +153,19 @@ jobs:
           # s3 sync guesses `text/javascript` with NO charset; the bundle carries UTF-8
           # literals (e.g. the 'Type your message…' placeholder), which browsers then
           # decode as latin-1 and render as mojibake. Re-upload the JS entrypoints with
-          # an explicit charset (same cache-control as the sync above).
+          # an explicit charset.
+          #
+          # The entrypoints live at a FIXED url (`/v1/luciel.js` is what every customer
+          # page embeds), so they must never be `immutable`: the 2026-09-06 E2E walk
+          # found a visitor's browser still running the August bundle a day after the
+          # deploy — a year-long immutable header on a fixed name means no widget fix
+          # ever reaches a returning visitor. Five minutes + must-revalidate: the CDN
+          # invalidation below covers the edge, this covers the browser. Hashed chunks
+          # keep the long immutable header from the sync above.
           for f in luciel.js luciel.mjs; do
             aws s3 cp "dist/$f" "s3://${BUCKET}/v1/$f" \
               --content-type "text/javascript; charset=utf-8" \
-              --cache-control "public,max-age=31536000,immutable"
+              --cache-control "public,max-age=300,must-revalidate"
           done
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
@@ -197,11 +205,19 @@ jobs:
           # s3 sync guesses `text/javascript` with NO charset; the bundle carries UTF-8
           # literals (e.g. the 'Type your message…' placeholder), which browsers then
           # decode as latin-1 and render as mojibake. Re-upload the JS entrypoints with
-          # an explicit charset (same cache-control as the sync above).
+          # an explicit charset.
+          #
+          # The entrypoints live at a FIXED url (`/v1/luciel.js` is what every customer
+          # page embeds), so they must never be `immutable`: the 2026-09-06 E2E walk
+          # found a visitor's browser still running the August bundle a day after the
+          # deploy — a year-long immutable header on a fixed name means no widget fix
+          # ever reaches a returning visitor. Five minutes + must-revalidate: the CDN
+          # invalidation below covers the edge, this covers the browser. Hashed chunks
+          # keep the long immutable header from the sync above.
           for f in luciel.js luciel.mjs; do
             aws s3 cp "dist/$f" "s3://${BUCKET}/v1/$f" \
               --content-type "text/javascript; charset=utf-8" \
-              --cache-control "public,max-age=31536000,immutable"
+              --cache-control "public,max-age=300,must-revalidate"
           done
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
