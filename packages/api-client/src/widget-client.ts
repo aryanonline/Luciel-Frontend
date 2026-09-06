@@ -16,8 +16,10 @@ import type {
  * (enforced in the widget entry, not here).
  */
 export interface WidgetApiClient {
-  /** Resolve embed key → render state + opening disclosure (Arch §3.4.16/§3.6.2). */
-  bootstrap(embedKey: string): Promise<WidgetBootstrap>;
+  /** Resolve embed key → render state + opening disclosure (Arch §3.4.16/§3.6.2).
+   *  `sessionId` is the session this tab already holds, when it has one: a paused
+   *  Luciel still serves a conversation in progress (2026-09-06 E2E walk). */
+  bootstrap(embedKey: string, sessionId?: string): Promise<WidgetBootstrap>;
   /** Send a visitor message; server returns the reply + current render state. */
   send(embedKey: string, req: WidgetSendRequest): Promise<WidgetSendResult>;
   /** Fetch history for an existing session (e.g. reopened widget). */

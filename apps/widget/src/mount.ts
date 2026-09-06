@@ -34,6 +34,11 @@ import { widgetStyles } from './styles';
 /** Shown once when a send comes back empty: a person has the conversation (§3.4.12). */
 export const WIDGET_HUMAN_TAKEOVER_NOTE =
   'A member of the team has this conversation — their reply will appear here.';
+/** The business paused its Luciel and this conversation had already ended: the
+ *  server held the message. Said plainly — the widget used to show the takeover
+ *  note here, claiming a person had a conversation nobody had (2026-09-06 E2E). */
+export const WIDGET_PAUSED_NOTE =
+  "This chat is unavailable right now — your last message wasn't sent.";
 
 export const WIDGET_TEXT_MAX_CHARS = 4000;
 
@@ -129,9 +134,13 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       baseUrl: __WIDGET_API_BASE_URL__,
     });
 
+  // Read the tab's stored session BEFORE bootstrapping: a paused Luciel holds new
+  // conversations but keeps serving one in progress, and only the session id
+  // tells the server which this is (2026-09-06 E2E walk, E2E-9).
+  const stored = readStoredSession(options.embedKey);
   let boot: WidgetBootstrap;
   try {
-    boot = await client.bootstrap(options.embedKey);
+    boot = await client.bootstrap(options.embedKey, stored?.sessionId);
   } catch {
     // Fail closed and quiet on the host page; never render a broken UI.
     return;
@@ -182,7 +191,6 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   // from a navigation, and the server closes the session deterministically by
   // inactivity (30 minutes) and summarizes it then. A stored session older than
   // that window is not resumed.
-  const stored = readStoredSession(options.embedKey);
   let sessionId: string | undefined = stored?.sessionId;
   let renderState: WidgetBootstrap['renderState'] = boot.renderState;
   // Every transcript row the panel has rendered (or deliberately skipped), so a
@@ -259,6 +267,12 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   const live = a11yLiveRegion(markdownToPlainText(boot.openingMessage));
   body.appendChild(live);
 
+  // The server persists the opening greeting as the session's first row. The
+  // panel already shows it (the static opener has no id), so the first poll of a
+  // new session must recognise that row instead of appending it under the reply
+  // (2026-09-06 E2E walk, E2E-10).
+  let serverGreetingSeen = false;
+
   /**
    * Bring the transcript up to date from the server (§3.4.12: a takeover reply
    * reaches the visitor on the next poll). `restoring` renders the visitor's own
@@ -272,6 +286,15 @@ export async function mountWidget(options: MountOptions): Promise<void> {
     for (const row of rows) {
       if (seenIds.has(row.messageId)) continue;
       seenIds.add(row.messageId);
+      if (
+        !restoring &&
+        !serverGreetingSeen &&
+        row.role === 'assistant' &&
+        row.text.trim() === boot.openingMessage.trim()
+      ) {
+        serverGreetingSeen = true;
+        continue;
+      }
       if (row.role === 'visitor' && !restoring) continue;
       if (!row.text.trim()) continue; // nothing to show — never a blank bubble
       appendMessage(row.role, row.text);
@@ -374,7 +397,17 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       renderState = res.renderState;
       writeStoredSession(options.embedKey, sessionId);
       seenIds.add(res.reply.messageId);
-      if (res.reply.text.trim()) {
+      if (renderState === 'paused') {
+        // The business paused its Luciel and this conversation had already ended
+        // (§3.6.2 holds NEW conversations): the server held the message. Say so —
+        // never the takeover note, which claimed a person had it (E2E-8).
+        const note = document.createElement('div');
+        note.className = 'vm-msg vm-note';
+        note.textContent = WIDGET_PAUSED_NOTE;
+        body.appendChild(note);
+        body.scrollTop = body.scrollHeight;
+        live.textContent = WIDGET_PAUSED_NOTE;
+      } else if (res.reply.text.trim()) {
         appendMessage('assistant', res.reply.text);
         live.textContent = markdownToPlainText(res.reply.text); // announce incoming (Arch §5.16)
       } else {
@@ -402,11 +435,12 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       typing.remove();
       sending = false;
       // At-cap is server-driven: the widget just renders the graceful reply
-      // it receives, then leaves the input disabled (Arch §3.4.1b).
-      const atCap = renderState === 'at_cap';
-      input.disabled = atCap;
-      send.disabled = atCap;
-      if (!atCap) input.focus();
+      // it receives, then leaves the input disabled (Arch §3.4.1b). A pause that
+      // reached this panel closes the input the same way (E2E-8).
+      const closed = renderState === 'at_cap' || renderState === 'paused';
+      input.disabled = closed;
+      send.disabled = closed;
+      if (!closed) input.focus();
     }
   };
   send.addEventListener('click', () => void doSend());

@@ -473,6 +473,52 @@ describe('widget mount', () => {
     expect(transcript).toContain('We open at nine.');
   });
 
+  it('boots with the stored session id so a paused Luciel keeps serving a conversation in progress (E2E-9)', async () => {
+    const SESSION = '00000000-0000-4000-8000-0000000000e4';
+    sessionStorage.clear();
+    sessionStorage.setItem(
+      'luciel:session:vm_live_demo',
+      JSON.stringify({ sessionId: SESSION, lastActivity: Date.now() }),
+    );
+    const bootstrapArgs: Array<[string, string | undefined]> = [];
+    const base = clientWithSession(SESSION);
+    const client: WidgetApiClient = {
+      ...base,
+      bootstrap: async (embedKey, sessionId) => {
+        bootstrapArgs.push([embedKey, sessionId]);
+        return base.bootstrap(embedKey);
+      },
+    };
+    await mountOpen(client);
+    expect(bootstrapArgs).toEqual([['vm_live_demo', SESSION]]);
+  });
+
+  it('a pause that reaches the panel says the message was not sent — never the takeover note (E2E-8)', async () => {
+    sessionStorage.clear();
+    const client: WidgetApiClient = {
+      ...clientWithSession('00000000-0000-4000-8000-0000000000e5'),
+      send: async () => ({
+        sessionId: '00000000-0000-4000-8000-0000000000e5',
+        reply: {
+          messageId: '00000000-0000-4000-8000-0000000000c1',
+          role: 'assistant',
+          text: '',
+          at: '2026-07-30T00:00:00.000Z',
+        },
+        renderState: 'paused',
+      }),
+    };
+    const shadow = await mountOpen(client);
+    (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'are you still there?';
+    (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+    await flush();
+    const transcript = (shadow.querySelector('.vm-body') as HTMLElement).textContent ?? '';
+    expect(transcript).toContain("your last message wasn't sent");
+    expect(transcript).not.toContain('A member of the team has this conversation');
+    expect((shadow.querySelector('.vm-input') as HTMLInputElement).disabled).toBe(true);
+    expect((shadow.querySelector('.vm-send') as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('does not resume a stored session older than the server inactivity window', async () => {
     const SESSION = '00000000-0000-4000-8000-0000000000e2';
     sessionStorage.setItem(
@@ -490,6 +536,57 @@ describe('widget mount', () => {
     await mountOpen(client);
     expect(historyCalls).toBe(0);
     expect(sessionStorage.getItem('luciel:session:vm_live_demo')).toBeNull();
+  });
+
+  it('the first poll of a new session does not append the server greeting row under the reply (E2E-10)', async () => {
+    vi.useFakeTimers();
+    try {
+      sessionStorage.clear();
+      const SESSION = '00000000-0000-4000-8000-0000000000e6';
+      const OPENER = 'Hi — I am an AI assistant for Northside Auto.';
+      const base = clientWithSession(SESSION);
+      const client: WidgetApiClient = {
+        ...base,
+        send: async (key, req) => {
+          const res = await base.send(key, req);
+          return { ...res, reply: { ...res.reply, text: 'Hello from Northside Auto' } };
+        },
+        history: async () => [
+          {
+            messageId: '00000000-0000-4000-8000-0000000000d0',
+            role: 'assistant',
+            text: OPENER,
+            at: '2026-07-30T00:00:00.000Z',
+          },
+          {
+            messageId: '00000000-0000-4000-8000-0000000000d1',
+            role: 'visitor',
+            text: 'what are your hours?',
+            at: '2026-07-30T00:00:01.000Z',
+          },
+          {
+            messageId: '00000000-0000-4000-8000-000000000001', // the reply the send returned
+            role: 'assistant',
+            text: 'Hello from Northside Auto',
+            at: '2026-07-30T00:00:02.000Z',
+          },
+        ],
+      };
+      const shadow = await mountOpen(client);
+      (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'what are your hours?';
+      (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_OPEN_MS + 50);
+      const bubbles = (needle: string) =>
+        Array.from(shadow.querySelectorAll('.vm-msg')).filter((m) =>
+          (m.textContent ?? '').includes(needle),
+        ).length;
+      expect(bubbles(OPENER)).toBe(1);
+      expect(bubbles('what are your hours?')).toBe(1);
+      expect(bubbles('Hello from Northside Auto')).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('polls history while open and shows a reply a person sent from the dashboard (F063)', async () => {

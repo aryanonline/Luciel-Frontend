@@ -69,8 +69,13 @@ export function createHttpWidgetClient(baseUrl: string): WidgetApiClient {
     // (or a response missing the AI-disclosure chrome) an error instead of a
     // silently-dead widget. This is the widget data-plane only; the admin
     // client's tolerance posture is unchanged.
-    bootstrap: async (embedKey) =>
-      widgetBootstrap.parse(await t.post('/api/v1/chat-widget/bootstrap', { embedKey })),
+    bootstrap: async (embedKey, sessionId) =>
+      widgetBootstrap.parse(
+        await t.post('/api/v1/chat-widget/bootstrap', {
+          embedKey,
+          ...(sessionId ? { sessionId } : {}),
+        }),
+      ),
     send: async (embedKey, req) =>
       widgetSendResult.parse(await t.post('/api/v1/chat-widget/messages', { embedKey, ...req })),
     history: (embedKey, sessionId) =>
