@@ -5,6 +5,11 @@ on:
   push:
     branches:
       - main
+  # 2026-09-05 audit F039: dependencies rot between pushes. A daily run keeps the
+  # audit and the secret scan current on a quiet branch too.
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch: {}
 
 jobs:
   # ── Unit / lint / build gates ────────────────────────────────────────────────
@@ -23,6 +28,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # 2026-09-05 audit F076: the frontend had no dependency audit and no secret
+      # scan while the backend gated on both. High+ vulnerabilities with a fix block.
+      - name: Dependency audit (pnpm audit — blocks on high/critical)
+        run: pnpm audit --audit-level=high
 
       - name: Typecheck (all packages)
         run: pnpm -r typecheck
@@ -63,3 +73,15 @@ jobs:
 
       - name: Run a11y e2e (axe-core/playwright, WCAG 2.1 AA)
         run: pnpm --filter @luciel/web test:e2e
+
+  # ── Secret scan (2026-09-05 audit F076) ──────────────────────────────────────
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
