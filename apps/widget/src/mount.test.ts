@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mountWidget, WIDGET_POLL_OPEN_MS, WIDGET_TEXT_MAX_CHARS } from './mount';
+import {
+  mountWidget,
+  WIDGET_HUMAN_TAKEOVER_NOTE,
+  WIDGET_POLL_OPEN_MS,
+  WIDGET_TEXT_MAX_CHARS,
+} from './mount';
 import { createWidgetClient, LucielApiError, type WidgetApiClient } from '@luciel/api-client/widget';
 
 /** Stub client so a reply with markdown in it can be asserted on. */
@@ -486,6 +491,48 @@ describe('widget mount', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // --- Takeover honesty: an empty reply is a person, not a bot line (F145) -------
+
+  it('shows the team-has-this note once on an empty reply and never a blank bubble', async () => {
+    let calls = 0;
+    const client: WidgetApiClient = {
+      ...clientReplying(''),
+      send: async () => {
+        calls += 1;
+        return {
+          sessionId: '00000000-0000-4000-8000-000000000000',
+          reply: {
+            messageId: `00000000-0000-4000-8000-00000000000${calls}`,
+            role: 'assistant',
+            text: '',
+            at: '2026-07-30T00:00:00.000Z',
+          },
+          renderState: 'active',
+        };
+      },
+    };
+    const shadow = await mountOpen(client);
+    const sendOnce = async (text: string) => {
+      (shadow.querySelector('.vm-input') as HTMLInputElement).value = text;
+      (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+      await flush();
+    };
+    await sendOnce('can I talk to a person?');
+    await sendOnce('hello?');
+
+    const bubbles = Array.from(shadow.querySelectorAll('.vm-msg'));
+    const notes = bubbles.filter((m) => m.classList.contains('vm-note'));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.textContent).toBe(WIDGET_HUMAN_TAKEOVER_NOTE);
+    // No blank "Luciel:" bubble, and no fabricated at-cap / passed-along line.
+    const blank = bubbles.filter((m) => (m.textContent ?? '').trim() === 'Luciel:');
+    expect(blank).toHaveLength(0);
+    const transcript = (shadow.querySelector('.vm-body') as HTMLElement).textContent ?? '';
+    expect(transcript).not.toMatch(/passed that along|capacity/i);
+    // The composer stays open: the visitor can keep talking to the person.
+    expect((shadow.querySelector('.vm-input') as HTMLInputElement).disabled).toBe(false);
   });
 
   // --- Send-failure honesty: rate limit vs. everything else -----------------

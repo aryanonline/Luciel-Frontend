@@ -8,6 +8,7 @@ import type {
   Connection,
   DisconnectResult,
   EscalationContact,
+  TestSmsWhich,
   PersonalityConfig,
   CreateLucielRequest,
   ProvisionEmailRequest,
@@ -259,6 +260,9 @@ export function useLucielMutations() {
     resendContactConfirmation: useMutation({
       mutationFn: (address: string) => api.luciel.resendContactConfirmation(address),
       onSuccess: invalidate,
+    }),
+    sendTestEscalationSms: useMutation({
+      mutationFn: (which: TestSmsWhich) => api.luciel.sendTestEscalationSms(which),
     }),
     updatePersonality: useMutation({
       mutationFn: (p: PersonalityConfig) => api.luciel.updatePersonality(p),

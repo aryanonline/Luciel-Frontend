@@ -70,7 +70,17 @@ type TranscriptError = { tone: 'info' | 'danger'; text: string };
  * actionable: the admin needs contact details or a sender connection.
  */
 function describeDelivery(result: SendMessageResult): Delivery {
-  if (result.delivered) return { tone: 'info', text: 'Sent to the visitor.' };
+  if (result.delivered) {
+    // A caller has no chat to reply into: the reply reached them as a TEXT on
+    // your number (owner decision 2026-09-05, audit F150) — say so, never let the
+    // owner believe the caller heard it on the call.
+    return result.deliveryDetail === 'voice_bridged_to_sms'
+      ? {
+          tone: 'info',
+          text: 'Sent as a text message to the caller — a call has no chat to reply into, so they will see this on their phone.',
+        }
+      : { tone: 'info', text: 'Sent to the visitor.' };
+  }
   const connect = (
     <>
       {' '}
@@ -94,6 +104,31 @@ function describeDelivery(result: SendMessageResult): Delivery {
       };
     case 'unsupported_channel':
       return { tone: 'warning', text: 'Sent and saved — this channel cannot send replies out.' };
+    case 'voice_reply_requires_sms':
+      return {
+        tone: 'warning',
+        text: (
+          <>
+            Saved, but not sent: a reply to a caller goes out as a text, and that needs the SMS
+            channel switched on with a connected, attested number.{connect}
+          </>
+        ),
+      };
+    case 'sms_sender_not_operable':
+      return {
+        tone: 'warning',
+        text: <>Saved, but not sent: your SMS number is not operable right now.{connect}</>,
+      };
+    case 'email_sender_not_connected':
+      return {
+        tone: 'warning',
+        text: <>Saved, but not sent: your email sender is not connected.{connect}</>,
+      };
+    case 'mailbox_reconnect_needed':
+      return {
+        tone: 'warning',
+        text: <>Saved, but not sent: your mailbox needs reconnecting before replies can go out.{connect}</>,
+      };
     case 'send_failed':
       return {
         tone: 'warning',

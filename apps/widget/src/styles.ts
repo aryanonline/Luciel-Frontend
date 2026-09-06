@@ -107,6 +107,7 @@ export const widgetStyles = `
     flex: 1 1 auto;
   }
   .vm-msg { margin: 0 0 ${space[3]}; }
+  .vm-note { font-style: italic; opacity: 0.85; }
   /* Rendered markdown in assistant bubbles. The first paragraph goes inline so
      it continues the "Luciel: " label instead of dropping to its own line. */
   .vm-msg > p { margin: 0 0 ${space[2]}; }

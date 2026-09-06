@@ -282,6 +282,20 @@ export const escalationContact = z.object({
 });
 export type EscalationContact = z.infer<typeof escalationContact>;
 
+/**
+ * POST /admin/luciel/escalation/test-sms (2026-09-05 audit F084): which saved SMS
+ * contact to text, and whether the tenant's own number could deliver it. `detail`
+ * is the outbound delivery vocabulary (`channel_not_provisioned`,
+ * `sms_sender_not_operable`, …) when it could not.
+ */
+export const testSmsWhich = z.enum(['primary', 'secondary']);
+export type TestSmsWhich = z.infer<typeof testSmsWhich>;
+export const testSmsResult = z.object({
+  delivered: z.boolean(),
+  detail: z.string().nullable().optional(),
+});
+export type TestSmsResult = z.infer<typeof testSmsResult>;
+
 // --- Personality (Vision §3.5) ------------------------------------------------
 export const personalityPreset = z.enum([
   'warm_concierge',

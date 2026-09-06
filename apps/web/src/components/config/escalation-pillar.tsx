@@ -17,6 +17,7 @@ import type {
   EscalationContact,
   EscalationSignal,
   NotificationChannel,
+  TestSmsWhich,
 } from '@luciel/api-client';
 import { useLucielMutations } from '@/lib/hooks';
 import { useServerDraft } from '@/lib/use-server-draft';
@@ -40,6 +41,17 @@ type RoutingRule = NonNullable<EscalationContact['routing']>[number];
 /** A cleared field must go back as absent, not as an empty string. */
 const orUndefined = (value: string) => (value.trim() === '' ? undefined : value.trim());
 
+/** International format only — the one shape a text can be delivered to (F084). */
+const SMS_HINT = 'International format, e.g. +16045551234';
+
+/** Why a test text did not go out, in the owner's words (outbound vocabulary). */
+const TEST_SMS_FAILURE: Record<string, string> = {
+  channel_not_provisioned:
+    'Your Luciel has no SMS number connected yet — add one under Channels before texts can go out.',
+  sms_sender_not_operable:
+    'Your SMS number is not operable right now — check its status under Channels.',
+};
+
 /** Human copy for the server-owned per-address confirmation state (5B #13). */
 const HEALTH_COPY: Record<string, string> = {
   verified: 'Confirmed',
@@ -49,7 +61,8 @@ const HEALTH_COPY: Record<string, string> = {
 };
 
 export function EscalationPillar({ luciel }: { luciel: Luciel }) {
-  const { updateEscalation, resendContactConfirmation } = useLucielMutations();
+  const { updateEscalation, resendContactConfirmation, sendTestEscalationSms } =
+    useLucielMutations();
   const {
     draft,
     dirty,
@@ -68,6 +81,25 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
   // Server-owned sibling of the escalation blob (5B #13); tolerate its absence
   // so a payload from before the field existed still renders the pillar.
   const contactHealth = luciel.escalationContactHealth ?? [];
+
+  // Saved SMS contacts get the phone-side twin of the email confirmation loop
+  // (2026-09-05 audit F084): a test text through the tenant's own number, so the
+  // first real hot lead is never the first delivery attempt.
+  const savedSms: { which: TestSmsWhich; number: string; label: string }[] = [
+    { which: 'primary' as const, number: luciel.escalation.primarySms, label: 'primary SMS' },
+    { which: 'secondary' as const, number: luciel.escalation.secondarySms, label: 'backup SMS' },
+  ].filter((c): c is { which: TestSmsWhich; number: string; label: string } => Boolean(c.number));
+  const sendTestText = (which: TestSmsWhich, number: string) =>
+    void run(async () => {
+      const result = await sendTestEscalationSms.mutateAsync(which);
+      if (!result.delivered) {
+        throw new Error(
+          TEST_SMS_FAILURE[result.detail ?? ''] ??
+            'The test text could not be sent. Check the number and your SMS channel.',
+        );
+      }
+      return `Test text sent to ${number}. If it does not arrive within a minute, check the number and your SMS channel.`;
+    }, 'We could not send the test text. Please try again in a minute.');
 
   const ruleFor = (signal: EscalationSignal): RoutingRule | undefined =>
     draft.routing?.find((r) => r.signal === signal);
@@ -113,7 +145,7 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
             />
           )}
         </Field>
-        <Field id="esc-sms" label="Primary SMS (optional)">
+        <Field id="esc-sms" label="Primary SMS (optional)" hint={SMS_HINT}>
           {(p) => (
             <Input
               type="tel"
@@ -133,7 +165,7 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
             />
           )}
         </Field>
-        <Field id="esc-sms-2" label="Backup SMS (optional)">
+        <Field id="esc-sms-2" label="Backup SMS (optional)" hint={SMS_HINT}>
           {(p) => (
             <Input
               type="tel"
@@ -176,6 +208,27 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
                   {h.state === 'bouncing' ? 'Re-confirm address' : 'Resend confirmation'}
                 </Button>
               )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {savedSms.length > 0 && (
+        <ul className="mt-vm-3 space-y-vm-2" aria-label="SMS contact test">
+          {savedSms.map((c) => (
+            <li
+              key={c.which}
+              className="flex flex-wrap items-center justify-between gap-vm-2 text-vm-0"
+            >
+              <span>
+                {c.number} — {c.label}
+              </span>
+              <Button
+                variant="secondary"
+                disabled={sendTestEscalationSms.isPending || dirty}
+                onClick={() => sendTestText(c.which, c.number)}
+              >
+                Send a test text
+              </Button>
             </li>
           ))}
         </ul>

@@ -387,7 +387,25 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async updateEscalation(contact) {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
-        state.luciel.escalation = clone(contact);
+        // E.164 at save time, mirroring the backend (2026-09-05 audit F084): formatting
+        // is forgiven, anything else is refused — an extension cannot receive a text.
+        const e164 = (value: string | undefined) => {
+          if (!value) return undefined;
+          const cleaned = value.replace(/[\s\-.()]/g, '');
+          if (!/^\+[1-9]\d{7,14}$/.test(cleaned)) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message:
+                'Enter the number in international format, e.g. +16045551234 (country code first, digits only).',
+            });
+          }
+          return cleaned;
+        };
+        state.luciel.escalation = clone({
+          ...contact,
+          primarySms: e164(contact.primarySms),
+          secondarySms: e164(contact.secondarySms),
+        });
         // Round 5B item 13, mirroring the backend's save hook: a newly saved
         // email contact enters the confirmation loop; an already-verified one
         // keeps its state. Health is server-owned and never rides in the PUT.
@@ -405,6 +423,24 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             },
         );
         return ok(state.luciel);
+      },
+      async sendTestEscalationSms(which) {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        const number =
+          which === 'primary'
+            ? state.luciel.escalation.primarySms
+            : state.luciel.escalation.secondarySms;
+        if (!number) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'No SMS contact is saved in that slot yet.',
+          });
+        }
+        // The text goes out through the tenant's OWN number (BYO): without an SMS
+        // channel it is honestly undeliverable, never a pretend green.
+        const smsOn = state.luciel.channels.some((c) => c.id === 'sms' && c.enabled);
+        return { delivered: smsOn, detail: smsOn ? null : 'channel_not_provisioned' };
       },
       async resendContactConfirmation(address) {
         guardVerified();
