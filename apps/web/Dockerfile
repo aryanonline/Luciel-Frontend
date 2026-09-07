@@ -11,7 +11,7 @@
 # image doesn't ship stale base CVEs (ECR scan-on-push blocks CRITICAL per §5.14;
 # the prior node:20.18 base failed on perl + gnutls28 criticals). Node 20 is also
 # being deprecated, so 22 LTS is the forward-looking base.
-FROM node:22-bookworm-slim AS base
+FROM node:26-bookworm-slim AS base
 # Apply OS security upgrades, then remove the NON-ESSENTIAL perl packages. Debian shipped
 # 3 CRITICAL perl CVEs (CVE-2026-12087/13221/57433, CVSS 9.1-9.8) with NO fixed version
 # available yet, which ECR scan-on-push blocks (§5.14). A Next.js Node runtime never
