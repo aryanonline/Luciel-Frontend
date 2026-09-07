@@ -35,14 +35,15 @@ export default function PrivacyPage() {
         {
           heading: 'Retention and deletion',
           body: [
-            'Conversation transcripts, session summaries, and the audit log are each retained for one year, then permanently deleted. Deletion is deterministic and logged, never at an AI’s discretion.',
+            'Conversation transcripts move to cold storage 90 days after a conversation ends and are permanently deleted after one year; session summaries and the audit log are retained for one year, then permanently deleted. Leads are kept until you archive, prune or erase them, or until an auto-prune window you set yourself elapses. Deletion is deterministic and logged, never at an AI’s discretion.',
             'Captured lead records are your business data: they are exportable and are not auto-deleted on a timer. You control their lifecycle with prune (permanent delete) and archive (kept in cheaper storage). An incomplete signup that is never email-verified is purged after a short window.',
           ],
         },
         {
           heading: 'Sub-processors',
           body: [
-            'We rely on a published, versioned register of sub-processors: Amazon Web Services (hosting, storage, database, cache, secrets, logging); Anthropic (primary LLM inference, zero-retention/no-training); OpenAI (fallback LLM inference and, when Voice is enabled, Whisper speech-to-text — zero-retention/no-training); Twilio (SMS and voice transport); AWS SES (email transport); Meta (WhatsApp, Instagram, and Messenger channels); ElevenLabs (voice text-to-speech when Voice is enabled); and Stripe (billing only — we never store full card numbers).',
+            'We rely on a published, versioned register of sub-processors: Amazon Web Services (hosting, storage, database, cache, secrets, logging, and the transactional email we send you — verification, account notices and escalation alerts); Anthropic (primary LLM inference, zero-retention/no-training); OpenAI (fallback LLM inference and text embeddings for your knowledge base — zero-retention/no-training); Twilio (SMS and voice transport, including the speech recognition used on voice calls); Meta (WhatsApp, Instagram, and Messenger channels); ElevenLabs (voice text-to-speech when Voice is enabled); and Stripe (billing only — we never store full card numbers).',
+            'Services you connect yourself — your Microsoft 365 / Outlook mailbox, Google, HubSpot, Salesforce, Notion, Twilio and any webhook endpoint you register — act under your own account and their own terms. Customer email is sent and received through your connected mailbox, never from our infrastructure. We hold only the credential you grant, encrypted per tenant, and you can disconnect it at any time.',
             'We give at least 30 days’ advance notice before adding a sub-processor that would process your leads’ personal data, during which you may object.',
           ],
         },
@@ -56,7 +57,8 @@ export default function PrivacyPage() {
         {
           heading: 'Your rights and your leads’ rights',
           body: [
-            'You may access, correct, export, or delete your admin data, subject to legitimate retention such as billing records. Your leads have data-subject rights (access and erasure); because you are the controller of their data, the platform gives you a per-lead erasure action and export to honor those requests.',
+            'You may access, correct, export, or delete your admin data, subject to legitimate retention such as billing records.',
+            'Your leads have data-subject rights under PIPEDA, and under GDPR or CCPA where those apply — in particular access and erasure. Because you are the controller of their data, your leads exercise those rights through you, and the platform gives you a per-lead erasure action and export to honor them. We assist you as processor in responding.',
           ],
         },
       ]}

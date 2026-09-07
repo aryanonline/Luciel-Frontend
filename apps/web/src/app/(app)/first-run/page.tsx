@@ -14,7 +14,7 @@ import {
   Banner,
   ProgressBar,
 } from '@luciel/ui';
-import { createLucielRequest, type CreateLucielRequest } from '@luciel/api-client';
+import { createLucielRequest, LucielApiError, type CreateLucielRequest } from '@luciel/api-client';
 import { useLucielMutations } from '@/lib/hooks';
 
 /**
@@ -36,6 +36,11 @@ export default function FirstRunPage() {
   } = useForm<CreateLucielRequest>({ resolver: zodResolver(createLucielRequest) });
 
   const onSubmit = handleSubmit(async (values) => {
+    // Double-submit guard. A second click racing the first (before the phase
+    // switch re-renders) fired a second POST whose 409 painted "Something went
+    // wrong" OVER a create that had already succeeded — the exact wrong-way-round
+    // message a brand-new customer saw as their very first impression.
+    if (create.isPending) return;
     setPhase('provisioning');
     // A short progress strip (Customer Journey Phase 3: ~4s). Respects reduced
     // motion by simply filling; no essential info is conveyed by motion alone.
@@ -49,8 +54,16 @@ export default function FirstRunPage() {
       clearInterval(tick);
       setProgress(100);
       router.replace('/dashboard/configure');
-    } catch {
+    } catch (err) {
       clearInterval(tick);
+      // 409 = a Luciel already exists (this account HAS one — e.g. a replayed
+      // submit or a stale tab). That is not a failure to report; it is a
+      // destination to go to. One account, one Luciel (Arch §3.7.1).
+      if (err instanceof LucielApiError && err.code === 'conflict') {
+        setProgress(100);
+        router.replace('/dashboard/configure');
+        return;
+      }
       setPhase('form');
     }
   });
@@ -120,7 +133,7 @@ export default function FirstRunPage() {
               />
             )}
           </Field>
-          <Button type="submit" variant="primary" className="w-full">
+          <Button type="submit" variant="primary" className="w-full" disabled={create.isPending}>
             Create my Luciel
           </Button>
         </form>

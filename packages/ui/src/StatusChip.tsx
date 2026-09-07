@@ -8,7 +8,7 @@ import { cn } from './cn';
  * Icons here are simple inline glyphs (no icon dependency yet); they carry
  * aria-hidden because the text label is the accessible name.
  */
-export type ChipKind = 'connected' | 'action_needed' | 'reconnect_needed';
+export type ChipKind = 'connected' | 'action_needed' | 'reconnect_needed' | 'not_available';
 
 const config: Record<ChipKind, { label: string; cls: string; glyph: string }> = {
   connected: {
@@ -25,6 +25,16 @@ const config: Record<ChipKind, { label: string; cls: string; glyph: string }> = 
     label: 'Reconnect needed',
     cls: 'bg-vm-surface text-vm-danger border border-vm-border',
     glyph: '↻',
+  },
+  // Harmony wave 2, item 6a: NOT the same signal as action_needed — this
+  // provider isn't in the served registry at all, so there is no action the
+  // owner can take. Muted like Configure's own "— not available yet" text
+  // (connection-control.tsx / knowledge-pillar.tsx), never the warning color
+  // an actionable state gets, and never the word "Action".
+  not_available: {
+    label: 'Not available yet',
+    cls: 'bg-vm-surface text-vm-text-muted border border-vm-border',
+    glyph: '–',
   },
 };
 

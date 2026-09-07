@@ -7,16 +7,19 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card, CardTitle, CardDescription, Field, Input, Banner } from '@luciel/ui';
+import { LucielApiError } from '@luciel/api-client';
 import { api } from '@/lib/api';
+import { HCaptcha } from '@/components/marketing/hcaptcha';
 
 /**
- * Signup (Customer Journey Phase 2): email + password + invisible captcha.
+ * Signup (Customer Journey Phase 2): email + password + hCaptcha.
  * Client-side validation is UX only (§3.1) — the server re-validates. On
  * success the account is created `unverified`; the next step is the verify wall
  * (hard gate, Arch §3.7.1a). No payment requested (Customer Journey Phase 2).
  *
- * The captcha is an invisible-recaptcha placeholder; the real provider is wired
- * when the backend lands. We do NOT imply a working captcha that isn't there.
+ * The captcha is a real hCaptcha challenge (§3.7.1a bot-protection): the widget
+ * returns a token the BACKEND verifies server-side before creating the account.
+ * Submit is blocked until a token is present.
  */
 const schema = z.object({
   email: z.string().email('Enter a valid email.'),
@@ -27,6 +30,8 @@ type FormValues = z.infer<typeof schema>;
 export default function SignupPage() {
   const router = useRouter();
   const [serverError, setServerError] = React.useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = React.useState<string | null>(null);
+  const [captchaResets, setCaptchaResets] = React.useState(0);
   const {
     register,
     handleSubmit,
@@ -35,12 +40,29 @@ export default function SignupPage() {
 
   const onSubmit = handleSubmit(async (values) => {
     setServerError(null);
+    if (!captchaToken) {
+      setServerError('Please complete the captcha to continue.');
+      return;
+    }
     try {
-      // Invisible-captcha token placeholder (real provider wired with backend).
-      await api.auth.signup({ ...values, captchaToken: 'mock-invisible-captcha' });
-      router.push('/verify');
-    } catch {
-      setServerError('Something went wrong creating your account. Please try again.');
+      // Real hCaptcha token; the backend verifies it server-side (§3.7.1a).
+      const result = await api.auth.signup({ ...values, captchaToken });
+      // The verification mail did not make it onto the wire — the verify wall
+      // must offer a resend and a support path, not "check your inbox" (§1).
+      router.push(result.emailDeliveryDegraded ? '/verify?delivery=degraded' : '/verify');
+    } catch (err) {
+      setServerError(
+        err instanceof LucielApiError &&
+          (err.code === 'validation_error' ||
+            err.code === 'conflict' ||
+            err.code === 'rate_limited')
+          ? err.message
+          : 'Something went wrong creating your account. Please try again.',
+      );
+      // An hCaptcha token is single-use: keeping the spent one leaves Submit
+      // enabled but guaranteed to fail again (P1-16). Re-issue the challenge.
+      setCaptchaToken(null);
+      setCaptchaResets((n) => n + 1);
     }
   });
 
@@ -70,10 +92,17 @@ export default function SignupPage() {
             <Input type="password" autoComplete="new-password" {...p} {...register('password')} />
           )}
         </Field>
-        {/* An invisible captcha runs silently on submit (Customer Journey Phase 2) —
-            no visible challenge and intentionally NOT narrated to the user. The
-            MFA-availability disclosure lives in the Terms, not on this form. */}
-        <Button type="submit" variant="primary" disabled={isSubmitting} className="w-full">
+        {/* hCaptcha bot-protection (§3.7.1a). The token is verified server-side
+            before the account is created. */}
+        <div className="mt-vm-4">
+          <HCaptcha onVerify={setCaptchaToken} resetSignal={captchaResets} />
+        </div>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={isSubmitting || !captchaToken}
+          className="w-full mt-vm-4"
+        >
           {isSubmitting ? 'Creating…' : 'Create account'}
         </Button>
       </form>
@@ -86,7 +115,8 @@ export default function SignupPage() {
         <Link href="/legal/privacy" className="text-vm-accent underline">
           Privacy Policy
         </Link>
-        .
+        . Both are published as drafts while we launch; we will give you at least 30 days&apos;
+        notice before any change to them takes effect.
       </p>
       <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
         Already have an account?{' '}

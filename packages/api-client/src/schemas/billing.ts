@@ -25,8 +25,12 @@ export const budget = z.object({
   dunningState,
   /** Conversations counted this billing period. */
   conversationsThisPeriod: z.number().int().nonnegative(),
-  /** Free starter allowance — 50 (Vision §7). */
-  freeAllowance: z.literal(50),
+  /**
+   * Free starter allowance — 50 today (Vision §7). NOT pinned to a literal: Legal
+   * §A5 reserves the right to reduce it on 30 days' notice, and a literal would
+   * fail validation and break the budget bar the moment that happened.
+   */
+  freeAllowance: z.number().int().nonnegative(),
   /** Billed (PAYG) conversations above the free allowance this period. */
   billedThisPeriod: z.number().int().nonnegative(),
   /** Period boundary tied to Stripe billing date, not the calendar month. */
@@ -59,6 +63,14 @@ export const billingInfo = z.object({
   budget,
   /** Present only when billingState = payg_enabled. */
   paymentMethod: paymentMethod.optional(),
+  /**
+   * Whether a card can actually be saved through this deployment. False while
+   * the platform's Stripe posture is "mock" — the checkout URL then goes nowhere,
+   * and the dashboard must say payments are not live yet instead of rendering a
+   * button that pretends to work (2026-09-05 audit F026). Additive/optional:
+   * an older server that omits it is treated as available.
+   */
+  paymentsAvailable: z.boolean().optional(),
 });
 export type BillingInfo = z.infer<typeof billingInfo>;
 

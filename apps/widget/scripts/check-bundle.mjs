@@ -5,7 +5,7 @@
  * symbols and fails the build if any are present.
  *
  * It is a coarse but effective tripwire; it runs in `pnpm build` for the widget
- * and is wired into CI (see DEFINITION_OF_DONE.md).
+ * and is run by the widget build and CI.
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';

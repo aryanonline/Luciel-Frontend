@@ -1,47 +1,457 @@
 'use client';
 
 import * as React from 'react';
-import { Card, CardTitle, Button, StatusChip, Banner, PageHeader } from '@luciel/ui';
-import type { Message, AnswerEvidence } from '@luciel/api-client';
-import { useConversations } from '@/lib/hooks';
+import Link from 'next/link';
+import {
+  Card,
+  CardTitle,
+  Button,
+  Banner,
+  Textarea,
+  PageHeader,
+  AssistantText,
+  cn,
+} from '@luciel/ui';
+import type {
+  Message,
+  AnswerEvidence,
+  SendMessageResult,
+  MessageDeliveryDetail,
+} from '@luciel/api-client';
+import { LucielApiError } from '@luciel/api-client';
+import type { ConversationSummary } from '@luciel/api-client';
+import { useSearchParams } from 'next/navigation';
+import { usePagedTail } from '@/lib/paging';
+import { LoadOlder } from '@/components/load-older';
+import { useConversations, useEscalations } from '@/lib/hooks';
+import { sessionChannelLabel } from '@/components/config/labels';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { qk } from '@/lib/hooks';
 
 /**
  * Conversations + answer review (Customer Journey §7; Arch §3.4.12, §3.4.13).
- *  - Live takeover / hand back (human_controlled mode).
+ *  - Live takeover / hand back (human_controlled mode), and the compose box the
+ *    admin types into while they hold the conversation.
  *  - Answer review: the source chunks Luciel used + the grounding score, with a
  *    flag action that corrects at the knowledge root (within this account only).
+ *
+ * The evidence is not hidden behind a click (Decision #10): every Luciel answer
+ * carries its grounding and the knowledge it used inline, with the verbatim text
+ * one tap away, so "which knowledge produced this?" is answerable at a glance.
  */
+
+/** Server-enforced reply length (Arch §11.5). */
+const REPLY_MAX_CHARS = 4000;
+
+/** Uniform grounding floor (Vision §3.3) — below it, the answer is thinly backed. */
+const GROUNDING_FLOOR = 0.5;
+
+const ROLE_LABEL: Record<Message['role'], string> = {
+  lead: 'Visitor',
+  luciel: 'Luciel',
+  human_agent: 'You',
+};
+
+type Delivery = { tone: 'info' | 'warning'; text: React.ReactNode };
+
+/**
+ * A failed transcript read, with the tone it deserves. `service_unavailable`
+ * (503) is the archived-conversation case: the backend's own message says the
+ * transcript is in long-term storage and nothing has been lost, so it renders
+ * as a calm info notice with that copy verbatim — not as a danger banner that
+ * suggests something broke or disappeared. Every other failure keeps the
+ * generic danger treatment.
+ */
+type TranscriptError = { tone: 'info' | 'danger'; text: string };
+
+/**
+ * How a reply landed. `delivered: false` is a normal outcome, not a failure —
+ * for the widget it is the ONLY outcome, because there is no push transport to
+ * a browser we hold no connection to; the reply is persisted and the visitor
+ * sees it on their next refresh. `no_recipient` / `channel_not_provisioned` are
+ * actionable: the admin needs contact details or a sender connection.
+ */
+/** Transcript poll cadence while a person holds the conversation (F147). */
+const TAKEOVER_POLL_MS = 5000;
+
+function describeDelivery(result: SendMessageResult): Delivery {
+  if (result.delivered) {
+    // A caller has no chat to reply into: the reply reached them as a TEXT on
+    // your number (owner decision 2026-09-05, audit F150) — say so, never let the
+    // owner believe the caller heard it on the call.
+    return result.deliveryDetail === 'voice_bridged_to_sms'
+      ? {
+          tone: 'info',
+          text: 'Sent as a text message to the caller — a call has no chat to reply into, so they will see this on their phone.',
+        }
+      : { tone: 'info', text: 'Sent to the visitor.' };
+  }
+  const connect = (
+    <>
+      {' '}
+      <Link href="/dashboard/configure" className="text-vm-accent underline">
+        Set up a sender
+      </Link>{' '}
+      so replies can go out.
+    </>
+  );
+  const detail: MessageDeliveryDetail | null | undefined = result.deliveryDetail;
+  switch (detail) {
+    case 'no_recipient':
+      return {
+        tone: 'warning',
+        text: (
+          <>
+            Sent — but we have no contact details for this lead, so there was nowhere to deliver it.
+            {connect}
+          </>
+        ),
+      };
+    case 'channel_not_provisioned':
+      return {
+        tone: 'warning',
+        text: (
+          <>Sent — but this channel has no sender connected yet, so it could not go out.{connect}</>
+        ),
+      };
+    case 'unsupported_channel':
+      return { tone: 'warning', text: 'Sent and saved — this channel cannot send replies out.' };
+    case 'voice_reply_requires_sms':
+      return {
+        tone: 'warning',
+        text: (
+          <>
+            Saved, but not sent: a reply to a caller goes out as a text, and that needs the SMS
+            channel switched on with a connected, attested number.{connect}
+          </>
+        ),
+      };
+    case 'sms_sender_not_operable':
+      return {
+        tone: 'warning',
+        text: <>Saved, but not sent: your SMS number is not operable right now.{connect}</>,
+      };
+    case 'email_sender_not_connected':
+      return {
+        tone: 'warning',
+        text: <>Saved, but not sent: your email sender is not connected.{connect}</>,
+      };
+    case 'mailbox_reconnect_needed':
+      return {
+        tone: 'warning',
+        text: (
+          <>
+            Saved, but not sent: your mailbox needs reconnecting before replies can go out.{connect}
+          </>
+        ),
+      };
+    case 'send_failed':
+      return {
+        tone: 'warning',
+        text: 'Sent and saved, but the channel rejected the delivery. Try again in a moment.',
+      };
+    default:
+      return {
+        tone: 'info',
+        text: 'Sent — the visitor will see this on their next refresh.',
+      };
+  }
+}
+
+/**
+ * Grounding, paired with an icon + number so colour is never the only signal.
+ *
+ * Harmony wave 2, item 6b (backend contract: backend_gaps.md §"Harmony wave
+ * 2", FE CONTRACT BLOCK, item 1 / backend item 2c): `scoringStatus ===
+ * 'not_scored_legacy'` means this row predates real per-message grounding —
+ * `groundingScore` on it is `null`, never the old uniform floor constant
+ * (0.50) the backend used to fake for these rows. Presenting a legacy row as
+ * "Grounded 0.50" states a specific measurement that was never taken. Those
+ * rows must read "Not scored (before scoring existed)" instead — an honest
+ * "we don't know", distinct from both "Grounded" and "Weakly grounded".
+ *
+ * `'not_applicable'` (#5c, live-caught 2026-08-23): a fixed, code-composed
+ * message — the greeting, the at-cap notice, an escalation ack — was never a
+ * knowledge answer, so scoring doesn't apply. Those rows used to fall into the
+ * legacy branch and claim they predated scoring, false for a row minutes old.
+ */
+function GroundingBadge({
+  score,
+  scoringStatus,
+  attributionStatus,
+}: {
+  score: number | null;
+  scoringStatus: AnswerEvidence['scoringStatus'];
+  attributionStatus?: AnswerEvidence['attributionStatus'];
+}) {
+  if (attributionStatus === 'retrieval_unavailable') {
+    // 2026-09-06 E2E walk: the knowledge base could not be searched for this
+    // turn, so a low score here measures the outage, not the answer — and
+    // "Weakly backed — worth reviewing" would send the owner to re-read a
+    // source that was never consulted.
+    return (
+      <span className="inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label text-vm-text-muted">
+        <span aria-hidden="true">?</span>
+        <span>Not scored — knowledge was unavailable</span>
+      </span>
+    );
+  }
+  if (scoringStatus === 'not_applicable') {
+    return (
+      <span className="inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label text-vm-text-muted">
+        <span aria-hidden="true">?</span>
+        <span>Not scored — a fixed message, not a knowledge answer</span>
+      </span>
+    );
+  }
+  if (scoringStatus === 'not_scored_legacy' || score === null) {
+    return (
+      <span className="inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label text-vm-text-muted">
+        <span aria-hidden="true">?</span>
+        <span>Not scored (before scoring existed)</span>
+      </span>
+    );
+  }
+  const grounded = score >= GROUNDING_FLOOR;
+  // Plain language for the owner ("Grounded 0.87" is a model-eval score shown
+  // to a hairdresser); the real measurement stays one hover away in the title
+  // so the number is preserved, not hidden.
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border bg-vm-bg px-vm-2 py-vm-1 text-vm-0 font-label',
+        grounded ? 'text-vm-success' : 'text-vm-warning',
+      )}
+      title={`Grounding score ${score.toFixed(2)} — answers below 0.50 are refused or escalated.`}
+    >
+      <span aria-hidden="true">{grounded ? '✓' : '!'}</span>
+      <span>{grounded ? 'Backed by your knowledge' : 'Weakly backed — worth reviewing'}</span>
+    </span>
+  );
+}
+
+/** One name per source, even when several chunks came from the same document. */
+const sourceNames = (e: AnswerEvidence) =>
+  Array.from(new Set(e.sourceChunks.map((ch) => ch.sourceName)));
+
+/** `'unavailable'` records an evidence fetch that failed, so we can say so. */
+type EvidenceState = AnswerEvidence | 'unavailable';
+
+/**
+ * Escalation-email deep link (?open=<sessionId>): opens that conversation once
+ * its row has loaded. Isolated in a child under <Suspense> because Next requires
+ * a suspense boundary around useSearchParams consumers at build time.
+ */
+function OpenFromQuery({
+  ready,
+  onOpen,
+}: {
+  ready: string[];
+  onOpen: (sessionId: string) => void;
+}) {
+  const params = useSearchParams();
+  const requested = params.get('open');
+  const opened = React.useRef(false);
+  React.useEffect(() => {
+    if (!opened.current && requested && ready.includes(requested)) {
+      opened.current = true;
+      onOpen(requested);
+    }
+  }, [requested, ready, onOpen]);
+  return null;
+}
+
+const conversationKey = (c: ConversationSummary) => c.sessionId;
+const fetchOlderConversations = (opts: { limit?: number; offset?: number }) =>
+  api.conversations.list(opts);
+
 export default function ConversationsPage() {
   const conversations = useConversations();
+  // 2026-09-05 audit WP7: the list is paged server-side (200 per page); older
+  // conversations load on request and join the same rows.
+  const olderConversations = usePagedTail(
+    conversations.data,
+    fetchOlderConversations,
+    conversationKey,
+  );
+  const conversationRows = [...(conversations.data ?? []), ...olderConversations.extra];
+  // Escalation badges ride a separate query: its failure degrades to a note and
+  // must never hide the conversations list itself.
+  const escalations = useEscalations();
+  const escalatedSessions = React.useMemo(
+    () => new Set((escalations.data ?? []).map((e) => e.sessionId)),
+    [escalations.data],
+  );
+  const [listFilter, setListFilter] = React.useState<'all' | 'escalated'>('all');
   const qc = useQueryClient();
   const [openSession, setOpenSession] = React.useState<string | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
-  const [evidence, setEvidence] = React.useState<AnswerEvidence | null>(null);
+  const [evidence, setEvidence] = React.useState<Record<string, EvidenceState>>({});
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  const [reply, setReply] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [delivery, setDelivery] = React.useState<Delivery | null>(null);
+  const [replyError, setReplyError] = React.useState<string | null>(null);
+  const [transcriptLoading, setTranscriptLoading] = React.useState(false);
+  const [transcriptError, setTranscriptError] = React.useState<TranscriptError | null>(null);
+  /** Session whose take-over / hand-back is in flight, so only that row disables. */
+  const [modeBusy, setModeBusy] = React.useState<string | null>(null);
+  const [modeError, setModeError] = React.useState<string | null>(null);
+  const [flagBusy, setFlagBusy] = React.useState<string | null>(null);
+  const [flagError, setFlagError] = React.useState<Record<string, string>>({});
+  /** Which transcript the in-flight fetches belong to, so a fast switch can't cross-fill. */
+  const openedSession = React.useRef<string | null>(null);
+
+  const openConversation = conversations.data?.find((c) => c.sessionId === openSession);
+
+  // §3.4.12 / 2026-09-05 audit F147: while a person holds the conversation, the
+  // visitor keeps typing — poll the transcript so the owner sees each new turn
+  // without a refresh. Polling only (never a push claim); a failed poll is not a
+  // failed transcript, the next tick simply tries again.
+  const held = openConversation?.mode === 'human_controlled';
+  React.useEffect(() => {
+    if (!held || !openSession) return undefined;
+    const sessionId = openSession;
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const fresh = await api.conversations.getMessages(sessionId);
+        if (stopped || openedSession.current !== sessionId) return;
+        setMessages((prev) =>
+          prev.length === fresh.length && prev.every((m, i) => m.messageId === fresh[i]?.messageId)
+            ? prev
+            : fresh,
+        );
+      } catch {
+        /* retried on the next tick */
+      }
+    };
+    const id = window.setInterval(() => void tick(), TAKEOVER_POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [held, openSession]);
+
+  /**
+   * Evidence still comes one request per answer — that is the only endpoint —
+   * but it is fetched with the transcript rather than on a click, because the
+   * whole point of this screen is seeing what backed each answer.
+   */
+  const loadEvidence = async (sessionId: string, transcript: Message[]) => {
+    await Promise.all(
+      transcript
+        .filter((m) => m.role === 'luciel')
+        .map(async (m) => {
+          const result = await api.conversations
+            .getAnswerEvidence(sessionId, m.messageId)
+            .catch((): EvidenceState => 'unavailable');
+          if (openedSession.current !== sessionId) return;
+          setEvidence((prev) => ({ ...prev, [m.messageId]: result }));
+        }),
+    );
+  };
 
   const open = async (sessionId: string) => {
     setOpenSession(sessionId);
-    setEvidence(null);
-    setMessages(await api.conversations.getMessages(sessionId));
+    openedSession.current = sessionId;
+    setEvidence({});
+    setExpanded({});
+    setDelivery(null);
+    setReplyError(null);
+    setFlagError({});
+    setReply('');
+    setMessages([]);
+    setTranscriptError(null);
+    setTranscriptLoading(true);
+    try {
+      const transcript = await api.conversations.getMessages(sessionId);
+      if (openedSession.current !== sessionId) return;
+      setMessages(transcript);
+      void loadEvidence(sessionId, transcript);
+    } catch (err) {
+      if (openedSession.current !== sessionId) return;
+      setTranscriptError(
+        err instanceof LucielApiError && err.code === 'service_unavailable'
+          ? { tone: 'info', text: err.message }
+          : { tone: 'danger', text: 'We could not load this conversation. Please try again.' },
+      );
+    } finally {
+      if (openedSession.current === sessionId) setTranscriptLoading(false);
+    }
   };
 
-  const takeOver = async (sessionId: string) => {
-    await api.conversations.takeOver(sessionId);
-    qc.invalidateQueries({ queryKey: qk.conversations });
-  };
-  const handBack = async (sessionId: string) => {
-    await api.conversations.handBack(sessionId);
-    qc.invalidateQueries({ queryKey: qk.conversations });
+  const send = async () => {
+    if (!openSession) return;
+    const text = reply.trim();
+    if (!text || text.length > REPLY_MAX_CHARS) return;
+    setSending(true);
+    setReplyError(null);
+    setDelivery(null);
+    try {
+      const result = await api.conversations.sendMessage(openSession, text);
+      // Append optimistically; a later fetch returns it in the same order.
+      setMessages((prev) => [...prev, result.message]);
+      setDelivery(describeDelivery(result));
+      setReply('');
+      qc.invalidateQueries({ queryKey: qk.conversations });
+    } catch (err) {
+      setReplyError(
+        err instanceof LucielApiError && err.code === 'validation_error'
+          ? err.message
+          : 'We could not send that reply. Please try again.',
+      );
+    } finally {
+      setSending(false);
+    }
   };
 
-  const reviewAnswer = async (sessionId: string, messageId: string) => {
-    setEvidence(await api.conversations.getAnswerEvidence(sessionId, messageId));
+  /**
+   * Take-over and hand-back change who is answering a live visitor, so a failure
+   * that looks like a success is the worst outcome on this screen: the admin
+   * would type into a conversation Luciel still owns. Both report.
+   */
+  const setMode = async (sessionId: string, next: 'take_over' | 'hand_back') => {
+    if (modeBusy) return;
+    setModeBusy(sessionId);
+    setModeError(null);
+    try {
+      if (next === 'take_over') await api.conversations.takeOver(sessionId);
+      else await api.conversations.handBack(sessionId);
+      qc.invalidateQueries({ queryKey: qk.conversations });
+    } catch {
+      setModeError(
+        next === 'take_over'
+          ? 'We could not take over that conversation. Luciel is still answering it.'
+          : 'We could not hand that conversation back. You are still holding it.',
+      );
+    } finally {
+      setModeBusy(null);
+    }
   };
+
   const flag = async (sessionId: string, messageId: string) => {
-    await api.conversations.flagAnswer(sessionId, messageId);
-    if (evidence) setEvidence({ ...evidence, flaggedByAdmin: true });
+    setFlagBusy(messageId);
+    setFlagError((prev) => {
+      const { [messageId]: _removed, ...rest } = prev;
+      return rest;
+    });
+    try {
+      await api.conversations.flagAnswer(sessionId, messageId);
+      setEvidence((prev) => {
+        const current = prev[messageId];
+        if (!current || current === 'unavailable') return prev;
+        return { ...prev, [messageId]: { ...current, flaggedByAdmin: true } };
+      });
+    } catch {
+      setFlagError((prev) => ({
+        ...prev,
+        [messageId]: 'We could not flag that answer. Please try again.',
+      }));
+    } finally {
+      setFlagBusy(null);
+    }
   };
 
   return (
@@ -51,90 +461,302 @@ export default function ConversationsPage() {
         description="Review what your Luciel said, take over live when needed, and check the evidence behind any answer."
       />
 
+      <React.Suspense fallback={null}>
+        <OpenFromQuery
+          ready={(conversations.data ?? []).map((c) => c.sessionId)}
+          onOpen={(id) => void open(id)}
+        />
+      </React.Suspense>
+
       <div className="grid gap-vm-4 lg:grid-cols-2">
         <Card>
           <CardTitle>Recent</CardTitle>
-          <ul className="mt-vm-3 divide-y divide-vm-border">
-            {conversations.data?.map((c) => (
-              <li key={c.sessionId} className="py-vm-3">
-                <div className="flex items-center justify-between gap-vm-3">
-                  <button
-                    className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vm-focus"
-                    onClick={() => open(c.sessionId)}
-                  >
-                    <div className="truncate text-vm-2">{c.summary ?? 'Conversation'}</div>
-                    <div className="text-vm-0 text-vm-text-muted">
-                      {c.channel} · {new Date(c.startedAt).toLocaleString()}
-                    </div>
-                  </button>
-                  {c.mode === 'human_controlled' ? (
-                    <Button variant="secondary" onClick={() => handBack(c.sessionId)}>
-                      Hand back
-                    </Button>
-                  ) : (
-                    <Button variant="secondary" onClick={() => takeOver(c.sessionId)}>
-                      Take over
-                    </Button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div
+            className="mt-vm-2 flex items-center gap-vm-2"
+            role="group"
+            aria-label="Filter conversations"
+          >
+            <Button
+              variant={listFilter === 'all' ? 'primary' : 'secondary'}
+              aria-pressed={listFilter === 'all'}
+              onClick={() => setListFilter('all')}
+            >
+              All
+            </Button>
+            <Button
+              variant={listFilter === 'escalated' ? 'primary' : 'secondary'}
+              aria-pressed={listFilter === 'escalated'}
+              onClick={() => setListFilter('escalated')}
+            >
+              Escalated
+            </Button>
+            {escalations.isError && (
+              <span className="text-vm-0 text-vm-text-muted">
+                Escalation badges are unavailable right now.
+              </span>
+            )}
+          </div>
+          {modeError && (
+            <Banner tone="danger" className="mt-vm-3">
+              {modeError}
+            </Banner>
+          )}
+          {/* Loading, failure and "genuinely none yet" read differently (P1-6). */}
+          {conversations.isPending ? (
+            <p className="mt-vm-3 text-vm-1 text-vm-text-muted" role="status">
+              Loading conversations…
+            </p>
+          ) : conversations.isError ? (
+            <Banner tone="danger" className="mt-vm-3">
+              We could not load your conversations.{' '}
+              <button className="underline" onClick={() => void conversations.refetch()}>
+                Try again
+              </button>
+            </Banner>
+          ) : (conversations.data?.length ?? 0) === 0 ? (
+            <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
+              No conversations yet. They appear here as soon as a visitor talks to your Luciel.
+            </p>
+          ) : conversationRows.filter(
+              (c) => listFilter === 'all' || escalatedSessions.has(c.sessionId),
+            ).length === 0 ? (
+            <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
+              No escalated conversations in this list.
+            </p>
+          ) : (
+            <ul className="mt-vm-3 divide-y divide-vm-border">
+              {conversationRows
+                .filter((c) => listFilter === 'all' || escalatedSessions.has(c.sessionId))
+                .map((c) => {
+                  const busy = modeBusy === c.sessionId;
+                  const held = c.mode === 'human_controlled';
+                  return (
+                    <li key={c.sessionId} className="py-vm-3">
+                      <div className="flex items-center justify-between gap-vm-3">
+                        <button
+                          className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vm-focus"
+                          onClick={() => void open(c.sessionId)}
+                        >
+                          <div className="truncate text-vm-2">
+                            {c.summary ??
+                              `In progress — started ${new Date(c.startedAt).toLocaleTimeString()}`}
+                          </div>
+                          {/* Human channel label, never the raw wire id — and
+                            read-tolerant of old sessions still carrying the
+                            retired combined `instagram_messenger` id. The #ref
+                            matches the escalation email's "Conversation #". */}
+                          <div className="text-vm-0 text-vm-text-muted">
+                            {sessionChannelLabel(c.channel)} ·{' '}
+                            {new Date(c.startedAt).toLocaleString()} · #{c.sessionId.slice(0, 8)}
+                            {escalatedSessions.has(c.sessionId) && (
+                              <span className="ml-vm-2 inline-flex items-center rounded-vm-pill border border-vm-border px-vm-2 py-vm-1 font-label text-vm-warning">
+                                Escalated
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                        <Button
+                          variant="secondary"
+                          disabled={modeBusy !== null}
+                          onClick={() =>
+                            void setMode(c.sessionId, held ? 'hand_back' : 'take_over')
+                          }
+                        >
+                          {busy
+                            ? held
+                              ? 'Handing back…'
+                              : 'Taking over…'
+                            : held
+                              ? 'Hand back'
+                              : 'Take over'}
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+            </ul>
+          )}
+          <LoadOlder label="Load older conversations" tail={olderConversations} />
         </Card>
 
         <Card>
           <CardTitle>{openSession ? 'Transcript' : 'Select a conversation'}</CardTitle>
           {openSession && (
             <div className="mt-vm-3 space-y-vm-3">
-              {messages.map((m) => (
-                <div key={m.messageId} className="text-vm-1">
-                  <span className="font-label capitalize text-vm-text-muted">{m.role}: </span>
-                  <span>{m.text}</span>
-                  {m.role === 'luciel' && (
-                    <Button
-                      variant="ghost"
-                      className="ml-vm-2 align-baseline"
-                      onClick={() => reviewAnswer(openSession, m.messageId)}
-                    >
-                      Review answer
-                    </Button>
-                  )}
-                </div>
-              ))}
-
-              {evidence && (
-                <div className="mt-vm-3 rounded-vm-card border border-vm-border bg-vm-surface p-vm-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-vm-1 font-label">Answer evidence</h4>
-                    <StatusChip
-                      kind={evidence.groundingScore >= 0.5 ? 'connected' : 'reconnect_needed'}
-                      detail={`grounding ${evidence.groundingScore.toFixed(2)}`}
-                    />
-                  </div>
-                  <ul className="mt-vm-2 space-y-vm-2 text-vm-0">
-                    {evidence.sourceChunks.map((ch, i) => (
-                      <li
-                        key={i}
-                        className="rounded-vm-control border border-vm-border bg-vm-bg p-vm-2"
+              {transcriptLoading && (
+                <p className="text-vm-1 text-vm-text-muted" role="status">
+                  Loading the transcript…
+                </p>
+              )}
+              {transcriptError && (
+                <Banner tone={transcriptError.tone}>
+                  {transcriptError.text}{' '}
+                  <button className="underline" onClick={() => void open(openSession)}>
+                    Try again
+                  </button>
+                </Banner>
+              )}
+              {messages.map((m) => {
+                const answer = m.role === 'luciel' ? evidence[m.messageId] : undefined;
+                const isOpen = Boolean(expanded[m.messageId]);
+                return (
+                  <div key={m.messageId} className="text-vm-1">
+                    <div>
+                      <span
+                        className={
+                          m.role === 'human_agent'
+                            ? 'font-label text-vm-accent'
+                            : 'font-label text-vm-text-muted'
+                        }
                       >
-                        <div className="font-label">{ch.sourceName}</div>
-                        <div className="text-vm-text-muted">{ch.text}</div>
-                      </li>
-                    ))}
-                  </ul>
-                  {evidence.flaggedByAdmin ? (
-                    <Banner tone="info" className="mt-vm-2">
-                      Flagged. Fix the source in your knowledge base to correct future answers — the
-                      fix stays within your account.
-                    </Banner>
-                  ) : (
+                        {ROLE_LABEL[m.role]}:{' '}
+                      </span>
+                      {/* Luciel's answers carry markdown; the owner reads the same
+                          rendering the visitor got, never literal `**` (P0-3).
+                          Visitor and human-agent text stays a plain text node. */}
+                      {m.role === 'luciel' ? (
+                        <AssistantText text={m.text} className="inline-block align-top" />
+                      ) : (
+                        <span>{m.text}</span>
+                      )}
+                    </div>
+
+                    {/* Evidence sits under the answer it belongs to (Decision #10). */}
+                    {m.role === 'luciel' && (
+                      <div className="mt-vm-2 rounded-vm-card border border-vm-border bg-vm-surface p-vm-3">
+                        {!answer ? (
+                          <p className="text-vm-0 text-vm-text-muted" role="status">
+                            Loading the knowledge this answer used…
+                          </p>
+                        ) : answer === 'unavailable' ? (
+                          <p className="text-vm-0 text-vm-text-muted">
+                            We could not load the evidence for this answer right now.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap items-center justify-between gap-vm-2">
+                              <span className="text-vm-0 text-vm-text-muted">
+                                {/* Harmony wave 2, item 6b (backend_gaps.md §"Harmony wave 2",
+                                    FE CONTRACT BLOCK, item 2 / backend item 2a): NEVER decide
+                                    this copy from `sourceChunks.length` alone — both
+                                    `no_sources_retrieved` and `attribution_unavailable` carry
+                                    an empty array, but only the former is an honest "no
+                                    source" claim. Branch on `attributionStatus` first. */}
+                                {answer.attributionStatus === 'has_sources' ? (
+                                  <>
+                                    <span className="font-label">Knowledge used: </span>
+                                    {sourceNames(answer).join(', ')}
+                                  </>
+                                ) : answer.attributionStatus === 'attribution_unavailable' ? (
+                                  "Source attribution isn't available yet."
+                                ) : answer.attributionStatus === 'retrieval_unavailable' ? (
+                                  "Your knowledge couldn't be searched for this reply (the search provider was unavailable), so Luciel answered without it and never guessed."
+                                ) : (
+                                  'No knowledge source backed this answer.'
+                                )}
+                              </span>
+                              <GroundingBadge
+                                score={answer.groundingScore}
+                                scoringStatus={answer.scoringStatus}
+                                attributionStatus={answer.attributionStatus}
+                              />
+                            </div>
+
+                            {answer.sourceChunks.length > 0 && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  className="mt-vm-2"
+                                  aria-expanded={isOpen}
+                                  onClick={() =>
+                                    setExpanded((prev) => ({ ...prev, [m.messageId]: !isOpen }))
+                                  }
+                                >
+                                  {isOpen ? 'Hide the exact text' : 'Show the exact text'}
+                                </Button>
+                                {isOpen && (
+                                  <ul className="mt-vm-2 space-y-vm-2 text-vm-0">
+                                    {answer.sourceChunks.map((ch, i) => (
+                                      <li
+                                        key={i}
+                                        className="rounded-vm-control border border-vm-border bg-vm-bg p-vm-2"
+                                      >
+                                        <div className="font-label">{ch.sourceName}</div>
+                                        <div className="whitespace-pre-wrap text-vm-text-muted">
+                                          {ch.text}
+                                        </div>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </>
+                            )}
+
+                            {answer.flaggedByAdmin ? (
+                              <Banner tone="info" className="mt-vm-2">
+                                Flagged. Fix the source in your knowledge base to correct future
+                                answers — the fix stays within your account.
+                              </Banner>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  className="mt-vm-2"
+                                  disabled={flagBusy === m.messageId}
+                                  onClick={() => void flag(openSession, m.messageId)}
+                                >
+                                  {flagBusy === m.messageId ? 'Flagging…' : 'Flag this answer'}
+                                </Button>
+                                {flagError[m.messageId] && (
+                                  <Banner tone="danger" className="mt-vm-2">
+                                    {flagError[m.messageId]}
+                                  </Banner>
+                                )}
+                              </>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Compose — only while this admin holds the conversation (§3.4.12). */}
+              {openConversation?.mode === 'human_controlled' && (
+                <div className="mt-vm-4 border-t border-vm-border pt-vm-3">
+                  <label htmlFor="reply" className="text-vm-1 font-label">
+                    You are replying as yourself — Luciel is not answering this conversation.
+                  </label>
+                  <Textarea
+                    id="reply"
+                    className="mt-vm-2"
+                    value={reply}
+                    maxLength={REPLY_MAX_CHARS}
+                    placeholder="Type your reply to the visitor…"
+                    onChange={(e) => setReply(e.target.value)}
+                  />
+                  <div className="mt-vm-2 flex items-center justify-between gap-vm-3">
+                    <span className="text-vm-0 text-vm-text-muted">
+                      {reply.length}/{REPLY_MAX_CHARS}
+                    </span>
                     <Button
-                      variant="ghost"
-                      className="mt-vm-2"
-                      onClick={() => flag(openSession, evidence.messageId)}
+                      variant="primary"
+                      disabled={sending || reply.trim().length === 0}
+                      onClick={() => void send()}
                     >
-                      Flag this answer
+                      {sending ? 'Sending…' : 'Send reply'}
                     </Button>
+                  </div>
+                  {delivery && (
+                    <Banner tone={delivery.tone} className="mt-vm-2">
+                      {delivery.text}
+                    </Banner>
+                  )}
+                  {replyError && (
+                    <Banner tone="danger" className="mt-vm-2">
+                      {replyError}
+                    </Banner>
                   )}
                 </div>
               )}

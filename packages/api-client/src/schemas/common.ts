@@ -21,18 +21,37 @@ export const connectionStatus = z.enum([
   'error', // -> "Action needed: [X] is having trouble"
   'expired', // -> "Reconnect needed"
   'revoked', // not shown to broker; lifecycle teardown
+  // Handed back by the admin via POST /connections/{id}/disconnect: the stored
+  // credential is destroyed but the row is still listed and RECONNECTABLE, which
+  // is what separates it from terminal `revoked` and from never-connected
+  // `unconfigured` (contract §1).
+  'not_connected',
   'dormant', // downgrade grace; restored on re-upgrade
-  // SMS/Voice number provisioned but A2P 10DLC carrier registration not yet
-  // approved — NOT live; shown as "being activated with the carriers" (Arch §3.1.6).
+  // SMS/Voice number supplied but the tenant's own A2P 10DLC Brand+Campaign
+  // registration is not yet verified — NOT live; shown as "Action needed:
+  // complete carrier registration" (Legal §A2, Arch §3.1.6). The platform never
+  // registers on the tenant's behalf, so this state clears only when the tenant
+  // triggers re-verify after completing registration themselves.
   'pending_carrier_registration',
   // Own-domain email address chosen but inbound DNS/MX routing not yet verified —
   // NOT live; shown as "Action needed: complete email routing" (Arch §3.1.6a).
   'pending_email_routing',
+  // The designated SMS/Voice number is NOT hosted in the tenant's own Twilio
+  // account (Arch §3.1.4 BYO operability probe) — distinct from a pending
+  // carrier registration: the number itself needs hosting/porting before any
+  // registration can matter. Previously degraded to `error` on the wire, which
+  // hid the actionable "this number isn't in your Twilio account" guidance.
+  'not_operable_hosting_required',
 ]);
 export type ConnectionStatus = z.infer<typeof connectionStatus>;
 
-/** The three customer-facing chips (Arch §3.8.1). */
-export type ConnectionChip = 'connected' | 'action_needed' | 'reconnect_needed';
+/**
+ * The customer-facing chips (Arch §3.8.1). `not_available` (Harmony wave 2,
+ * item 6a) is distinct from `action_needed`: it is the non-actionable
+ * counterpart shown when the served provider registry doesn't hold this
+ * provider at all, so there is nothing the owner can click to fix it.
+ */
+export type ConnectionChip = 'connected' | 'action_needed' | 'reconnect_needed' | 'not_available';
 
 /**
  * Structured API error envelope. Models the states the UI must handle
@@ -49,6 +68,11 @@ export const apiErrorCode = z.enum([
   'validation_error',
   'at_cap', // free 50 reached, no payment method (Arch §3.4.1b)
   'payment_required',
+  // 503 — the data exists but its backing store cannot serve it right now
+  // (e.g. an archived conversation whose cold-storage read failed). Distinct
+  // from `server_error` so the UI can pass through the backend's honest
+  // "nothing has been lost; try again shortly" instead of a generic failure.
+  'service_unavailable',
   'server_error',
   'network_error',
 ]);

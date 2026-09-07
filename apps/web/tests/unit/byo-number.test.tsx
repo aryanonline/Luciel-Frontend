@@ -1,17 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, fireEvent, within } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
 import type { Luciel } from '@luciel/api-client';
 
 /**
- * P0-1 (BYO number): the tenant supplies their OWN phone number for SMS/Voice;
- * the platform never provisions one (Arch §3.1.4/§3.1.6, Decision #48).
+ * P0-1 (BYO number): the tenant supplies their OWN Twilio account and their OWN
+ * phone number for SMS/Voice; the platform never provisions either
+ * (Arch §3.1.4/§3.1.6, Decision #48).
  *
- * When SMS or Voice is enabled with no number configured, the pillar shows the
- * "Action needed: add your number" state and an E.164 entry affordance. When a
- * number is supplied (pending_carrier_registration) it shows "being activated
- * with carriers". No number is fabricated by the platform.
+ * The two steps are ordered — you cannot designate one of an account's numbers
+ * before the account is on file — so an enabled SMS/Voice channel with nothing
+ * connected asks for the Twilio credentials first, and only then for the number.
+ * Both are actionable next steps, not errors. Once a number is supplied it sits
+ * at "Action needed: complete carrier registration" until the TENANT finishes
+ * their own A2P 10DLC registration and triggers Re-verify — the platform never
+ * registers on their behalf and never polls (Legal §A2, Arch §3.1.6).
+ *
+ * Enabling SMS is also a hard gate on the carrier/consent acknowledgment
+ * (Legal §A2/§A6).
  */
 
 const base: Luciel = {
@@ -25,7 +32,8 @@ const base: Luciel = {
     { id: 'sms', enabled: false, connectionStatus: 'unconfigured' },
     { id: 'voice', enabled: false, connectionStatus: 'unconfigured' },
     { id: 'whatsapp', enabled: false },
-    { id: 'instagram_messenger', enabled: false },
+    { id: 'messenger', enabled: false },
+    { id: 'instagram', enabled: false },
   ],
   tools: [
     { id: 'send_sms', enabled: false },
@@ -57,11 +65,68 @@ const withNumberPending: Luciel = {
   ),
 };
 
-describe('P0-1: SMS enabled without a number shows the action-needed state', () => {
-  it('renders the "add your number" action-needed chip and an E.164 entry field', () => {
+// Arch §3.1.4 operability probe: the designated number is NOT hosted in the
+// tenant's own Twilio account. Previously this state degraded to a bare `error`
+// on the wire and the owner lost the actionable guidance.
+const withNumberNotHosted: Luciel = {
+  ...base,
+  channels: base.channels.map((c) =>
+    c.id === 'sms' || c.id === 'voice'
+      ? { ...c, enabled: true, connectionStatus: 'not_operable_hosting_required' }
+      : c,
+  ),
+};
+
+/** The <li> hosting a channel row, located from its enable toggle. */
+const channelRow = (name: RegExp): HTMLElement => {
+  const row = screen.getByRole('switch', { name }).closest('li');
+  expect(row).not.toBeNull();
+  return row as HTMLElement;
+};
+
+describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own Twilio account', () => {
+  it('renders the action-needed chip with one-click connect primary and the key form behind it', async () => {
     renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
-    expect(screen.getByText(/action needed: add your number/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Business phone number/i)).toBeInTheDocument();
+    expect(screen.getByText(/action needed: connect your Twilio account/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /your number stays yours and your carrier costs are billed by Twilio directly/i,
+      ),
+    ).toBeInTheDocument();
+    // C10: OAuth is the primary door — one Connect button, no SIDs up front...
+    expect(await screen.findByRole('button', { name: /^Connect Twilio$/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Twilio Account SID/i)).not.toBeInTheDocument();
+    // ...and the credential form stays one explicit click away.
+    fireEvent.click(screen.getByRole('button', { name: /Use API keys instead/i }));
+    expect(await screen.findByLabelText(/Twilio Account SID/i)).toBeInTheDocument();
+  });
+
+  it('renders the phone panel INSIDE the SMS row, not after the channel list', () => {
+    renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
+    // The owner-reported defect: the number setup rendered "way below" the SMS
+    // toggle, as a sibling after the whole <ul>. It belongs inside the row.
+    const smsRow = channelRow(/Enable SMS/i);
+    expect(within(smsRow).getByText(/Your business phone number/i)).toBeInTheDocument();
+    expect(
+      within(smsRow).getByText(/action needed: connect your Twilio account/i),
+    ).toBeInTheDocument();
+  });
+
+  it('hosts the panel on the Voice row when SMS is off and Voice is on', () => {
+    const voiceOnly: Luciel = {
+      ...base,
+      channels: base.channels.map((c) => (c.id === 'voice' ? { ...c, enabled: true } : c)),
+    };
+    renderWithQuery(<ChannelsPillar luciel={voiceOnly} />);
+    const voiceRow = channelRow(/Enable Voice/i);
+    expect(within(voiceRow).getByText(/Your business phone number/i)).toBeInTheDocument();
+    // No second enabled phone row exists, so no cross-reference note renders.
+    expect(screen.queryByText(/share one business number/i)).not.toBeInTheDocument();
+  });
+
+  it('does not ask which number to use before the Twilio account is on file', () => {
+    renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
+    expect(screen.queryByLabelText(/Business phone number/i)).not.toBeInTheDocument();
   });
 
   it('does not claim SMS/Voice run on a platform-provisioned number', () => {
@@ -76,10 +141,123 @@ describe('P0-1: SMS enabled without a number shows the action-needed state', () 
   });
 });
 
-describe('P0-1: a supplied number shows "being activated with carriers"', () => {
-  it('renders the pending-carrier-registration state and no entry field', () => {
+describe('P0-1: a supplied number sits at "complete carrier registration"', () => {
+  it('renders the honest split: SMS pending, Voice connected-with-note', () => {
     renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
-    expect(screen.getByText(/being activated with carriers/i)).toBeInTheDocument();
+    // 10DLC gates TEXTING only (live-caught 2026-08-18): the SMS row keeps the
+    // action-needed chip; the Voice row says calls already work rather than
+    // claiming carrier registration blocks it.
+    expect(screen.getAllByText(/action needed: complete carrier registration/i)).toHaveLength(1);
+    const voiceRow = channelRow(/Enable Voice/i);
+    expect(within(voiceRow).getByText(/^Connected$/i)).toBeInTheDocument();
+    expect(
+      within(voiceRow).getByText(/Calls work now; texting waits on carrier registration\./i),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText(/Business phone number/i)).not.toBeInTheDocument();
+  });
+
+  it('points the Voice row at the SMS row that hosts the shared panel', () => {
+    renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
+    const voiceRow = channelRow(/Enable Voice/i);
+    const note = within(voiceRow).getByRole('note');
+    expect(note).toHaveTextContent(
+      /SMS and Voice share one business number — set it up under SMS\./,
+    );
+    // The panel itself renders once, inside the SMS row.
+    expect(
+      within(channelRow(/Enable SMS/i)).getByText(/Your business phone number/i),
+    ).toBeInTheDocument();
+    expect(within(voiceRow).queryByText(/Your business phone number/i)).not.toBeInTheDocument();
+  });
+
+  it('does not claim the platform is registering the number with the carriers', () => {
+    renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
+    expect(screen.queryByText(/being activated with the carriers/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/which you complete yourself, in your own carrier account/i),
+    ).toBeInTheDocument();
+  });
+
+  it('offers a Re-verify trigger, since nothing polls the carrier in the background', () => {
+    renderWithQuery(<ChannelsPillar luciel={withNumberPending} />);
+    expect(screen.getByRole('button', { name: /Re-verify/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Nothing checks the carrier registration in the background/i),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('Arch §3.8.7: a toggled-off channel says its connection survives', () => {
+  it('shows the saved-connection note on an off row with a live connection', () => {
+    const offButConnected: Luciel = {
+      ...base,
+      channels: base.channels.map((c) =>
+        c.id === 'sms' ? { ...c, enabled: false, connectionStatus: 'connected' } : c,
+      ),
+    };
+    renderWithQuery(<ChannelsPillar luciel={offButConnected} />);
+    expect(
+      screen.getByText(/Its connection is saved — nothing to set up again/i),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the reconnect-waiting note on an off row whose connection expired', () => {
+    const offExpired: Luciel = {
+      ...base,
+      channels: base.channels.map((c) =>
+        c.id === 'sms' ? { ...c, enabled: false, connectionStatus: 'expired' } : c,
+      ),
+    };
+    renderWithQuery(<ChannelsPillar luciel={offExpired} />);
+    expect(screen.getByText(/needs a reconnect — turn this back on to fix it/i)).toBeInTheDocument();
+  });
+
+  it('stays quiet on an off row with nothing saved', () => {
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+    expect(screen.queryByText(/Its connection is saved/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/needs a reconnect/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('Arch §3.1.4: a number not hosted in the tenant’s Twilio account is named, not "error"', () => {
+  it('renders the specific hosting guidance chip on both enabled phone rows', () => {
+    renderWithQuery(<ChannelsPillar luciel={withNumberNotHosted} />);
+    expect(
+      screen.getAllByText(/action needed: this number isn't in your Twilio account yet/i),
+    ).toHaveLength(2);
+    // Never the generic trouble copy, and never a false Connected.
+    expect(screen.queryByText(/is having trouble/i)).not.toBeInTheDocument();
+    const smsRow = channelRow(/Enable SMS/i);
+    expect(within(smsRow).queryByText(/^Connected$/)).not.toBeInTheDocument();
+  });
+});
+
+describe('Legal §A2/§A6: enabling SMS is gated on the carrier/consent acknowledgment', () => {
+  it('opens the disclosure instead of enabling SMS straight away', () => {
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+    fireEvent.click(screen.getByRole('switch', { name: /Enable SMS/i }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText(/You register with the carriers, not us/i)).toBeInTheDocument();
+    expect(screen.getByText(/You are the sender of record/i)).toBeInTheDocument();
+    expect(screen.getByText(/Carrier costs are yours/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/CASL in Canada and, where applicable, the US TCPA/i),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the acknowledgment required — confirm is disabled until the box is checked', () => {
+    renderWithQuery(<ChannelsPillar luciel={base} />);
+    fireEvent.click(screen.getByRole('switch', { name: /Enable SMS/i }));
+
+    const confirm = screen.getByRole('button', { name: /Acknowledge and enable SMS/i });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(confirm).not.toBeDisabled();
+  });
+
+  it('discloses STOP/HELP handling durably once SMS is on, not only in the modal', () => {
+    renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
+    expect(screen.getByText(/honors STOP and HELP automatically/i)).toBeInTheDocument();
   });
 });

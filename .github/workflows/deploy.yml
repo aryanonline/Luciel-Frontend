@@ -3,17 +3,16 @@ name: deploy
 # Frontend CD (mirrors Luciel-Backend §5.8). Build the web image -> push to the
 # luciel-<env>-web ECR repo (owned by the backend CDK app); build the widget
 # bundle -> sync to the widget S3 bucket + invalidate CloudFront; then roll the
-# web ECS service. Promotion: dev auto on push to main -> prod behind a
-# WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
-# prod is NEVER auto-deployed on push. (GitHub Environment required-reviewer rules
+# web ECS service. Dispatch only (no push trigger: `main` is a stale revert and the
+# `guard` job refuses any ref but the release branch); dev via environment=dev, prod
+# behind a WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
+# prod is NEVER auto-deployed, and a prod dispatch no longer rolls dev first. (GitHub Environment required-reviewer rules
 # need a paid plan on private repos, so the gate is enforced in YAML instead.)
 # NOTE: the authoritative pre-prod §10 verification HARD gate lives in the BACKEND
 # pipeline (ephemeral prod-shaped preprod). This frontend prod deploy is the
 # manual, gated frontend rollout that follows a passed backend release.
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -27,7 +26,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: fe-deploy-${{ github.ref }}
+  # Keyed by ENVIRONMENT, not ref: two branches must never deploy the same
+  # environment concurrently (the ref-scoped group let them).
+  group: fe-deploy-${{ inputs.environment || 'dev' }}
   cancel-in-progress: false
 
 env:
@@ -35,8 +36,28 @@ env:
   ACCOUNT: '729005488042'
 
 jobs:
+  # ---- GUARD: deploys run ONLY from the release branch --------------------------
+  # `main` is a stale revert (CLAUDE.md "Branch discipline"), yet a bare
+  # `gh workflow run` dispatches the repository's default branch and every job
+  # below checks out whatever ref was dispatched. 2026-09-06: a dispatch without
+  # `--ref` deployed main to dev for 25 minutes. The default branch now IS the
+  # release branch, and this job refuses anything else before a single AWS call.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse any ref that is not the release branch
+        env:
+          RELEASE_BRANCH: ${{ vars.RELEASE_BRANCH || 'feat/docs-conformance-build-20260713-r2' }}
+        run: |
+          if [ "${{ github.ref_name }}" != "$RELEASE_BRANCH" ]; then
+            echo "::error::deploys run only from $RELEASE_BRANCH (dispatched ref: ${{ github.ref_name }}). Re-run with --ref $RELEASE_BRANCH."
+            exit 1
+          fi
+          echo "ref ${{ github.ref_name }} is the release branch"
+
   # ---- Build + push artifacts once, reused by every environment --------------
   build:
+    needs: guard
     runs-on: ubuntu-latest
     # dev creds are enough to PUSH to ECR/S3 (resources are per-env; we push the
     # dev artifacts here and re-tag per env in deploy). Build does not deploy.
@@ -64,7 +85,11 @@ jobs:
       - name: Install + build (web .next is baked into the image; widget dist here)
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @luciel/widget build   # -> apps/widget/dist
+          # The widget vite config defaults the adapter to 'mock'; this bundle is
+          # published to the real embed.vantagemind.ai CDN, so it must be LIVE.
+          VITE_WIDGET_ADAPTER=http \
+          VITE_WIDGET_API_BASE_URL=https://api.vantagemind.ai \
+            pnpm --filter @luciel/widget build   # -> apps/widget/dist
 
       - name: Build + push web image (context = repo root, Dockerfile apps/web)
         env:
@@ -75,17 +100,33 @@ jobs:
           docker build -f apps/web/Dockerfile \
             --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.vantagemind.ai \
             --build-arg NEXT_PUBLIC_API_ADAPTER=http \
+            --build-arg NEXT_PUBLIC_HCAPTCHA_SITE_KEY=6f66ccc8-ae5a-4d20-90f6-e49adfa8c10e \
             -t "$ECR/$REPO:$TAG" -t "$ECR/$REPO:latest" .
           docker push "$ECR/$REPO:$TAG"
           docker push "$ECR/$REPO:latest"
-          # block on CRITICAL CVEs (scan-on-push is enabled on the repo)
+          # Block on CRITICAL CVEs (ECR scan-on-push), EXCEPT a narrow, documented
+          # allowlist of unfixable base-image perl CVEs. The Dockerfile purges the
+          # non-essential perl packages; these 3 may still be attributed to perl-base
+          # (Essential, cannot be safely removed) and have NO fixed version in Debian
+          # yet. perl is not in the Node runtime's execution path. Revisit when Debian
+          # ships a fix. Any OTHER critical still blocks; a NEW critical still blocks.
           aws ecr wait image-scan-complete --repository-name "$REPO" --image-id imageTag="$TAG" || true
-          CRIT=$(aws ecr describe-image-scan-findings --repository-name "$REPO" \
+          ALLOWLIST="CVE-2026-12087 CVE-2026-13221 CVE-2026-57433"
+          CRIT_NAMES=$(aws ecr describe-image-scan-findings --repository-name "$REPO" \
             --image-id imageTag="$TAG" \
-            --query 'imageScanFindings.findingSeverityCounts.CRITICAL' --output text 2>/dev/null || echo None)
-          if [ "$CRIT" != "None" ] && [ "$CRIT" != "0" ]; then
-            echo "::error::$CRIT CRITICAL CVEs in web image - blocking"; exit 1
+            --query 'imageScanFindings.findings[?severity==`CRITICAL`].name' \
+            --output text 2>/dev/null | tr '\t' '\n' | sed '/^$/d' || true)
+          BLOCKING=""
+          for cve in $CRIT_NAMES; do
+            case " $ALLOWLIST " in
+              *" $cve "*) echo "::warning::allowlisted base-image CVE $cve (unfixable perl, not in runtime path)";;
+              *) BLOCKING="$BLOCKING $cve";;
+            esac
+          done
+          if [ -n "$(echo "$BLOCKING" | tr -d ' ')" ]; then
+            echo "::error::Non-allowlisted CRITICAL CVEs in web image:$BLOCKING - blocking"; exit 1
           fi
+          echo "CVE gate passed (allowlisted-only or none critical)"
 
       - name: Stash widget dist for deploy jobs
         uses: actions/upload-artifact@v4
@@ -95,7 +136,10 @@ jobs:
 
   # ---- Reusable deploy steps per environment --------------------------------
   deploy-dev:
-    needs: build
+    # A prod dispatch used to roll dev first; one wrong-ref prod dispatch overwrote
+    # both environments. Dev now deploys only when dev was asked for.
+    if: inputs.environment != 'prod'
+    needs: [guard, build]
     runs-on: ubuntu-latest
     environment: dev
     env: { ENVIRONMENT: dev }
@@ -130,13 +174,30 @@ jobs:
           ACCT=$(aws sts get-caller-identity --query Account --output text)
           BUCKET=luciel-${ENVIRONMENT}-widget-${ACCT}
           aws s3 sync dist "s3://${BUCKET}/v1/" --delete --cache-control "public,max-age=31536000,immutable"
+          # s3 sync guesses `text/javascript` with NO charset; the bundle carries UTF-8
+          # literals (e.g. the 'Type your message…' placeholder), which browsers then
+          # decode as latin-1 and render as mojibake. Re-upload the JS entrypoints with
+          # an explicit charset.
+          #
+          # The entrypoints live at a FIXED url (`/v1/luciel.js` is what every customer
+          # page embeds), so they must never be `immutable`: the 2026-09-06 E2E walk
+          # found a visitor's browser still running the August bundle a day after the
+          # deploy — a year-long immutable header on a fixed name means no widget fix
+          # ever reaches a returning visitor. Five minutes + must-revalidate: the CDN
+          # invalidation below covers the edge, this covers the browser. Hashed chunks
+          # keep the long immutable header from the sync above.
+          for f in luciel.js luciel.mjs; do
+            aws s3 cp "dist/$f" "s3://${BUCKET}/v1/$f" \
+              --content-type "text/javascript; charset=utf-8" \
+              --cache-control "public,max-age=300,must-revalidate"
+          done
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
           [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
 
   # ---- prod: MANUAL approval gate. Never auto-deployed. ----------------------
   deploy-prod:
-    needs: deploy-dev
+    needs: [guard, build]
     runs-on: ubuntu-latest
     # PROD GATE (workflow-level): this job only runs on a deliberate manual
     # workflow_dispatch with environment=prod. A push to main can NEVER reach prod
@@ -165,6 +226,23 @@ jobs:
           done
           BUCKET=luciel-${ENVIRONMENT}-widget-${ACCT}
           aws s3 sync dist "s3://${BUCKET}/v1/" --delete --cache-control "public,max-age=31536000,immutable"
+          # s3 sync guesses `text/javascript` with NO charset; the bundle carries UTF-8
+          # literals (e.g. the 'Type your message…' placeholder), which browsers then
+          # decode as latin-1 and render as mojibake. Re-upload the JS entrypoints with
+          # an explicit charset.
+          #
+          # The entrypoints live at a FIXED url (`/v1/luciel.js` is what every customer
+          # page embeds), so they must never be `immutable`: the 2026-09-06 E2E walk
+          # found a visitor's browser still running the August bundle a day after the
+          # deploy — a year-long immutable header on a fixed name means no widget fix
+          # ever reaches a returning visitor. Five minutes + must-revalidate: the CDN
+          # invalidation below covers the edge, this covers the browser. Hashed chunks
+          # keep the long immutable header from the sync above.
+          for f in luciel.js luciel.mjs; do
+            aws s3 cp "dist/$f" "s3://${BUCKET}/v1/$f" \
+              --content-type "text/javascript; charset=utf-8" \
+              --cache-control "public,max-age=300,must-revalidate"
+          done
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
           [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true

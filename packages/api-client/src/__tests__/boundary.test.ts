@@ -24,6 +24,7 @@ describe('adapter selection (one flag)', () => {
       'billing',
       'analytics',
       'account',
+      'contact',
     ];
     for (const ns of namespaces) {
       expect(Object.keys(mock[ns]).sort()).toEqual(Object.keys(http[ns]).sort());
@@ -89,6 +90,34 @@ describe('mock models the required states', () => {
   });
 });
 
+describe('contact form (public, unauthenticated)', () => {
+  it('accepts a captcha-backed message without a session', async () => {
+    const client = createLucielClient({ adapter: 'mock', mock: { scenario: 'expired_session' } });
+    await expect(
+      client.contact.submit({
+        name: 'Ada',
+        email: 'ada@example.com',
+        message: 'I have a question about pricing.',
+        captchaToken: 'valid',
+      }),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  it('rejects a captcha the server will not accept', async () => {
+    const client = createLucielClient({ adapter: 'mock' });
+    await client.contact
+      .submit({
+        name: 'Ada',
+        email: 'ada@example.com',
+        message: 'I have a question about pricing.',
+        captchaToken: 'invalid',
+      })
+      .catch((e: LucielApiError) => {
+        expect(e.code).toBe('validation_error');
+      });
+  });
+});
+
 describe('Axis10: removePaymentMethod returns BillingInfo (backend changed 204→200+body)', () => {
   it('mock removePaymentMethod returns a BillingInfo object with budget fields', async () => {
     const client = createLucielClient({ adapter: 'mock', mock: { scenario: 'payg' } });
@@ -107,10 +136,46 @@ describe('Axis10: removePaymentMethod returns BillingInfo (backend changed 204�
 });
 
 describe('connection chip mapping (Arch §3.8.1/§3.8.4)', () => {
-  it('maps status → the three customer-facing chips', () => {
+  it('maps status → the three original customer-facing chips (registryConfigured omitted)', () => {
     expect(chipForConnection('connected')).toBe('connected');
     expect(chipForConnection('expired')).toBe('reconnect_needed');
     expect(chipForConnection('unconfigured')).toBe('action_needed');
     expect(chipForConnection('error')).toBe('action_needed');
+  });
+
+  // Arch §3.1.4: a BYO number not hosted in the tenant's own Twilio account is an
+  // actionable state (host/port the number), never a bare "error" and never
+  // "connected". The wire enum gained the value so the guidance survives to the UI.
+  it('not_operable_hosting_required is action_needed (actionable, not a bare error)', () => {
+    expect(chipForConnection('not_operable_hosting_required')).toBe('action_needed');
+    expect(chipForConnection('not_operable_hosting_required', false)).toBe('not_available');
+  });
+
+  // Harmony wave 2, item 6a: a provider the served registry does not hold at
+  // all can never be told "Action needed" — there is no button that does
+  // anything. `registryConfigured: true` (explicit) must reproduce the
+  // original three-chip behavior exactly.
+  it('registryConfigured: true reproduces the original three-chip behavior exactly', () => {
+    expect(chipForConnection('connected', true)).toBe('connected');
+    expect(chipForConnection('expired', true)).toBe('reconnect_needed');
+    expect(chipForConnection('unconfigured', true)).toBe('action_needed');
+    expect(chipForConnection('error', true)).toBe('action_needed');
+  });
+
+  it('registryConfigured: false collapses EVERY status to not_available, with no exceptions (backend contract: providerAvailable wins regardless of status)', () => {
+    // backend_gaps.md §"Harmony wave 2", FE CONTRACT BLOCK item 3: "the
+    // Overview row must render... never the owner-actionable 'Action needed'
+    // status chip, regardless of what the row's own `status` field says."
+    // That "regardless" is explicit and applies to `connected` too — a
+    // provider the registry can no longer connect is not available, full
+    // stop, even if a stale row still says `connected`.
+    expect(chipForConnection('connected', false)).toBe('not_available');
+    expect(chipForConnection('expired', false)).toBe('not_available');
+    expect(chipForConnection('unconfigured', false)).toBe('not_available');
+    expect(chipForConnection('error', false)).toBe('not_available');
+    expect(chipForConnection('not_connected', false)).toBe('not_available');
+    expect(chipForConnection('dormant', false)).toBe('not_available');
+    expect(chipForConnection('pending_carrier_registration', false)).toBe('not_available');
+    expect(chipForConnection('pending_email_routing', false)).toBe('not_available');
   });
 });

@@ -9,11 +9,12 @@
 export * from './schemas';
 
 // The interface UI codes against.
-export type { LucielApiClient } from './client';
+export type { LucielApiClient, PageOptions } from './client';
 
 // The selector + adapter options.
 export { createLucielClient, type ApiAdapterKind, type CreateClientConfig } from './factory';
 export type { MockScenario, MockAdminOptions } from './adapters/mock-admin';
+export { MOCK_AUTHORIZE_ORIGIN } from './adapters/mock-admin';
 
 // Helpers.
 export { chipForConnection } from './chips';

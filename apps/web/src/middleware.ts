@@ -38,7 +38,10 @@ const HCAPTCHA = 'https://hcaptcha.com https://*.hcaptcha.com';
  * The session cookie name must match the backend (Arch §3.7.1a).
  * It is httpOnly so the value cannot be read here — only presence is checked.
  */
-const SESSION_COOKIE = 'session';
+// MUST match the backend's session_cookie_name (app/config.py). It sets the cookie as
+// 'luciel_session'; checking 'session' here made request.cookies.has() ALWAYS false, so
+// the auth gate bounced every logged-in user from /dashboard & /first-run back to /login.
+const SESSION_COOKIE = 'luciel_session';
 
 /**
  * Path prefixes that belong to the (app) route group and require a session.

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Banner, Button, PageHeader } from '@luciel/ui';
 import { useLuciel } from '@/lib/hooks';
+import { ConsentLanding } from '@/components/config/consent-landing';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
 import { ToolsPillar } from '@/components/config/tools-pillar';
 import { KnowledgePillar } from '@/components/config/knowledge-pillar';
@@ -16,13 +17,36 @@ import { PersonalityPillar } from '@/components/config/personality-pillar';
  * (Vision §3). All five stay editable at any time (Arch §3.7.1).
  */
 export default function ConfigurePage() {
-  const { data: luciel, isLoading } = useLuciel();
+  return (
+    <div className="space-y-vm-5">
+      {/* Ahead of the configuration itself: this is where a provider's consent
+          screen sends the owner back to, and they are owed that outcome even
+          when the read behind it is still loading — or failed. */}
+      <ConsentLanding />
+      <ConfigureBody />
+    </div>
+  );
+}
 
-  if (isLoading) {
+function ConfigureBody() {
+  const { data: luciel, isPending, isError, refetch } = useLuciel();
+
+  if (isPending) {
     return (
       <p className="text-vm-1 text-vm-text-muted" role="status">
         Loading your configuration…
       </p>
+    );
+  }
+  if (isError) {
+    // "You don't have a Luciel yet" is a claim we cannot make while the read failed.
+    return (
+      <Banner tone="danger">
+        We could not load your configuration.{' '}
+        <button className="underline" onClick={() => void refetch()}>
+          Try again
+        </button>
+      </Banner>
     );
   }
   if (!luciel) {
@@ -38,7 +62,7 @@ export default function ConfigurePage() {
   }
 
   return (
-    <div className="space-y-vm-5">
+    <>
       <PageHeader
         title={`Configure ${luciel.name}`}
         description="Five things to set. You can change any of them at any time — you adjust the role, you don't re-hire."
@@ -58,11 +82,17 @@ export default function ConfigurePage() {
       <EscalationPillar luciel={luciel} />
       <PersonalityPillar luciel={luciel} />
 
-      <div className="flex justify-end">
+      {/* Each pillar saves itself, so this link saves nothing — calling it "Save"
+          promised a write that never happened (P1-1). It is navigation, and it
+          says so. */}
+      <div className="flex flex-wrap items-center justify-end gap-vm-3">
+        <span className="text-vm-0 text-vm-text-muted">
+          Each section above saves on its own — there is nothing left to save here.
+        </span>
         <Button asChild variant="primary">
-          <Link href="/dashboard/embed">Save and go to embed</Link>
+          <Link href="/dashboard/embed">Go to embed &amp; launch</Link>
         </Button>
       </div>
-    </div>
+    </>
   );
 }
