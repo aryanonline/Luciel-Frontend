@@ -4,7 +4,9 @@ on:
   pull_request:
   push:
     branches:
-      - main
+      # The release branch, not the stale `main` (2026-09-07: also the default branch
+      # now, so the daily schedule audits the code that ships).
+      - feat/docs-conformance-build-20260713-r2
   # 2026-09-05 audit F039: dependencies rot between pushes. A daily run keeps the
   # audit and the secret scan current on a quiet branch too.
   schedule:
