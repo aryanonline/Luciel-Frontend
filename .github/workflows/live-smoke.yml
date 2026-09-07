@@ -1,0 +1,63 @@
+name: live-smoke
+
+# Read-only Playwright walk of a DEPLOYED environment (round 6 WP-J, audit F171).
+# Dispatch-only: it signs in with the dev-only walk account held in repo secrets,
+# reads the overview, the embed snippet and the billing card, and changes nothing.
+# Never scheduled, never on push — a deployed site is not a CI fixture.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Dashboard origin to walk
+        required: true
+        default: https://vantagemind.ai
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @luciel/web exec playwright install --with-deps chromium
+
+      - name: Walk the deployed dashboard (read-only)
+        env:
+          E2E_LIVE: '1'
+          E2E_BASE_URL: ${{ inputs.base_url }}
+          E2E_EMAIL: ${{ secrets.E2E_LIVE_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_LIVE_PASSWORD }}
+        run: |
+          if [ -z "$E2E_EMAIL" ] || [ -z "$E2E_PASSWORD" ]; then
+            echo "::error::E2E_LIVE_EMAIL / E2E_LIVE_PASSWORD repo secrets are not set"
+            exit 1
+          fi
+          pnpm --filter @luciel/web test:e2e
+
+      - name: Keep the Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-smoke-report
+          path: apps/web/playwright-report
+          retention-days: 7
