@@ -164,8 +164,12 @@ The deployment workflow builds the web artifact and publishes the widget to the
 embed CDN. To dispatch a development deployment from this branch, use:
 
 ```bash
-gh workflow run deploy.yml -f environment=dev
+gh workflow run deploy.yml --ref feat/docs-conformance-build-20260713-r2 -f environment=dev
 ```
+
+Always pass `--ref`: the workflow's `guard` job refuses any other ref (2026-09-06: a
+bare dispatch shipped stale `main`'s widget to dev), there is no push trigger, and a
+prod dispatch no longer rolls dev first.
 
 Do not imply that publishing the dashboard alone updates embeds: the widget
 bundle is deployed to the embed CDN as part of the workflow. Use the workflow's

@@ -3,17 +3,16 @@ name: deploy
 # Frontend CD (mirrors Luciel-Backend §5.8). Build the web image -> push to the
 # luciel-<env>-web ECR repo (owned by the backend CDK app); build the widget
 # bundle -> sync to the widget S3 bucket + invalidate CloudFront; then roll the
-# web ECS service. Promotion: dev auto on push to main -> prod behind a
-# WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
-# prod is NEVER auto-deployed on push. (GitHub Environment required-reviewer rules
+# web ECS service. Dispatch only (no push trigger: `main` is a stale revert and the
+# `guard` job refuses any ref but the release branch); dev via environment=dev, prod
+# behind a WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
+# prod is NEVER auto-deployed, and a prod dispatch no longer rolls dev first. (GitHub Environment required-reviewer rules
 # need a paid plan on private repos, so the gate is enforced in YAML instead.)
 # NOTE: the authoritative pre-prod §10 verification HARD gate lives in the BACKEND
 # pipeline (ephemeral prod-shaped preprod). This frontend prod deploy is the
 # manual, gated frontend rollout that follows a passed backend release.
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -27,7 +26,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: fe-deploy-${{ github.ref }}
+  # Keyed by ENVIRONMENT, not ref: two branches must never deploy the same
+  # environment concurrently (the ref-scoped group let them).
+  group: fe-deploy-${{ inputs.environment || 'dev' }}
   cancel-in-progress: false
 
 env:
@@ -35,8 +36,28 @@ env:
   ACCOUNT: '729005488042'
 
 jobs:
+  # ---- GUARD: deploys run ONLY from the release branch --------------------------
+  # `main` is a stale revert (CLAUDE.md "Branch discipline"), yet a bare
+  # `gh workflow run` dispatches the repository's default branch and every job
+  # below checks out whatever ref was dispatched. 2026-09-06: a dispatch without
+  # `--ref` deployed main to dev for 25 minutes. The default branch now IS the
+  # release branch, and this job refuses anything else before a single AWS call.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse any ref that is not the release branch
+        env:
+          RELEASE_BRANCH: ${{ vars.RELEASE_BRANCH || 'feat/docs-conformance-build-20260713-r2' }}
+        run: |
+          if [ "${{ github.ref_name }}" != "$RELEASE_BRANCH" ]; then
+            echo "::error::deploys run only from $RELEASE_BRANCH (dispatched ref: ${{ github.ref_name }}). Re-run with --ref $RELEASE_BRANCH."
+            exit 1
+          fi
+          echo "ref ${{ github.ref_name }} is the release branch"
+
   # ---- Build + push artifacts once, reused by every environment --------------
   build:
+    needs: guard
     runs-on: ubuntu-latest
     # dev creds are enough to PUSH to ECR/S3 (resources are per-env; we push the
     # dev artifacts here and re-tag per env in deploy). Build does not deploy.
@@ -115,7 +136,10 @@ jobs:
 
   # ---- Reusable deploy steps per environment --------------------------------
   deploy-dev:
-    needs: build
+    # A prod dispatch used to roll dev first; one wrong-ref prod dispatch overwrote
+    # both environments. Dev now deploys only when dev was asked for.
+    if: inputs.environment != 'prod'
+    needs: [guard, build]
     runs-on: ubuntu-latest
     environment: dev
     env: { ENVIRONMENT: dev }
@@ -173,7 +197,7 @@ jobs:
 
   # ---- prod: MANUAL approval gate. Never auto-deployed. ----------------------
   deploy-prod:
-    needs: deploy-dev
+    needs: [guard, build]
     runs-on: ubuntu-latest
     # PROD GATE (workflow-level): this job only runs on a deliberate manual
     # workflow_dispatch with environment=prod. A push to main can NEVER reach prod
