@@ -146,9 +146,20 @@ pnpm -r test
 pnpm -r build
 ```
 
-The current suite is approximately 145 tests. Treat an unexpected test-count
-change as a signal to review, not as a substitute for the command exit status.
-Run web E2E only when needed with `pnpm --filter @luciel/web test:e2e`.
+The current suite is approximately 300 tests (api-client 27, ui 17, widget 28, web ~227).
+Treat an unexpected test-count change as a signal to review, not as a substitute for
+the command exit status. `pnpm --filter @luciel/web test:e2e` runs the Playwright
+a11y gate plus the mock-adapter customer journey (`tests/e2e/journey.spec.ts`) against
+the dev server; the dashboard pages need the planted session cookie from
+`tests/e2e/mock-session.ts` or the middleware bounces them to /login. `E2E_LIVE=1`
+with `E2E_BASE_URL`, `E2E_EMAIL`, `E2E_PASSWORD` selects the read-only live-smoke
+project instead (the `live-smoke` workflow is its dispatch-only home).
+
+The web app runs on Next 15 / React 19 (migrated 2026-09-07). The strict CSP admits
+`'unsafe-eval'` for development builds only, because `next dev` cannot hydrate without
+it; production policy is unchanged. Dependencies are kept current by Dependabot on the
+release branch with auto-merge of green minor/patch updates; a major bump is labelled
+`major-update` for a person, and the `dependency-review` workflow files a monthly issue.
 
 ## Verification lesson from this cycle
 

@@ -24,6 +24,10 @@ bundle.
 - `src/lib/api.ts` and `src/lib/hooks.ts` — typed control-plane client and queries.
 - `tests/unit/` — focused UI behavior and regression tests.
 - `tests/e2e/a11y.spec.ts` — browser accessibility coverage.
+- `tests/e2e/journey.spec.ts` — the mock-adapter customer walk (overview → configure →
+  embed → conversations → leads → billing); `tests/e2e/live-smoke.spec.ts` — the opt-in,
+  read-only walk of a deployed environment; `tests/e2e/mock-session.ts` — the planted
+  session-presence cookie the middleware requires before any dashboard page renders.
 
 ## Invariants owned here
 
