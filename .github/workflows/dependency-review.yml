@@ -1,0 +1,86 @@
+name: dependency-review
+
+# Monthly dependency and advisory review (round 6 WP-B): what is outdated, what
+# the audit gate is waiving and for how long, and a review issue a person can act
+# on — without anyone having to remember to look. Also on demand.
+#
+# Explicit `ref`: a scheduled run checks out the DEFAULT branch, which is the
+# release branch now, but the ref is named so a later default-branch change can
+# never point this at stale code.
+
+on:
+  schedule:
+    - cron: '0 7 1 * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/docs-conformance-build-20260713-r2
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit (the same gate CI runs; a failure here is a failure worth an issue)
+        id: audit
+        continue-on-error: true
+        run: node scripts/audit-gate.mjs 2>&1 | tee audit.txt
+
+      - name: Outdated packages (advisory)
+        continue-on-error: true
+        run: pnpm outdated -r 2>&1 | tee outdated.txt || true
+
+      - name: Waivers expiring within 14 days
+        id: expiry
+        continue-on-error: true
+        run: node scripts/allowlist-expiry.mjs --within-days 14 --markdown expiry.md
+
+      - name: Open or update the month's review issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+          EXPIRY_OUTCOME: ${{ steps.expiry.outcome }}
+        run: |
+          set -euo pipefail
+          month=$(date -u +%Y-%m)
+          title="Dependency & CVE review $month"
+          {
+            echo "Automated monthly review (\`dependency-review.yml\`, run ${{ github.run_id }})."
+            echo
+            echo "## Audit gate — **$AUDIT_OUTCOME**"
+            echo '```'; tail -n 40 audit.txt 2>/dev/null || echo "(no output)"; echo '```'
+            echo
+            echo "## Waivers — **$EXPIRY_OUTCOME** (⚠️ = expires within 14 days)"
+            cat expiry.md 2>/dev/null || echo "(no waivers file)"
+            echo
+            echo "## Outdated (advisory)"
+            echo '```'; tail -n 60 outdated.txt 2>/dev/null || echo "(none)"; echo '```'
+            echo
+            echo "Minor/patch updates merge themselves once CI is green (Dependabot + auto-merge); majors carry the \`major-update\` label and need a person."
+          } > body.md
+          existing=$(gh issue list --repo "$REPO" --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body-file body.md
+            echo "updated issue #$existing"
+          else
+            gh issue create --repo "$REPO" --title "$title" --label dependencies --body-file body.md
+          fi
+          # The review is written either way; the run itself fails when the gate or a
+          # waiver's expiry demands attention, so the failure is visible in Actions too.
+          [ "$AUDIT_OUTCOME" = "success" ] && [ "$EXPIRY_OUTCOME" = "success" ]

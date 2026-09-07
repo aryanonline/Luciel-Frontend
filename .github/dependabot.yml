@@ -1,0 +1,47 @@
+# Dependency upkeep without a person in the loop (round 6 WP-B, owner request
+# 2026-09-07). The pnpm workspace is one ecosystem at the root (the lockfile is
+# shared); Actions and the web Dockerfile are their own. Everything targets the
+# RELEASE branch; minor and patch updates are grouped weekly and auto-merged by
+# `.github/workflows/dependabot-auto-merge.yml` once CI (typecheck, tests, lint,
+# build, the pnpm audit gate, the secret scan) is green; a MAJOR bump is labelled
+# for a person.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: feat/docs-conformance-build-20260713-r2
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, npm]
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: feat/docs-conformance-build-20260713-r2
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Toronto
+    open-pull-requests-limit: 5
+    labels: [dependencies, ci]
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /apps/web
+    target-branch: feat/docs-conformance-build-20260713-r2
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Toronto
+    open-pull-requests-limit: 2
+    labels: [dependencies, docker]

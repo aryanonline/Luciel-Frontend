@@ -1,0 +1,76 @@
+name: dependabot-auto-merge
+
+# Round 6 WP-B: a Dependabot PR that CI has proven green is merged without a person
+# when it is a minor or patch update (single or the grouped "minor-and-patch" PR);
+# a MAJOR bump is labelled `major-update` and left for a human, because a major is a
+# migration, not an upkeep.
+#
+# Runs on the COMPLETION of the CI workflow for a Dependabot branch — never on the
+# PR event itself — so the merge decision is made only after the same gate every
+# other change passes (typecheck, tests, lint, build, the pnpm audit gate with its
+# expiring waivers, the secret scan).
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Merge a green minor/patch update, label a major
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --repo "$REPO" --head "$HEAD_BRANCH" --state open \
+                --json number,title,author,baseRefName --jq '.[0]')
+          if [ -z "$pr" ] || [ "$pr" = "null" ]; then
+            echo "no open PR for $HEAD_BRANCH — nothing to merge"; exit 0
+          fi
+          number=$(jq -r .number <<<"$pr")
+          title=$(jq -r .title <<<"$pr")
+          author=$(jq -r .author.login <<<"$pr")
+          base=$(jq -r .baseRefName <<<"$pr")
+          case "$author" in
+            dependabot|app/dependabot|dependabot[bot]) ;;
+            *) echo "PR #$number is not from Dependabot ($author) — leaving it"; exit 0 ;;
+          esac
+          echo "PR #$number → $base: $title"
+          kind=$(python3 - "$title" <<'PY'
+          import re, sys
+          title = sys.argv[1]
+          if "minor-and-patch group" in title:
+              print("minor"); sys.exit()
+          m = re.search(r"from (\d+)(?:\.\S+)? to (\d+)(?:\.\S+)?", title)
+          if not m:
+              print("unknown"); sys.exit()
+          print("major" if m.group(1) != m.group(2) else "minor")
+          PY
+          )
+          echo "update kind: $kind"
+          if [ "$kind" = "minor" ]; then
+            gh pr merge "$number" --repo "$REPO" --squash --delete-branch
+            echo "merged #$number"
+          else
+            gh pr edit "$number" --repo "$REPO" --add-label major-update || true
+            gh pr comment "$number" --repo "$REPO" --body \
+              "CI is green, but this is a **major** (or unclassifiable) update — a migration, not an upkeep. Left for a person to review and merge."
+            echo "labelled #$number major-update"
+          fi
