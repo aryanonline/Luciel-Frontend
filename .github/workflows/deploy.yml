@@ -68,7 +68,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure AWS via OIDC (frontend deploy role)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::729005488042:role/luciel-dev-frontend-github-deploy
           aws-region: ${{ env.AWS_REGION }}
@@ -147,7 +147,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: widget-dist, path: dist }
       - name: Configure AWS via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
           aws-region: ${{ env.AWS_REGION }}
@@ -211,7 +211,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: widget-dist, path: dist }
       - name: Configure AWS via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
           aws-region: ${{ env.AWS_REGION }}
