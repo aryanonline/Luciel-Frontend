@@ -150,6 +150,20 @@ export default function BillingPage() {
               tone={b.atCap ? 'warning' : 'accent'}
               label={`${luciel.data.name}: ${b.conversationsThisPeriod} conversation${b.conversationsThisPeriod === 1 ? '' : 's'} this billing period (${b.freeAllowance} free + ${b.billedThisPeriod} billed)`}
             />
+            {/* Ledger truth (round 6 WP-I, audit F025): a cardless or dunned account
+                still shows the blocks it ran while it could, and whether Stripe has
+                been told — never a zero that reads as "nothing was ever billed". */}
+            {b.billable === false && (b.accruedBlocks ?? 0) > 0 && (
+              <p className="mt-vm-2 text-vm-1 text-vm-text-muted" data-testid="ledger-note">
+                {b.dunningState === 'reduced'
+                  ? 'Payment is failing, so new conversations stop at the free 50. '
+                  : 'There is no card on file, so new conversations stop at the free 50. '}
+                {`${b.accruedBlocks} paid block${b.accruedBlocks === 1 ? '' : 's'} already ran this period — `}
+                {(b.reportedBlocks ?? 0) >= (b.accruedBlocks ?? 0)
+                  ? 'billed on your last invoice.'
+                  : 'still to be billed.'}
+              </p>
+            )}
             <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
               Resets {new Date(b.periodResetsAt).toLocaleDateString()}
               {b.billingState === 'payg_enabled'

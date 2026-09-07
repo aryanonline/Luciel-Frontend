@@ -125,6 +125,12 @@ export interface LucielApiClient {
      * own retention choice over their own data (Arch §3.4.10a, Legal §B5).
      */
     updateLeadRetention(days: number | null): Promise<Luciel>;
+    /**
+     * The websites the widget may load on (round 6 WP-I). An empty list turns the
+     * restriction off. The server normalises each entry to `scheme://host[:port]`
+     * and refuses paths, queries and non-http(s) schemes with a validation error.
+     */
+    updateAllowedOrigins(origins: string[]): Promise<Luciel>;
     /** Voice-enable one-time consent ack — hard gate, logged (Arch §3.1.2). */
     acknowledgeVoiceConsent(): Promise<Luciel>;
     pause(): Promise<Luciel>;

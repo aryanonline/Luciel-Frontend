@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   mountWidget,
   WIDGET_HUMAN_TAKEOVER_NOTE,
+  WIDGET_OFFSITE_NOTE,
   WIDGET_POLL_OPEN_MS,
   WIDGET_TEXT_MAX_CHARS,
 } from './mount';
@@ -740,6 +741,47 @@ describe('widget mount', () => {
     const text = await sendAndReadTranscript(new Error('network down'));
     expect(text).toContain('Sorry — something went wrong. Please try again.');
     expect(text).not.toContain('One moment');
+  });
+
+  it('renders nothing when the server refuses this page origin at bootstrap', async () => {
+    // Round 6 WP-I: a page outside the owner's allowed list gets no chrome at all —
+    // a word in the console for the site's developer, never a broken chat.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const refusing: WidgetApiClient = {
+      ...clientReplying('x'),
+      bootstrap: async () => {
+        throw new LucielApiError({
+          code: 'unauthorized',
+          message: "This chat isn't available on this website.",
+        });
+      },
+    };
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    await mountWidget({ embedKey: 'vm_live_test', host, client: refusing });
+    expect(host.querySelector('[data-luciel-widget]')).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not on the allowed list'));
+    warn.mockRestore();
+  });
+
+  it('says the chat is unavailable here when a send is refused off-site, and stops', async () => {
+    const refusing: WidgetApiClient = {
+      ...clientReplying('x'),
+      send: async () => {
+        throw new LucielApiError({
+          code: 'unauthorized',
+          message: "This chat isn't available on this website.",
+        });
+      },
+    };
+    const shadow = await mountOpen(refusing);
+    const input = shadow.querySelector('.vm-input') as HTMLInputElement;
+    input.value = 'hello';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await flush();
+    await flush();
+    expect(shadow.querySelector('.vm-body')?.textContent).toContain(WIDGET_OFFSITE_NOTE);
+    expect(input.disabled).toBe(true);
   });
 
   it("caps the composer at the server's 4000-character message limit", async () => {

@@ -65,7 +65,9 @@ describe('Billing page: payments availability (F026)', () => {
   it('says payments are not live yet instead of a dead button when the server says so', async () => {
     served.billing = { ...freeCap, paymentsAvailable: false };
     renderWithQuery(<BillingPage />);
-    expect(await screen.findByText(/Payments aren't live yet in this environment/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Payments aren't live yet in this environment/),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add payment method' })).not.toBeInTheDocument();
   });
 });
@@ -90,6 +92,40 @@ describe('Billing period wording (F007)', () => {
     const { container } = renderWithQuery(<DashboardPage />);
     await screen.findByText(/12 conversations this billing period/);
     expect(container.textContent).not.toMatch(/this month/i);
+  });
+});
+
+describe('Ledger truth on Billing (round 6 WP-I, F025)', () => {
+  beforeEach(() => {
+    served.billing = null;
+  });
+
+  it('a dunned account still shows the block it ran, and that it was billed', async () => {
+    served.billing = {
+      budget: {
+        ...freeCap.budget,
+        billingState: 'payg_enabled',
+        dunningState: 'reduced',
+        conversationsThisPeriod: 70,
+        billedThisPeriod: 20,
+        atCap: true,
+        billable: false,
+        accruedBlocks: 1,
+        reportedBlocks: 1,
+      },
+      paymentsAvailable: true,
+    };
+    renderWithQuery(<BillingPage />);
+    expect(await screen.findByTestId('ledger-note')).toHaveTextContent(
+      'Payment is failing, so new conversations stop at the free 50. 1 paid block already ran this period — billed on your last invoice.',
+    );
+  });
+
+  it('says nothing about blocks for an account that never accrued any', async () => {
+    served.billing = { ...freeCap, paymentsAvailable: true };
+    renderWithQuery(<BillingPage />);
+    await screen.findByText('This billing period');
+    expect(screen.queryByTestId('ledger-note')).not.toBeInTheDocument();
   });
 });
 

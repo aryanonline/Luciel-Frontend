@@ -272,6 +272,10 @@ export function useLucielMutations() {
       mutationFn: (days: number | null) => api.luciel.updateLeadRetention(days),
       onSuccess: invalidate,
     }),
+    updateAllowedOrigins: useMutation({
+      mutationFn: (origins: string[]) => api.luciel.updateAllowedOrigins(origins),
+      onSuccess: invalidate,
+    }),
     acknowledgeVoiceConsent: useMutation({
       mutationFn: () => api.luciel.acknowledgeVoiceConsent(),
       onSuccess: invalidate,
