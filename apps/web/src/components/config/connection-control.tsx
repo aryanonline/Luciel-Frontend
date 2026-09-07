@@ -166,6 +166,18 @@ function crmMappingCopy(provider: string | undefined): string | null {
   return null;
 }
 
+/**
+ * WHOSE account is connected, in the provider's own words (round 6 WP-C): the
+ * post-exchange verifier writes `connectedAs` — the Salesforce org, HubSpot
+ * portal, Notion workspace, Google account, Meta user, mailbox — into the row's
+ * non-secret config. Never derived here; absent means the verifier had nothing
+ * to say (a legacy row, a credential form).
+ */
+function connectedAs(connection: Connection | undefined): string | null {
+  const value = connection?.nonSecretConfig?.connectedAs;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 export function ConnectionControl({
   connectionType,
   label,
@@ -442,6 +454,14 @@ export function ConnectionControl({
       {connectionType === 'crm' && isLive && crmMappingCopy(connection?.provider) && (
         <p className="text-vm-0 text-vm-text-muted" role="note">
           {crmMappingCopy(connection?.provider)}
+        </p>
+      )}
+
+      {/* Round 6 WP-C: the verifier's own account line, shown only while live — a
+          stale identity under an error chip would read as a working connection. */}
+      {isLive && connectedAs(connection) && (
+        <p className="text-vm-0 text-vm-text-muted" role="note" data-testid="connected-as">
+          Connected as {connectedAs(connection)}.
         </p>
       )}
 
