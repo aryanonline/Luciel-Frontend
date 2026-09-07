@@ -340,6 +340,56 @@ export const escalationContactHealth = z.object({
 });
 export type EscalationContactHealth = z.infer<typeof escalationContactHealth>;
 
+// --- Team availability (round 6 WP-E, audit F054) -------------------------------
+/**
+ * One weekly window the HUMAN team is reachable: `day` 0=Monday … 6=Sunday, 24-hour
+ * HH:MM local times; an end before the start wraps past midnight.
+ */
+export const teamWindow = z.object({
+  day: z.number().int().min(0).max(6),
+  start: z.string(),
+  end: z.string(),
+});
+export type TeamWindow = z.infer<typeof teamWindow>;
+
+export const teamClosure = z.object({
+  date: z.string(),
+  label: z.string().nullable().optional(),
+});
+export type TeamClosure = z.infer<typeof teamClosure>;
+
+/** Who an escalation reaches while the team is unreachable (routing only). */
+export const afterHoursEscalation = z.object({
+  channel: notificationChannel.nullable().optional(),
+  contactEmail: z.string().nullable().optional(),
+  contactSms: z.string().nullable().optional(),
+  ccOwnerEmail: z.boolean().nullable().optional(),
+});
+export type AfterHoursEscalation = z.infer<typeof afterHoursEscalation>;
+
+/**
+ * When the owner's PEOPLE are reachable — never Luciel's hours. Luciel answers
+ * around the clock regardless; this only shapes the follow-up promise in a hand-off
+ * and where an after-hours escalation goes. `enabled` false keeps the generic
+ * behaviour while the grid is remembered.
+ */
+export const teamAvailability = z.object({
+  enabled: z.boolean().default(false),
+  weekly: z.array(teamWindow).default([]),
+  closures: z.array(teamClosure).default([]),
+  afterHours: z
+    .object({ escalation: afterHoursEscalation.nullable().optional() })
+    .nullable()
+    .optional(),
+});
+export type TeamAvailability = z.infer<typeof teamAvailability>;
+
+/** PUT body: the setting plus the owner's IANA timezone (required when enabled). */
+export const teamAvailabilityUpdate = teamAvailability.extend({
+  timezone: z.string().nullable().optional(),
+});
+export type TeamAvailabilityUpdate = z.input<typeof teamAvailabilityUpdate>;
+
 // --- The Luciel instance ------------------------------------------------------
 export const luciel = z.object({
   instanceId: uuid,
@@ -369,6 +419,10 @@ export const luciel = z.object({
    * servers.
    */
   allowedOrigins: z.array(z.string()).nullable().optional(),
+  /** The owner's IANA timezone (round 6 WP-E); null until they set it. */
+  timezone: z.string().nullable().optional(),
+  /** When the human team is reachable (round 6 WP-E); null = never described. */
+  teamAvailability: teamAvailability.nullable().optional(),
 });
 export type Luciel = z.infer<typeof luciel>;
 

@@ -52,6 +52,7 @@ import type {
   AuditEvent,
   ContactRequest,
   ContactResult,
+  TeamAvailabilityUpdate,
 } from './schemas';
 
 /**
@@ -131,6 +132,13 @@ export interface LucielApiClient {
      * and refuses paths, queries and non-http(s) schemes with a validation error.
      */
     updateAllowedOrigins(origins: string[]): Promise<Luciel>;
+    /**
+     * When the HUMAN team is reachable (round 6 WP-E). Luciel keeps answering around
+     * the clock whatever is set; this shapes only the follow-up promise and where an
+     * after-hours escalation goes. The server refuses a made-up timezone, a window
+     * without length, and an after-hours rule with nobody on the other end.
+     */
+    updateTeamAvailability(req: TeamAvailabilityUpdate): Promise<Luciel>;
     /** Voice-enable one-time consent ack — hard gate, logged (Arch §3.1.2). */
     acknowledgeVoiceConsent(): Promise<Luciel>;
     pause(): Promise<Luciel>;

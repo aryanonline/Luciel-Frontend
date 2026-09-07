@@ -9,6 +9,7 @@ import { ToolsPillar } from '@/components/config/tools-pillar';
 import { KnowledgePillar } from '@/components/config/knowledge-pillar';
 import { EscalationPillar } from '@/components/config/escalation-pillar';
 import { PersonalityPillar } from '@/components/config/personality-pillar';
+import { TeamAvailabilityPillar } from '@/components/config/team-availability-pillar';
 
 /**
  * The five-pillar configuration screen — the single most important UX
@@ -65,7 +66,7 @@ function ConfigureBody() {
     <>
       <PageHeader
         title={`Configure ${luciel.name}`}
-        description="Five things to set. You can change any of them at any time — you adjust the role, you don't re-hire."
+        description="Five things to set, plus an optional note about your team. You can change any of them at any time — you adjust the role, you don't re-hire."
       />
 
       {/* When a change takes effect (Arch §3.8.7 rule E, Decision #39): additive/
@@ -81,6 +82,9 @@ function ConfigureBody() {
       <KnowledgePillar />
       <EscalationPillar luciel={luciel} />
       <PersonalityPillar luciel={luciel} />
+      {/* Optional, and about the PEOPLE: Luciel keeps answering around the clock
+          whatever is set here (round 6 WP-E). */}
+      <TeamAvailabilityPillar luciel={luciel} />
 
       {/* Each pillar saves itself, so this link saves nothing — calling it "Save"
           promised a write that never happened (P1-1). It is navigation, and it
