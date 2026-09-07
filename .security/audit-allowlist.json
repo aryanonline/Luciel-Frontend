@@ -1,13 +1,4 @@
 {
-  "_comment": "Waivers for `scripts/audit-gate.mjs` (pnpm audit, high+ blocks). Each entry needs a reason and an expiry; an expired entry fails the build. Rationale in audit-allowlist.md.",
-  "waivers": [
-    {"ghsa": "GHSA-36qx-fr4f-26g5", "package": "next", "reason": "Pages Router i18n middleware bypass; App Router only, no i18n routing. Fix: Next 15 migration.", "expires": "2026-10-06"},
-    {"ghsa": "GHSA-89xv-2m56-2m9x", "package": "next", "reason": "SSRF in Server Actions on custom servers; no Server Actions, Next's own server. Fix: Next 15 migration.", "expires": "2026-10-06"},
-    {"ghsa": "GHSA-8h8q-6873-q5fj", "package": "next", "reason": "DoS with Server Components; behind login + ALB rate limits for one cycle. Fix: Next 15 migration.", "expires": "2026-10-06"},
-    {"ghsa": "GHSA-c4j6-fc7j-m34r", "package": "next", "reason": "SSRF via WebSocket upgrades; none handled here. Fix: Next 15 migration.", "expires": "2026-10-06"},
-    {"ghsa": "GHSA-h25m-26qc-wcjf", "package": "next", "reason": "DoS via RSC request deserialization; same posture, one cycle. Fix: Next 15 migration.", "expires": "2026-10-06"},
-    {"ghsa": "GHSA-m99w-x7hq-7vfj", "package": "next", "reason": "DoS in App Router Server Actions; no Server Actions. Fix: Next 15 migration.", "expires": "2026-10-06"},
-    {"ghsa": "GHSA-p9j2-gv94-2wf4", "package": "next", "reason": "SSRF in rewrites via attacker-controlled hostnames; rewrites are static. Fix: Next 15 migration.", "expires": "2026-10-06"},
-    {"ghsa": "GHSA-q4gf-8mx6-v5v3", "package": "next", "reason": "DoS with Server Components; same posture, one cycle. Fix: Next 15 migration.", "expires": "2026-10-06"}
-  ]
+  "_comment": "Waivers for `scripts/audit-gate.mjs` (pnpm audit, high+ blocks). Each entry needs a reason and an expiry; an expired entry fails the build. Rationale in audit-allowlist.md. Empty since the Next 14 → 15 migration (2026-09-07) retired the eight Next advisories; a new entry is a reviewed commit, never a quiet renewal.",
+  "waivers": []
 }
