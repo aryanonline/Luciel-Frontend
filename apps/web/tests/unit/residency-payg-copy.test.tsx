@@ -20,7 +20,9 @@ describe('P1: residency copy is flat and unconditional (Arch §4.2)', () => {
   it('privacy page states Canada residency without the hedged framing', () => {
     render(<PrivacyPage />);
     expect(
-      screen.getByText(/VantageMind is Canada-resident\. All customer data is stored in AWS Canada Central \(ca-central-1\), with no cross-region replication\./),
+      screen.getByText(
+        /VantageMind is Canada-resident\. All customer data is stored in AWS Canada Central \(ca-central-1\), with no cross-region replication\./,
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/current offering/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/disclosed region/i)).not.toBeInTheDocument();
@@ -29,7 +31,9 @@ describe('P1: residency copy is flat and unconditional (Arch §4.2)', () => {
   it('DPA page states Canada residency without the hedged framing', () => {
     render(<DpaPage />);
     expect(
-      screen.getByText(/VantageMind is Canada-resident\. All customer data is stored in AWS Canada Central \(ca-central-1\), with no cross-region replication\./),
+      screen.getByText(
+        /VantageMind is Canada-resident\. All customer data is stored in AWS Canada Central \(ca-central-1\), with no cross-region replication\./,
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/disclosed region/i)).not.toBeInTheDocument();
   });
@@ -51,6 +55,10 @@ function mockHooks(budget: Record<string, unknown>) {
     useConnections: () => ({ data: [] }),
     useConnectionProviders: () => ({ data: [] }),
     useSwapConnection: () => ({ mutate: vi.fn(), isPending: false }),
+    // The Today card (round 6 WP-F) reads the employee status; an empty read keeps
+    // these budget-copy assertions about the budget card alone.
+    useEmployeeStatus: () => ({ data: null, isPending: false, isError: false, refetch: vi.fn() }),
+    useLucielMutations: () => ({}),
   }));
 }
 

@@ -53,6 +53,7 @@ import type {
   ContactRequest,
   ContactResult,
   TeamAvailabilityUpdate,
+  EmployeeStatus,
 } from './schemas';
 
 /**
@@ -139,6 +140,16 @@ export interface LucielApiClient {
      * without length, and an after-hours rule with nobody on the other end.
      */
     updateTeamAvailability(req: TeamAvailabilityUpdate): Promise<Luciel>;
+    /**
+     * The employee's status (round 6 WP-F): what Luciel can do right now, needs
+     * from the owner, and did yesterday/today — derived server-side from rows that
+     * already exist. `null` when the account has no Luciel (same as `get`).
+     */
+    status(): Promise<EmployeeStatus | null>;
+    /** Morning brief on/off (round 6 WP-F). */
+    updateDailyBrief(enabled: boolean): Promise<Luciel>;
+    /** The short name Luciel calls the business; `null` clears it (round 6 WP-F). */
+    updateBusinessName(name: string | null): Promise<Luciel>;
     /** Voice-enable one-time consent ack — hard gate, logged (Arch §3.1.2). */
     acknowledgeVoiceConsent(): Promise<Luciel>;
     pause(): Promise<Luciel>;

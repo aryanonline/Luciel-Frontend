@@ -30,6 +30,10 @@ function mockHooks() {
     useConnections: () => ({ data: [] }),
     useConnectionProviders: () => ({ data: [] }),
     useSwapConnection: () => ({ mutate: vi.fn(), isPending: false }),
+    // The Today card (round 6 WP-F) reads the employee status; an empty read keeps
+    // these budget-copy assertions about the budget card alone.
+    useEmployeeStatus: () => ({ data: null, isPending: false, isError: false, refetch: vi.fn() }),
+    useLucielMutations: () => ({}),
   }));
 }
 
