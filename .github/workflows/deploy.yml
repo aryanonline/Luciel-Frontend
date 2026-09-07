@@ -144,7 +144,7 @@ jobs:
     environment: dev
     env: { ENVIRONMENT: dev }
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: widget-dist, path: dist }
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -208,7 +208,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
     env: { ENVIRONMENT: prod }
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: widget-dist, path: dist }
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
