@@ -69,6 +69,9 @@ describe('Embed page: websites that may load the chat', () => {
     expect(list).toHaveTextContent('https://shop.acme.example');
     fireEvent.click(screen.getByRole('button', { name: 'Remove https://shop.acme.example' }));
     await waitFor(() => expect(served.calls).toEqual([['https://acme.example']]));
+    // The removal must settle (the form is disabled and the button reads "Saving…"
+    // while it is pending) before the next entry can be typed.
+    await screen.findByText('https://shop.acme.example can no longer load your chat.');
     fireEvent.change(screen.getByPlaceholderText('https://www.example.com'), {
       target: { value: 'https://landing.acme.example' },
     });
