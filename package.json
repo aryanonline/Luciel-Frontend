@@ -19,7 +19,7 @@
     "format:write": "prettier --write \"**/*.{ts,tsx,css,md,json}\""
   },
   "devDependencies": {
-    "prettier": "^3.3.3",
+    "prettier": "^3.9.6",
     "typescript": "^5.5.4"
   },
   "pnpm": {
