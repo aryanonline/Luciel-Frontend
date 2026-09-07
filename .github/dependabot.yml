@@ -45,3 +45,8 @@ updates:
       timezone: America/Toronto
     open-pull-requests-limit: 2
     labels: [dependencies, docker]
+    # The Node runtime line is a deliberate choice (engines, native modules, the
+    # base image's own support window): never an auto-merged dependency update.
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']

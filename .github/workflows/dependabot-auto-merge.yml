@@ -58,6 +58,10 @@ jobs:
           title = sys.argv[1]
           if "minor-and-patch group" in title:
               print("minor"); sys.exit()
+          # A container base image IS the runtime (python:3.12 → 3.14 reads as "minor"
+          # by version but is a language upgrade): always a person's call (2026-09-07).
+          if re.search(r"(?i)bump (python|node).* from ", title):
+              print("runtime"); sys.exit()
           m = re.search(r"from (\d+)(?:\.\S+)? to (\d+)(?:\.\S+)?", title)
           if not m:
               print("unknown"); sys.exit()
