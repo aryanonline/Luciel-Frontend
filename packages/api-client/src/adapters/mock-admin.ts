@@ -17,6 +17,7 @@ import type {
   MetaChannel,
   ScopeCandidate,
   Message,
+  EmployeeStatus,
 } from '../schemas';
 import * as seed from './mock-data';
 
@@ -578,6 +579,94 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           closures: req.closures ?? [],
           afterHours: req.afterHours ?? null,
         });
+        return ok(state.luciel);
+      },
+      async status() {
+        guardVerified();
+        if (!state.luciel) return ok(null);
+        // Derived from the mock's own state the way the server derives it from rows:
+        // the identity from the Luciel, the budget from billing, needs from what is
+        // not connected. The counts are the seed's.
+        const budget = state.billing.budget;
+        const needs: EmployeeStatus['needs'] = [];
+        const escalation = state.luciel.escalation;
+        if (!escalation.primaryEmail && !escalation.primarySms) {
+          needs.push({
+            code: 'no_escalation_contact',
+            severity: 'attention',
+            title: 'No escalation contact',
+            detail:
+              'Hand-offs only reach your account email. Add a contact under Configure → Escalation.',
+            href: '/dashboard/configure',
+          });
+        }
+        if (state.luciel.teamAvailability?.enabled !== true) {
+          needs.push({
+            code: 'team_availability_unset',
+            severity: 'info',
+            title: 'Tell customers when your team is reachable (optional)',
+            detail:
+              'Luciel answers around the clock either way; this only makes follow-up promises exact.',
+            href: '/dashboard/configure',
+          });
+        }
+        if (!state.luciel.allowedOrigins?.length) {
+          needs.push({
+            code: 'allowed_origins_unset',
+            severity: 'info',
+            title: 'Name the websites that may load your chat',
+            detail: 'Right now any page that copies your embed key can use it.',
+            href: '/dashboard/embed',
+          });
+        }
+        const capabilities: EmployeeStatus['capabilities'] = state.luciel.channels.map((c) => ({
+          id: c.id,
+          kind: 'channel' as const,
+          label: c.id === 'widget' ? 'Website chat' : c.id,
+          state: !c.enabled
+            ? ('off' as const)
+            : c.id === 'widget' || c.connectionStatus === 'connected'
+              ? ('ready' as const)
+              : ('attention' as const),
+          detail: c.id === 'widget' && c.enabled ? 'on your website' : null,
+        }));
+        return ok({
+          assistantName: state.luciel.name,
+          businessShortName: state.luciel.businessShortName ?? null,
+          onDuty: 'around the clock',
+          conversationsUsed: budget.conversationsThisPeriod,
+          freeAllowance: budget.freeAllowance,
+          freeRemaining: Math.max(budget.freeAllowance - budget.conversationsThisPeriod, 0),
+          billedBlocks: budget.accruedBlocks ?? 0,
+          billable: budget.billable ?? true,
+          periodResetsAt: budget.periodResetsAt,
+          timezone: state.luciel.timezone ?? null,
+          teamReachableNow: state.luciel.teamAvailability?.enabled ? true : null,
+          nextReachable: null,
+          capabilities,
+          needs,
+          yesterday: seed.seedDayCounts.yesterday,
+          today: seed.seedDayCounts.today,
+          dailyBriefEnabled: state.luciel.dailyBriefEnabled ?? true,
+        } satisfies EmployeeStatus);
+      },
+      async updateDailyBrief(enabled) {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        state.luciel.dailyBriefEnabled = enabled;
+        return ok(state.luciel);
+      },
+      async updateBusinessName(name) {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        const cleaned = (name ?? '').trim();
+        if (cleaned.length > 80) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Keep the business name under 80 characters.',
+          });
+        }
+        state.luciel.businessShortName = cleaned || null;
         return ok(state.luciel);
       },
       async acknowledgeVoiceConsent() {

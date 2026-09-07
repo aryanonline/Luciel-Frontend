@@ -13,6 +13,9 @@ bundle.
 - `src/app/(marketing)/` — public marketing, legal, contact, and preview routes.
 - `src/app/(auth)/` — sign-up, verification, login, reset, and recovery routes.
 - `src/app/(app)/dashboard/page.tsx` — overview and attention counter.
+- `src/components/today-card.tsx` — the employee in one place (round 6 WP-F): identity line
+  ("on duty around the clock"), capability strip, "What I need from you" (served needs with
+  links), yesterday/today counts, morning-brief toggle, business short name. All served.
 - `src/app/(app)/dashboard/configure/page.tsx` — configuration entry surface.
 - `src/app/(app)/dashboard/conversations/page.tsx` — conversation, evidence, and
   takeover presentation.
@@ -53,6 +56,9 @@ bundle.
   delivered through polling.
 - Team availability describes people, never the Luciel: no copy may imply Luciel is
   offline, closed, or has hours. Off = the generic "follow up shortly" wording.
+- The Today card never derives a state locally: capabilities, needs and counts come from
+  `GET /admin/luciel/status`. A test that mocks `@/lib/hooks` wholesale must stub
+  `useEmployeeStatus` and `useLucielMutations` or the Overview page cannot render.
 
 ## Tests and commands
 

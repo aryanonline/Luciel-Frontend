@@ -72,6 +72,13 @@ export const analyticsOverview = z.object({
     .optional(),
   conversionBySourceNote: z.string().nullable().optional(),
   conversionByServiceNote: z.string().nullable().optional(),
+  /**
+   * Whether escalations have anywhere real to go (audit F080): served since the
+   * harmony fix but stripped by this schema until round 6 WP-F. `escalationContactBouncing`
+   * means a configured email contact is currently suppressed.
+   */
+  escalationContactConfigured: z.boolean().optional(),
+  escalationContactBouncing: z.boolean().optional(),
 });
 export type AnalyticsOverview = z.infer<typeof analyticsOverview>;
 

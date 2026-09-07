@@ -12,6 +12,7 @@ import type {
   EscalationEvent,
   AnalyticsOverview,
   AuditEvent,
+  DayCounts,
 } from '../schemas';
 
 /**
@@ -91,6 +92,36 @@ export const seedLuciel: Luciel = {
   allowedOrigins: null,
   timezone: null,
   teamAvailability: null,
+  businessShortName: null,
+  dailyBriefEnabled: true,
+};
+
+/** Yesterday/today counts for the mock Today card (round 6 WP-F). */
+export const seedDayCounts: { yesterday: DayCounts; today: DayCounts } = {
+  yesterday: {
+    date: '2026-09-07',
+    conversations: 7,
+    byChannel: { widget: 5, sms: 2 },
+    leads: 3,
+    leadsToCrm: 2,
+    escalations: 1,
+    escalationsReached: 1,
+    bookings: 1,
+    callbacksScheduled: 1,
+    humanTakeovers: 0,
+  },
+  today: {
+    date: '2026-09-08',
+    conversations: 2,
+    byChannel: { widget: 2 },
+    leads: 1,
+    leadsToCrm: 1,
+    escalations: 0,
+    escalationsReached: 0,
+    bookings: 0,
+    callbacksScheduled: 0,
+    humanTakeovers: 0,
+  },
 };
 
 export const seedBilling: BillingInfo = {

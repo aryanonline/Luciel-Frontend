@@ -423,6 +423,10 @@ export const luciel = z.object({
   timezone: z.string().nullable().optional(),
   /** When the human team is reachable (round 6 WP-E); null = never described. */
   teamAvailability: teamAvailability.nullable().optional(),
+  /** What Luciel calls the business in greetings (round 6 WP-F); null = "this business". */
+  businessShortName: z.string().nullable().optional(),
+  /** The morning brief opt-out (round 6 WP-F); on by default. */
+  dailyBriefEnabled: z.boolean().optional(),
 });
 export type Luciel = z.infer<typeof luciel>;
 

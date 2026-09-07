@@ -39,6 +39,7 @@ export const qk = {
   escalations: ['escalations'] as const,
   leads: ['leads'] as const,
   analytics: ['analytics'] as const,
+  employeeStatus: ['employeeStatus'] as const,
   audit: ['audit'] as const,
   twilioNumbers: (connectionId: string) => ['twilioNumbers', connectionId] as const,
 };
@@ -94,6 +95,9 @@ export const useConversations = () =>
 export const useEscalations = () =>
   useQuery({ queryKey: qk.escalations, queryFn: () => api.conversations.listEscalations() });
 export const useLeads = () => useQuery({ queryKey: qk.leads, queryFn: () => api.leads.list() });
+/** The employee's status for the Today card (round 6 WP-F). */
+export const useEmployeeStatus = () =>
+  useQuery({ queryKey: qk.employeeStatus, queryFn: () => api.luciel.status() });
 export const useAnalytics = () =>
   useQuery({ queryKey: qk.analytics, queryFn: () => api.analytics.overview() });
 export const useAudit = () =>
@@ -237,7 +241,14 @@ export function useSwapConnection() {
 /** Mutations that invalidate the Luciel after writing a pillar. */
 export function useLucielMutations() {
   const qc = useQueryClient();
-  const invalidate = () => qc.invalidateQueries({ queryKey: qk.luciel });
+  // Returned (not voided) so `mutateAsync` resolves only once the refetch has landed —
+  // callers rely on the served value being fresh when their await returns.
+  const invalidate = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: qk.luciel }),
+      // Every pillar edit can change what the employee can do (round 6 WP-F).
+      qc.invalidateQueries({ queryKey: qk.employeeStatus }),
+    ]);
   return {
     create: useMutation({
       mutationFn: (req: CreateLucielRequest) => api.luciel.create(req),
@@ -280,6 +291,20 @@ export function useLucielMutations() {
     updateTeamAvailability: useMutation({
       mutationFn: (req: TeamAvailabilityUpdate) => api.luciel.updateTeamAvailability(req),
       onSuccess: invalidate,
+    }),
+    updateDailyBrief: useMutation({
+      mutationFn: (enabled: boolean) => api.luciel.updateDailyBrief(enabled),
+      onSuccess: () => {
+        invalidate();
+        qc.invalidateQueries({ queryKey: qk.employeeStatus });
+      },
+    }),
+    updateBusinessName: useMutation({
+      mutationFn: (name: string | null) => api.luciel.updateBusinessName(name),
+      onSuccess: () => {
+        invalidate();
+        qc.invalidateQueries({ queryKey: qk.employeeStatus });
+      },
     }),
     acknowledgeVoiceConsent: useMutation({
       mutationFn: () => api.luciel.acknowledgeVoiceConsent(),

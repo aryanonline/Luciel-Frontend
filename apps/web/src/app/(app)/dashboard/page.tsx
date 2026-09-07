@@ -22,6 +22,7 @@ import {
   useSwapConnection,
 } from '@/lib/hooks';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
+import { TodayCard } from '@/components/today-card';
 import {
   connectionTypeLabel,
   providerConfigured,
@@ -159,6 +160,10 @@ export default function DashboardPage() {
           </Button>
         }
       />
+
+      {/* The employee, in one place (round 6 WP-F): on duty around the clock, what it
+          can do, what it needs, what it did. Served and derived, never narrated. */}
+      <TodayCard />
 
       {/* At-cap honesty (Customer Journey §6) — only when the server says so. */}
       {b?.atCap && (
