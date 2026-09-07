@@ -4,7 +4,8 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Card, CardTitle, CardDescription, Button, Banner, Modal } from '@luciel/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { useLuciel, qk } from '@/lib/hooks';
+import { useLuciel, useLucielMutations, qk } from '@/lib/hooks';
+import { LucielApiError } from '@luciel/api-client';
 import { api } from '@/lib/api';
 import { WidgetPreview } from '@/components/widget-preview';
 
@@ -18,6 +19,147 @@ import { WidgetPreview } from '@/components/widget-preview';
  * provisioned with the Email CHANNEL in Configure, one place, so the two surfaces
  * can't disagree.
  */
+
+/**
+ * The origin of the website the owner registered at signup, offered as the first
+ * entry of the allowed list (round 6 WP-I). Null when the address does not parse.
+ */
+function siteOrigin(websiteUrl: string | undefined): string | null {
+  if (!websiteUrl) return null;
+  const raw = websiteUrl.trim();
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(withScheme);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which websites may load this chat (round 6 WP-I, audit F066). The embed key is
+ * public by design; this list is the owner's only way to say WHERE it may be used.
+ * Empty = any page (the default). Every change saves at once and reports its own
+ * outcome; the server normalises entries and refuses paths and odd schemes.
+ */
+function AllowedOriginsCard({
+  origins,
+  websiteUrl,
+}: {
+  origins: string[];
+  websiteUrl: string | undefined;
+}) {
+  const { updateAllowedOrigins } = useLucielMutations();
+  const [draft, setDraft] = React.useState('');
+  const [notice, setNotice] = React.useState<{ tone: 'info' | 'danger'; text: string } | null>(
+    null,
+  );
+  const suggestion = siteOrigin(websiteUrl);
+  const suggest = suggestion && !origins.includes(suggestion) ? suggestion : null;
+
+  const save = async (next: string[], said: string) => {
+    setNotice(null);
+    try {
+      await updateAllowedOrigins.mutateAsync(next);
+      setDraft('');
+      setNotice({ tone: 'info', text: said });
+    } catch (err) {
+      setNotice({
+        tone: 'danger',
+        text:
+          err instanceof LucielApiError
+            ? err.message
+            : 'We could not save that change. Please try again.',
+      });
+    }
+  };
+  const add = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    void save([...origins, trimmed], `${trimmed} can load your chat.`);
+  };
+
+  return (
+    <Card>
+      <CardTitle>Websites that may load this chat</CardTitle>
+      <CardDescription>
+        Your embed key is public by design. Listing your website here means only these addresses can
+        load the chat with it — any other page is refused. Leave the list empty and any page can
+        load it. The preview on this page always works.
+      </CardDescription>
+      {origins.length === 0 ? (
+        <p className="mt-vm-3 text-vm-1 text-vm-text-muted" data-testid="origins-empty">
+          Any website can load your chat right now.
+        </p>
+      ) : (
+        <ul className="mt-vm-3 space-y-vm-2" aria-label="Allowed websites">
+          {origins.map((origin) => (
+            <li key={origin} className="flex flex-wrap items-center gap-vm-3">
+              <code className="text-vm-1">{origin}</code>
+              <Button
+                variant="ghost"
+                disabled={updateAllowedOrigins.isPending}
+                onClick={() =>
+                  void save(
+                    origins.filter((o) => o !== origin),
+                    origins.length === 1
+                      ? 'The list is empty again — any website can load your chat.'
+                      : `${origin} can no longer load your chat.`,
+                  )
+                }
+              >
+                Remove {origin}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="mt-vm-3 flex flex-wrap items-end gap-vm-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          add(draft);
+        }}
+      >
+        <label className="grid gap-vm-1 text-vm-1">
+          <span>Website address</span>
+          <input
+            className="rounded-vm-control border border-vm-border bg-vm-bg px-vm-3 py-vm-2 text-vm-1 text-vm-text"
+            placeholder="https://www.example.com"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            disabled={updateAllowedOrigins.isPending || origins.length >= 10}
+          />
+        </label>
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={!draft.trim() || updateAllowedOrigins.isPending || origins.length >= 10}
+        >
+          {updateAllowedOrigins.isPending ? 'Saving…' : 'Add website'}
+        </Button>
+        {suggest && (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={updateAllowedOrigins.isPending}
+            onClick={() => add(suggest)}
+          >
+            Add {suggest}
+          </Button>
+        )}
+      </form>
+      {origins.length >= 10 && (
+        <p className="mt-vm-2 text-vm-0 text-vm-text-muted">Up to ten websites can be listed.</p>
+      )}
+      {notice && (
+        <Banner tone={notice.tone} className="mt-vm-3">
+          {notice.text}
+        </Banner>
+      )}
+    </Card>
+  );
+}
 
 const snippetFor = (embedKey: string) =>
   `<script src="https://embed.vantagemind.ai/v1/luciel.js" data-key="${embedKey}"></script>`;
@@ -307,6 +449,9 @@ export default function EmbedPage() {
             onConfirm={rotateKey}
           />
         </Card>
+      )}
+      {snippet && luciel && (
+        <AllowedOriginsCard origins={luciel.allowedOrigins ?? []} websiteUrl={luciel.websiteUrl} />
       )}
     </div>
   );

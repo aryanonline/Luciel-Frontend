@@ -493,6 +493,44 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         state.luciel.leadRetentionDays = days;
         return ok(state.luciel);
       },
+      async updateAllowedOrigins(origins) {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        // The server's rule, modelled: scheme://host[:port] only, at most ten.
+        const normalised: string[] = [];
+        for (const raw of origins) {
+          let url: URL;
+          try {
+            url = new URL(raw.trim());
+          } catch {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: `'${raw}' is not a website address — use the form https://www.example.com (no path or query).`,
+            });
+          }
+          const bareOrigin =
+            (url.protocol === 'https:' || url.protocol === 'http:') &&
+            (url.pathname === '/' || url.pathname === '') &&
+            !url.search &&
+            !url.hash &&
+            !url.username;
+          if (!bareOrigin) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: `'${raw}' is not a website address — use the form https://www.example.com (no path or query).`,
+            });
+          }
+          if (!normalised.includes(url.origin)) normalised.push(url.origin);
+        }
+        if (normalised.length > 10) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'At most ten websites can be listed.',
+          });
+        }
+        state.luciel.allowedOrigins = normalised.length ? normalised : null;
+        return ok(state.luciel);
+      },
       async acknowledgeVoiceConsent() {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });

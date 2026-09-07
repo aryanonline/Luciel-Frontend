@@ -88,6 +88,7 @@ export const seedLuciel: Luciel = {
   },
   // Auto-prune is opt-in — off until the Admin sets it (Arch §3.4.10a).
   leadRetentionDays: null,
+  allowedOrigins: null,
 };
 
 export const seedBilling: BillingInfo = {
@@ -389,7 +390,8 @@ export const seedConnectionProviders: ConnectionProviders[] = [
         provider: 'twilio',
         displayName: 'Your Twilio account',
         authKind: 'oauth',
-        helpText: 'Luciel texts and calls from your own business number, on your own Twilio account.',
+        helpText:
+          'Luciel texts and calls from your own business number, on your own Twilio account.',
         configured: true,
         credentialFields: [
           { name: 'accountSid', label: 'Twilio Account SID (AC…)', secret: false, required: true },

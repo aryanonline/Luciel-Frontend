@@ -58,6 +58,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       updatePersonality: (config) => t.put('/api/v1/admin/luciel/personality', config),
       updateLeadRetention: (days) =>
         t.put('/api/v1/admin/luciel/lead-retention', { leadRetentionDays: days }),
+      updateAllowedOrigins: (origins) => t.put('/api/v1/admin/luciel/allowed-origins', { origins }),
       acknowledgeVoiceConsent: () => t.post('/api/v1/admin/luciel/voice-consent'),
       pause: () => t.post('/api/v1/admin/luciel/pause'),
       resume: () => t.post('/api/v1/admin/luciel/resume'),

@@ -41,6 +41,8 @@ export const WIDGET_PAUSED_NOTE =
   "This chat is unavailable right now — your last message wasn't sent.";
 
 export const WIDGET_TEXT_MAX_CHARS = 4000;
+/** The server refused this page's origin (round 6 WP-I): honest, final, no retry. */
+export const WIDGET_OFFSITE_NOTE = "This chat isn't available on this website.";
 
 /**
  * The server ends a widget session after this much silence (app/runtime/sessions.py
@@ -141,8 +143,17 @@ export async function mountWidget(options: MountOptions): Promise<void> {
   let boot: WidgetBootstrap;
   try {
     boot = await client.bootstrap(options.embedKey, stored?.sessionId);
-  } catch {
-    // Fail closed and quiet on the host page; never render a broken UI.
+  } catch (err) {
+    // Fail closed and quiet on the host page; never render a broken UI. The one
+    // refusal worth a word: this page is not on the owner's allowed list (round 6
+    // WP-I) — said in the console, where the site's developer will look, and
+    // never as chrome a visitor would read as a broken chat.
+    if (err instanceof LucielApiError && err.code === 'unauthorized') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[Luciel] This website is not on the allowed list for this chat key. Add it under Embed & launch in the dashboard.',
+      );
+    }
     return;
   }
 
@@ -431,6 +442,12 @@ export async function mountWidget(options: MountOptions): Promise<void> {
             ? `One moment — please try again in ${wait} seconds.`
             : 'One moment — please try again in a few seconds.',
         );
+      } else if (err instanceof LucielApiError && err.code === 'unauthorized') {
+        // The owner narrowed the allowed websites while this panel was open (round 6
+        // WP-I): say so plainly and stop sending — a retry cannot succeed.
+        appendMessage('assistant', WIDGET_OFFSITE_NOTE);
+        live.textContent = WIDGET_OFFSITE_NOTE;
+        renderState = 'paused';
       } else {
         appendMessage('assistant', 'Sorry — something went wrong. Please try again.');
       }

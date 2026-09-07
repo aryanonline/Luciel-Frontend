@@ -47,6 +47,16 @@ export const budget = z.object({
    * Vision §7). Additive/optional — this is an honest usage nudge, NOT a cap.
    */
   nearNextBlock: z.boolean().optional(),
+  /**
+   * Ledger truth (round 6 WP-I, audit F025), additive: whether NEW usage past the
+   * free 50 is served and billed right now (a live card, dunning not reduced), and
+   * this period's block watermarks — accrued against the account / already
+   * reported to Stripe — so a cardless or dunned account still shows the blocks
+   * it ran while it could instead of a zero that reads as never billed.
+   */
+  billable: z.boolean().optional(),
+  accruedBlocks: z.number().int().nonnegative().optional(),
+  reportedBlocks: z.number().int().nonnegative().optional(),
 });
 export type Budget = z.infer<typeof budget>;
 

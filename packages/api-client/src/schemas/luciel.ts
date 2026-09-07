@@ -362,6 +362,13 @@ export const luciel = z.object({
    * Legal §B5). Backend rejects anything below 1.
    */
   leadRetentionDays: z.number().int().min(1).nullable(),
+  /**
+   * The website origins the widget may load on (round 6 WP-I, audit F066):
+   * `scheme://host[:port]` strings, at most ten. null = any page, which is what
+   * every Luciel has until its owner narrows it. Additive/optional for older
+   * servers.
+   */
+  allowedOrigins: z.array(z.string()).nullable().optional(),
 });
 export type Luciel = z.infer<typeof luciel>;
 
