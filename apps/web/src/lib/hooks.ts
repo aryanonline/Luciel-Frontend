@@ -15,6 +15,7 @@ import type {
   ConnectionType,
   MetaChannel,
   StartConnectionResult,
+  TeamAvailabilityUpdate,
 } from '@luciel/api-client';
 
 /**
@@ -274,6 +275,10 @@ export function useLucielMutations() {
     }),
     updateAllowedOrigins: useMutation({
       mutationFn: (origins: string[]) => api.luciel.updateAllowedOrigins(origins),
+      onSuccess: invalidate,
+    }),
+    updateTeamAvailability: useMutation({
+      mutationFn: (req: TeamAvailabilityUpdate) => api.luciel.updateTeamAvailability(req),
       onSuccess: invalidate,
     }),
     acknowledgeVoiceConsent: useMutation({

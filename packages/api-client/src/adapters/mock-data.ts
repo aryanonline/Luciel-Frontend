@@ -89,6 +89,8 @@ export const seedLuciel: Luciel = {
   // Auto-prune is opt-in — off until the Admin sets it (Arch §3.4.10a).
   leadRetentionDays: null,
   allowedOrigins: null,
+  timezone: null,
+  teamAvailability: null,
 };
 
 export const seedBilling: BillingInfo = {

@@ -531,6 +531,55 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         state.luciel.allowedOrigins = normalised.length ? normalised : null;
         return ok(state.luciel);
       },
+      async updateTeamAvailability(req) {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        // The server's rules, modelled: a timezone when on, 24-hour HH:MM windows with
+        // length, and someone on the other end of an after-hours rule.
+        const tz = req.timezone?.trim() || null;
+        if (req.enabled && !tz) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Choose your timezone before turning this on.',
+          });
+        }
+        const hhmm = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/;
+        for (const w of req.weekly ?? []) {
+          if (!hhmm.test(w.start) || !hhmm.test(w.end)) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: 'Use a 24-hour time like 09:00 or 17:30.',
+            });
+          }
+          if (w.start === w.end) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: 'A window has to end after it starts.',
+            });
+          }
+        }
+        const esc = req.afterHours?.escalation;
+        if (esc?.channel === 'sms' && !esc.contactSms) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Add the number the after-hours text should go to.',
+          });
+        }
+        if (esc?.channel === 'email' && !esc.contactEmail) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'Add the address the after-hours email should go to.',
+          });
+        }
+        state.luciel.timezone = tz;
+        state.luciel.teamAvailability = clone({
+          enabled: req.enabled ?? false,
+          weekly: req.weekly ?? [],
+          closures: req.closures ?? [],
+          afterHours: req.afterHours ?? null,
+        });
+        return ok(state.luciel);
+      },
       async acknowledgeVoiceConsent() {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });

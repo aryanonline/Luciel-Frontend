@@ -20,6 +20,9 @@ bundle.
 - `src/components/config/consent-landing.tsx` — post-consent state messaging.
 - `src/components/config/labels.ts` — served provider display-label resolution.
 - `src/components/config/channels-pillar.tsx` — channel configuration and consent.
+- `src/components/config/team-availability-pillar.tsx` — the optional sixth card (round 6
+  WP-E): when the HUMAN team is reachable, closures, after-hours contact. Luciel has no
+  hours; the copy must keep saying it answers around the clock.
 - `src/components/connection-chip.tsx` — status-chip presentation bridge.
 - `src/lib/api.ts` and `src/lib/hooks.ts` — typed control-plane client and queries.
 - `tests/unit/` — focused UI behavior and regression tests.
@@ -48,6 +51,8 @@ bundle.
   **“Not scored (before scoring existed)”** instead of a made-up score.
 - Takeover UI must not describe widget delivery as real time; widget replies are
   delivered through polling.
+- Team availability describes people, never the Luciel: no copy may imply Luciel is
+  offline, closed, or has hours. Off = the generic "follow up shortly" wording.
 
 ## Tests and commands
 
