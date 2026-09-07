@@ -435,8 +435,8 @@ export default function LeadsPage() {
               different things; only the last is good news (P1-9). */}
           {visible.length === 0 &&
             (leads.isPending ? (
-              <li className="py-vm-4 text-vm-1 text-vm-text-muted" role="status">
-                Loading your leads…
+              <li className="py-vm-4 text-vm-1 text-vm-text-muted">
+                <span role="status">Loading your leads…</span>
               </li>
             ) : leads.isError ? (
               <li className="py-vm-4">

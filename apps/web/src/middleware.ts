@@ -43,6 +43,9 @@ const HCAPTCHA = 'https://hcaptcha.com https://*.hcaptcha.com';
 // the auth gate bounced every logged-in user from /dashboard & /first-run back to /login.
 const SESSION_COOKIE = 'luciel_session';
 
+/** Development-only CSP relaxation for Next.js dev tooling; empty in production. */
+const DEV_EVAL = process.env.NODE_ENV === 'production' ? '' : " 'unsafe-eval'";
+
 /**
  * Path prefixes that belong to the (app) route group and require a session.
  * Must match the Next.js (app) group layout: /dashboard/*, /first-run/*.
@@ -56,7 +59,12 @@ export function middleware(request: NextRequest) {
   const csp = [
     `default-src 'self'`,
     // Scripts: self + nonce + Stripe. No 'unsafe-inline'.
-    `script-src 'self' 'nonce-${nonce}' ${STRIPE} ${HCAPTCHA}`,
+    // Next.js DEVELOPMENT mode (react-refresh / HMR) evaluates code with eval; under
+    // the strict policy the client bundle never hydrated in `next dev`, so every
+    // dashboard page stayed on its server-rendered "Loading…" — which is what the
+    // Playwright checks had been measuring (round 6 WP-J, audit F171). 'unsafe-eval'
+    // is admitted for development builds ONLY; the production policy is unchanged.
+    `script-src 'self' 'nonce-${nonce}'${DEV_EVAL} ${STRIPE} ${HCAPTCHA}`,
     // Styles: 'self' + hCaptcha + 'unsafe-inline'. We deliberately do NOT put a
     // nonce on style-src: a nonce would cause the browser to IGNORE
     // 'unsafe-inline', which hCaptcha's injected widget styles require. Styles

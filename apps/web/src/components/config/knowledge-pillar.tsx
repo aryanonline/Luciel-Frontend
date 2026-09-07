@@ -615,8 +615,8 @@ export function KnowledgePillar() {
             (P2-4). */}
         {!sources.data?.length &&
           (sources.isPending ? (
-            <li className="py-vm-3 text-vm-1 text-vm-text-muted" role="status">
-              Loading your sources…
+            <li className="py-vm-3 text-vm-1 text-vm-text-muted">
+              <span role="status">Loading your sources…</span>
             </li>
           ) : sources.isError ? (
             <li className="py-vm-3">
