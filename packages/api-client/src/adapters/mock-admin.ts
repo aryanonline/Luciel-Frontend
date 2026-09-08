@@ -1133,6 +1133,50 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           ],
         });
       },
+      async listCalendlyEventTypes(connectionId) {
+        guardVerified();
+        const c = state.connections.find(
+          (x) => x.connectionId === connectionId && x.connectionType === 'calendar',
+        );
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        if (c.provider !== 'calendly') {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'There are no settings to change here.',
+          });
+        }
+        const chosen = (c.nonSecretConfig as Record<string, unknown> | undefined)?.eventTypeUri;
+        return ok({
+          eventTypes: seed.seedCalendlyEventTypes,
+          chosenUri: typeof chosen === 'string' && chosen ? chosen : null,
+        });
+      },
+      async updateSettings(connectionId, req) {
+        guardVerified();
+        const c = state.connections.find(
+          (x) => x.connectionId === connectionId && x.connectionType === 'calendar',
+        );
+        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        if (c.provider !== 'calendly') {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'There are no settings to change here.',
+          });
+        }
+        const type = seed.seedCalendlyEventTypes.find((t) => t.uri === req.eventTypeUri);
+        if (!type) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'That event type is not one your Calendly account offers.',
+          });
+        }
+        c.nonSecretConfig = {
+          ...((c.nonSecretConfig ?? {}) as Record<string, unknown>),
+          eventTypeUri: type.uri,
+          eventTypeName: type.name,
+        };
+        return ok(clone(c));
+      },
       async uploadRecordSourceCsv(file) {
         guardVerified();
         // Replace-on-upload, mirroring the backend: rows REPLACE the previous

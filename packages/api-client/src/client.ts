@@ -36,6 +36,8 @@ import type {
   StartConnectionResult,
   ReverifySmsResult,
   TenantNumbersResult,
+  CalendlyEventTypes,
+  ConnectionSettingsUpdate,
   RecordSourceCsvResult,
   EmailProvisioning,
   ConversationSummary,
@@ -274,6 +276,17 @@ export interface LucielApiClient {
      * entry; this convenience never blocks the designate step.
      */
     listTwilioNumbers(connectionId: string): Promise<TenantNumbersResult>;
+    /**
+     * The owner's Calendly event types, with the one customers book marked (round 6
+     * WP-H). `eventTypes: null` = the account could not be read right now.
+     */
+    listCalendlyEventTypes(connectionId: string): Promise<CalendlyEventTypes>;
+    /**
+     * Change a provider setting that is not a credential — today the Calendly event
+     * type customers book. `validation_error` for a type the account does not offer,
+     * or on a connection with no settings.
+     */
+    updateSettings(connectionId: string, req: ConnectionSettingsUpdate): Promise<Connection>;
     /**
      * Upload the CSV that backs the `lookup_record` tool (record_source
      * connection). Rows REPLACE the previous table; the connection flips to

@@ -13,6 +13,7 @@ import type {
   AnalyticsOverview,
   AuditEvent,
   DayCounts,
+  CalendlyEventType,
 } from '../schemas';
 
 /**
@@ -435,6 +436,24 @@ export const seedConnectionProviders: ConnectionProviders[] = [
         scopeKind: null,
       },
     ],
+  },
+];
+
+/** The Calendly event types the mock serves once a Calendly row exists (round 6 WP-H). */
+export const seedCalendlyEventTypes: CalendlyEventType[] = [
+  {
+    uri: 'https://api.calendly.com/event_types/intro',
+    name: 'Intro call',
+    active: true,
+    durationMinutes: 15,
+    schedulingUrl: 'https://calendly.com/acme/intro',
+  },
+  {
+    uri: 'https://api.calendly.com/event_types/visit',
+    name: 'Site visit',
+    active: true,
+    durationMinutes: 60,
+    schedulingUrl: 'https://calendly.com/acme/visit',
   },
 ];
 

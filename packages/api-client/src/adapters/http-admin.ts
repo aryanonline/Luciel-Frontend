@@ -153,6 +153,10 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       removeSmsNumber: () => t.del('/api/v1/admin/connections/sms/number'),
       withdrawSmsAttestation: () => t.del('/api/v1/admin/connections/sms/attest-registration'),
       clearRecordSourceCsv: () => t.del('/api/v1/admin/connections/record-source/csv'),
+      listCalendlyEventTypes: (connectionId) =>
+        t.get(`/api/v1/admin/connections/${connectionId}/calendly/event-types`),
+      updateSettings: (connectionId, req) =>
+        t.put(`/api/v1/admin/connections/${connectionId}/settings`, req),
       switchAccount: (connectionId, provider) =>
         t.post(`/api/v1/admin/connections/${connectionId}/switch`, { provider: provider ?? null }),
       bindDestination: (connectionId, destination, channel) =>
