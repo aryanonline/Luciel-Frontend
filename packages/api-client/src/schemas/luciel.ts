@@ -321,6 +321,11 @@ export const personalityConfig = z.object({
     .optional(),
   /** The single free-text input — capped at 280 chars (Vision §3.5). */
   businessContext: z.string().max(280).optional(),
+  /**
+   * Phrases that mean a hot lead for THIS business (round 6 WP-G, F102): the one
+   * admin input to the fixed high-value-lead signal. At most 20, each ≤ 60 chars.
+   */
+  highValueSignals: z.array(z.string().max(60)).max(20).optional(),
   // NOTE: no model selection field anywhere — never exposed (Arch §3.4.3).
 });
 export type PersonalityConfig = z.infer<typeof personalityConfig>;

@@ -544,6 +544,7 @@ export const seedEscalations: EscalationEvent[] = [
     gate: 'outcome',
     firedAt: '2026-06-13T23:45:00Z',
     scoreOrConfidence: 0.91,
+    reasons: ['named a budget', 'wants it soon'],
   },
 ];
 

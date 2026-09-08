@@ -72,6 +72,7 @@ const escalation: EscalationEvent = {
   gate: 'outcome',
   firedAt: '2026-08-18T02:29:00Z',
   scoreOrConfidence: 0,
+  reasons: ['answer only 20% backed by your knowledge'],
 };
 
 async function renderPage() {
@@ -94,6 +95,19 @@ describe('escalation correlation on the conversations page', () => {
     expect(await screen.findByText(new RegExp(`#${ESCALATED_ID.slice(0, 8)}`))).toBeInTheDocument();
     expect(screen.getByText(new RegExp(`#${QUIET_ID.slice(0, 8)}`))).toBeInTheDocument();
     expect(screen.getAllByText('Escalated').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('says why it escalated, in the owner\'s words (round 6 WP-G)', async () => {
+    await renderPage();
+    const why = await screen.findByTestId('escalation-reasons');
+    expect(why).toHaveTextContent('answer only 20% backed by your knowledge');
+  });
+
+  it('shows the bare badge for an older row with no reasons', async () => {
+    listEscalations.mockResolvedValue([{ ...escalation, reasons: [] }]);
+    await renderPage();
+    await screen.findAllByText('Escalated');
+    expect(screen.queryByTestId('escalation-reasons')).not.toBeInTheDocument();
   });
 
   it('labels a live row "In progress — started …", never a bare Conversation', async () => {
