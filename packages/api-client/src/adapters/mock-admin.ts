@@ -669,6 +669,32 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         state.luciel.businessShortName = cleaned || null;
         return ok(state.luciel);
       },
+      async withdrawVoiceConsent() {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        state.luciel.channels = state.luciel.channels.map((c) => {
+          if (c.id !== 'voice') return c;
+          const { voiceConsentAcknowledgedAt: _gone, ...rest } = c;
+          return { ...rest, enabled: false };
+        });
+        return ok(state.luciel);
+      },
+      async withdrawSmsComplianceAck() {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        state.luciel.channels = state.luciel.channels.map((c) => {
+          if (c.id !== 'sms') return c;
+          const { smsComplianceAcknowledgedAt: _gone, ...rest } = c;
+          return { ...rest, enabled: false };
+        });
+        // F163: the dependent send tool goes off with the channel, server-side.
+        state.luciel.tools = state.luciel.tools.map((t) =>
+          t.id === 'send_sms' && t.enabled
+            ? { ...t, enabled: false, disabledReason: 'sms_channel_disabled' }
+            : t,
+        );
+        return ok(state.luciel);
+      },
       async acknowledgeVoiceConsent() {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
@@ -1225,6 +1251,72 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // bound (contract §2), so nothing flips the channel live here.
         return ok(c);
       },
+      async removeSmsNumber() {
+        guardVerified();
+        const sender = state.connections.find(
+          (x) => x.connectionType === 'sms_sender' && x.status !== 'revoked',
+        );
+        if (!sender) throw new LucielApiError({ code: 'not_found', message: 'No SMS connection.' });
+        const cfg = { ...((sender.nonSecretConfig ?? {}) as Record<string, unknown>) };
+        if (!cfg.destination && !cfg.pending_destination) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'There is no number on file to remove.',
+          });
+        }
+        delete cfg.destination;
+        delete cfg.pending_destination;
+        delete cfg.carrier_registration_attested_at;
+        delete cfg.carrier_registration_attested_by;
+        sender.nonSecretConfig = cfg;
+        sender.status = 'unconfigured';
+        sender.statusDetail = 'Add your number to text and call.';
+        if (state.luciel) {
+          for (const ch of state.luciel.channels) {
+            if (ch.id === 'sms' || ch.id === 'voice') ch.connectionStatus = 'unconfigured';
+          }
+        }
+        await delay();
+        return ok(clone(sender));
+      },
+      async withdrawSmsAttestation() {
+        guardVerified();
+        const sender = state.connections.find(
+          (x) => x.connectionType === 'sms_sender' && x.status !== 'revoked',
+        );
+        if (!sender) {
+          throw new LucielApiError({ code: 'not_found', message: 'No SMS number connection.' });
+        }
+        const cfg = { ...((sender.nonSecretConfig ?? {}) as Record<string, unknown>) };
+        if (cfg.carrier_registration_attested_at) {
+          delete cfg.carrier_registration_attested_at;
+          delete cfg.carrier_registration_attested_by;
+          sender.nonSecretConfig = cfg;
+          if (cfg.destination && sender.status === 'connected') {
+            sender.status = 'pending_carrier_registration';
+            if (state.luciel) {
+              for (const ch of state.luciel.channels) {
+                if (ch.id === 'sms' || ch.id === 'voice') {
+                  ch.connectionStatus = 'pending_carrier_registration';
+                }
+              }
+            }
+          }
+        }
+        await delay();
+        return ok(clone(sender));
+      },
+      async clearRecordSourceCsv() {
+        guardVerified();
+        const row = state.connections.find(
+          (x) => x.connectionType === 'record_source' && x.status !== 'revoked',
+        );
+        if (!row) throw new LucielApiError({ code: 'not_found', message: 'No records on file.' });
+        const result = await this.disconnect(row.connectionId);
+        result.connection.statusDetail = 'No records on file';
+        row.statusDetail = 'No records on file';
+        return result;
+      },
       async rotateSmsCapability() {
         guardVerified();
         const sms = state.connections.find((c) => c.connectionType === 'sms_sender');
@@ -1381,29 +1473,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         }
         return ok(c);
       },
-      async revoke(connectionId) {
-        guardVerified();
-        const c = state.connections.find((x: Connection) => x.connectionId === connectionId);
-        if (c) c.status = 'revoked';
-        await delay();
-      },
       async getEmailProvisioning() {
         guardVerified();
         return ok(state.emailProvisioning);
-      },
-      async provisionEmail(req) {
-        guardVerified();
-        // c22 (owner decision 2026-08-18): email is BYO-mailbox ONLY — both retired
-        // platform modes answer the same actionable refusal the backend serves.
-        // The mock mirrors the refusal so the UI can never re-grow the old paths
-        // against a permissive fake.
-        void req;
-        throw new LucielApiError({
-          code: 'validation_error',
-          message:
-            'Platform email addresses are no longer offered — connect your own mailbox ' +
-            'instead (Configure → Channels → Email → Connect Outlook mailbox).',
-        });
       },
       async swap(connectionId, provider) {
         guardVerified();
@@ -1639,8 +1711,19 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         return ok({ ok: true });
       },
-      async close() {
+      async close(opts) {
         guardVerified();
+        if (
+          state.luciel &&
+          (state.luciel.state === 'active' || state.luciel.state === 'paused') &&
+          !opts?.confirmDeleteLuciel
+        ) {
+          throw new LucielApiError({
+            code: 'conflict',
+            message:
+              'Your Luciel is still active. Delete it first, or confirm that closing the account deletes it.',
+          });
+        }
         state.account.state = 'closed';
         state.luciel = null;
         await delay();

@@ -64,6 +64,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       updateDailyBrief: (enabled) => t.put('/api/v1/admin/luciel/daily-brief', { enabled }),
       updateBusinessName: (name) =>
         t.put('/api/v1/admin/luciel/business-name', { businessShortName: name }),
+      withdrawVoiceConsent: () => t.del('/api/v1/admin/luciel/voice-consent'),
+      withdrawSmsComplianceAck: () => t.del('/api/v1/admin/luciel/sms-compliance-ack'),
       acknowledgeVoiceConsent: () => t.post('/api/v1/admin/luciel/voice-consent'),
       pause: () => t.post('/api/v1/admin/luciel/pause'),
       resume: () => t.post('/api/v1/admin/luciel/resume'),
@@ -148,6 +150,9 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         t.post(`/api/v1/admin/connections/${connectionId}/oauth-callback`, { code, state }),
       disconnect: (connectionId) => t.post(`/api/v1/admin/connections/${connectionId}/disconnect`),
       rotateSmsCapability: () => t.post('/api/v1/admin/connections/sms/rotate-capability'),
+      removeSmsNumber: () => t.del('/api/v1/admin/connections/sms/number'),
+      withdrawSmsAttestation: () => t.del('/api/v1/admin/connections/sms/attest-registration'),
+      clearRecordSourceCsv: () => t.del('/api/v1/admin/connections/record-source/csv'),
       switchAccount: (connectionId, provider) =>
         t.post(`/api/v1/admin/connections/${connectionId}/switch`, { provider: provider ?? null }),
       bindDestination: (connectionId, destination, channel) =>
@@ -157,9 +162,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         }),
       submitCredentials: (connectionId, fields) =>
         t.post(`/api/v1/admin/connections/${connectionId}/credentials`, { fields }),
-      revoke: (connectionId) => t.del(`/api/v1/admin/connections/${connectionId}`),
       getEmailProvisioning: () => t.get('/api/v1/admin/connections/email'),
-      provisionEmail: (req) => t.post('/api/v1/admin/connections/email', req),
       swap: (connectionId, provider) =>
         t.post(`/api/v1/admin/connections/${connectionId}/swap`, { provider }),
     },
@@ -200,7 +203,10 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     },
     account: {
       requestExport: () => t.post('/api/v1/admin/account/export'),
-      close: () => t.post('/api/v1/admin/account/close'),
+      close: (opts) =>
+        t.post('/api/v1/admin/account/close', {
+          confirmDeleteLuciel: opts?.confirmDeleteLuciel ?? false,
+        }),
     },
     contact: {
       submit: (req) => t.post('/api/v1/contact', req),

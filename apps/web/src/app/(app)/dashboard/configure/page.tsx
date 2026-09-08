@@ -10,6 +10,7 @@ import { KnowledgePillar } from '@/components/config/knowledge-pillar';
 import { EscalationPillar } from '@/components/config/escalation-pillar';
 import { PersonalityPillar } from '@/components/config/personality-pillar';
 import { TeamAvailabilityPillar } from '@/components/config/team-availability-pillar';
+import { Acknowledgements } from '@/components/config/acknowledgements';
 
 /**
  * The five-pillar configuration screen — the single most important UX
@@ -62,6 +63,21 @@ function ConfigureBody() {
     );
   }
 
+  if (luciel.state === 'luciel_hard_deleted') {
+    // Audit F156: a hard-deleted Luciel is not configurable — every pillar save would be
+    // refused — so say so and point at the one thing that can be done.
+    return (
+      <Banner tone="info">
+        {luciel.name} was deleted and its 30-day restore window has passed. Its configuration cannot
+        be edited.{' '}
+        <Link href="/first-run" className="underline">
+          Create a new Luciel
+        </Link>
+        .
+      </Banner>
+    );
+  }
+
   return (
     <>
       <PageHeader
@@ -78,6 +94,8 @@ function ConfigureBody() {
       </Banner>
 
       <ChannelsPillar luciel={luciel} />
+      {/* Round 6 WP-D: every acknowledgement listed and withdrawable. */}
+      <Acknowledgements luciel={luciel} />
       <ToolsPillar luciel={luciel} />
       <KnowledgePillar />
       <EscalationPillar luciel={luciel} />

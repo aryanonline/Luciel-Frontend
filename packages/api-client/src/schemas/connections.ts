@@ -101,7 +101,8 @@ export type StartConnectionResult = z.infer<typeof startConnectionResult>;
  * is served, never hardcoded in the UI: a customer on a different CRM is not
  * stuck with whichever vendor we happened to render first.
  */
-export const providerAuthKind = z.enum(['oauth', 'credential_form']);
+/** `provisioned` (audit F157): a platform-provisioned resource such as the CSV record source. */
+export const providerAuthKind = z.enum(['oauth', 'credential_form', 'provisioned']);
 export type ProviderAuthKind = z.infer<typeof providerAuthKind>;
 
 /** Non-null means the connection supports the knowledge scope endpoints (§4). */

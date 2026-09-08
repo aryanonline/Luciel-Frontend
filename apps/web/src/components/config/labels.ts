@@ -97,9 +97,14 @@ export const toolMeta: Record<AddonToolId, { label: string; desc: string; connec
   };
 
 /** Maps a raw connection status → the UI chip kind (one rule, api-client). */
-export function chipKind(status: ConnectionStatus | undefined): ChipKind | null {
+export function chipKind(
+  status: ConnectionStatus | undefined,
+  available: boolean = true,
+): ChipKind | null {
   if (!status) return null;
-  return chipForConnection(status);
+  // Audit F165: a provider the registry cannot connect renders "Not available yet"
+  // regardless of the row's status — the same override chipForConnection applies.
+  return chipForConnection(status, available);
 }
 
 /**
@@ -119,6 +124,9 @@ export function offRowConnectionNote(status: ConnectionStatus | undefined): stri
     case 'expired':
     case 'error':
       return 'Its saved connection needs a reconnect — turn this back on to fix it.';
+    case 'dormant':
+      // Audit F162: dormant is a billing state, not a broken connection.
+      return 'Its connection is dormant: usage past the free conversations could not be billed. Add a card on the Billing page and it resumes.';
     default:
       // unconfigured / not_connected / revoked: nothing saved worth noting.
       return null;
