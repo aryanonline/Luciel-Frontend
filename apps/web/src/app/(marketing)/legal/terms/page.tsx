@@ -18,7 +18,7 @@ export default function TermsPage() {
         {
           heading: 'The plan',
           body: [
-            'VantageMind is a single plan. The first 50 conversations each billing period are free. Your billing period is the calendar month until you save a card, and your card’s billing cycle from then on. Above the free 50, usage is billed pay-as-you-go at $39 per 100 conversations, rounded up to the next whole 100-conversation block, at the close of each billing period.',
+            'VantageMind is a single plan. The first 50 conversations each billing period are free. Your billing period is the calendar month until you save a card, and your card’s billing cycle from then on. Above the free 50, usage is billed pay-as-you-go at $39 CAD per 100 conversations, rounded up to the next whole 100-conversation block, at the close of each billing period.',
             'There is no feature gating — every feature is available on every account. A payment method on file is what enables usage above the free 50; without one, the account stays capped at 50 with a graceful at-capacity reply.',
             'Your free-allowance counter resets on your billing-cycle date, not the calendar month. Unused conversations do not roll over.',
             'The free starter allowance is an ongoing feature, not a time-limited trial. We reserve the right to change it, but if we ever reduce it we will give all existing accounts at least 30 days’ notice before the change takes effect — sent by email and shown in your dashboard on your next login, so a stale email address cannot cause you to miss it. Increases need no notice.',
