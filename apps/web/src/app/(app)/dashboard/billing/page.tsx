@@ -99,7 +99,7 @@ export default function BillingPage() {
     <div className="space-y-vm-5">
       <PageHeader
         title="Billing"
-        description="One plan: 50 free conversations each billing period, then $39 per 100. Adding a card never changes your Luciel — only whether it can work past the free 50."
+        description="One plan: 50 free conversations each billing period, then $39 CAD per 100. Adding a card never changes your Luciel — only whether it can work past the free 50."
       />
       <React.Suspense fallback={null}>
         <CheckoutReturnNotice />
@@ -172,9 +172,9 @@ export default function BillingPage() {
               {b.billedThisPeriod > 0 &&
                 // Spelled out, not "PAYG" — an owner shouldn't need our acronyms
                 // to read their own bill.
-                ` Pay-as-you-go so far: ${Math.ceil(b.billedThisPeriod / 100)} × 100 conversations × $39 = $${
+                ` Pay-as-you-go so far: ${Math.ceil(b.billedThisPeriod / 100)} × 100 conversations × $39 CAD = $${
                   Math.ceil(b.billedThisPeriod / 100) * 39
-                }.`}
+                } CAD.`}
             </p>
           </>
         ) : (
@@ -217,7 +217,7 @@ export default function BillingPage() {
             )}
             <Banner tone="info" className="mt-vm-3">
               Pay-as-you-go is on. Conversations 1–50 each billing period stay free; above that
-              bills at $39 / 100, rounded up per 100-block, at the close of the cycle.
+              bills at $39 CAD / 100, rounded up per 100-block, at the close of the cycle.
             </Banner>
             <Button variant="secondary" className="mt-vm-3" onClick={() => setConfirmRemove(true)}>
               Remove payment method

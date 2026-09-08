@@ -174,8 +174,8 @@ export default function DashboardPage() {
           <Link href="/dashboard/billing" className="underline">
             Add a payment method
           </Link>{' '}
-          to keep it fully answering — you&apos;ll only pay for conversations above 50, at $39 per
-          100.
+          to keep it fully answering — you&apos;ll only pay for conversations above 50, at $39 CAD
+          per 100.
         </Banner>
       )}
       {nearCap && (
@@ -186,7 +186,7 @@ export default function DashboardPage() {
       {nearNextBlock && (
         <Banner tone="info">
           You&apos;re about 80% through your current billed block. Once you pass it, usage rolls
-          into the next $39 / 100 block — this is just a heads-up, not a cap; your Luciel keeps
+          into the next $39 CAD / 100 block — this is just a heads-up, not a cap; your Luciel keeps
           answering.
         </Banner>
       )}
@@ -243,7 +243,7 @@ export default function DashboardPage() {
               />
               <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
                 {b.billingState === 'payg_enabled'
-                  ? 'Pay-as-you-go is on: above 50, usage bills at $39 / 100 conversations, rounded up per 100-block.'
+                  ? 'Pay-as-you-go is on: above 50, usage bills at $39 CAD / 100 conversations, rounded up per 100-block.'
                   : // Full sentence, never clamped (Harmony fix FE-H#10): the owner
                     // read this line mid-word on dev ("...it never changes your
                     // L..."), so "Luciel" is deliberately the last word — nothing

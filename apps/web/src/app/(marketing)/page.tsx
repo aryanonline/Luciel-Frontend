@@ -105,7 +105,7 @@ export default function HomePage() {
                 </span>
               </div>
               <div className="mt-vm-3 border-t border-vm-border pt-vm-3 text-vm-2">
-                <span className="font-heading text-vm-4">$39</span>{' '}
+                <span className="font-heading text-vm-4">$39 CAD</span>{' '}
                 <span className="text-vm-text-muted">
                   per 100 conversations after that, billed at the end of each period.
                 </span>
