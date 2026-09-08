@@ -7,6 +7,7 @@ import {
   CardDescription,
   Select,
   Textarea,
+  Input,
   Button,
   Field,
   Banner,
@@ -50,6 +51,20 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
   const { busy, notice, run } = useActionNotice();
 
   const ctxLen = draft.businessContext?.length ?? 0;
+  const signals = draft.highValueSignals ?? [];
+  const [signalDraft, setSignalDraft] = React.useState('');
+  const addSignal = () => {
+    const phrase = signalDraft.split(/\s+/).filter(Boolean).join(' ');
+    if (!phrase || phrase.length > 60 || signals.length >= 20) return;
+    if (signals.some((s) => s.toLowerCase() === phrase.toLowerCase())) {
+      setSignalDraft('');
+      return;
+    }
+    edit({ ...draft, highValueSignals: [...signals, phrase] });
+    setSignalDraft('');
+  };
+  const removeSignal = (phrase: string) =>
+    edit({ ...draft, highValueSignals: signals.filter((s) => s !== phrase) });
 
   const save = () =>
     void run(async () => {
@@ -142,6 +157,60 @@ export function PersonalityPillar({ luciel }: { luciel: Luciel }) {
           />
         )}
       </Field>
+
+      {/* Round 6 WP-G (F102): the owner's own hot-lead phrases — the ONE input the
+          admin has into the fixed high-value-lead signal. They add weight to that
+          signal; they never add a signal (Locked Decision §7 #16). */}
+      <Field
+        id="high-value-signal"
+        label="Phrases that mean a hot lead for your business"
+        hint={`${signals.length}/20 — optional. When a customer says one of these, Luciel treats them as a hot lead and tells your team.`}
+      >
+        {(p) => (
+          <div className="flex gap-vm-2">
+            <Input
+              maxLength={60}
+              value={signalDraft}
+              placeholder='e.g. "fleet of trucks" or "wedding season"'
+              onChange={(e) => setSignalDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addSignal();
+                }
+              }}
+              {...p}
+            />
+            <Button
+              variant="secondary"
+              onClick={addSignal}
+              disabled={!signalDraft.trim() || signals.length >= 20}
+            >
+              Add phrase
+            </Button>
+          </div>
+        )}
+      </Field>
+      {signals.length > 0 && (
+        <ul className="mb-vm-4 flex flex-wrap gap-vm-2" aria-label="Hot-lead phrases">
+          {signals.map((phrase) => (
+            <li
+              key={phrase}
+              className="inline-flex items-center gap-vm-1 rounded-vm-pill border border-vm-border px-vm-2 py-vm-1 text-vm-0"
+            >
+              <span>{phrase}</span>
+              <button
+                type="button"
+                className="text-vm-text-muted underline"
+                onClick={() => removeSignal(phrase)}
+                aria-label={`Remove phrase ${phrase}`}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* AI-identity disclosure is platform-enforced (Vision §3.5, Arch §3.4.16).
           The banner states only what this surface actually offers — wording

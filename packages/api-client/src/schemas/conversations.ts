@@ -202,5 +202,7 @@ export const escalationEvent = z.object({
   gate: z.enum(['intake', 'outcome']),
   firedAt: isoTimestamp,
   scoreOrConfidence: z.number().min(0).max(1).optional(),
+  /** Why it fired, in short owner-facing phrases (round 6 WP-G, F124); [] on older rows. */
+  reasons: z.array(z.string()).optional(),
 });
 export type EscalationEvent = z.infer<typeof escalationEvent>;

@@ -283,6 +283,19 @@ export default function ConversationsPage() {
     () => new Set((escalations.data ?? []).map((e) => e.sessionId)),
     [escalations.data],
   );
+  // Why each session escalated, in the owner's words (round 6 WP-G, F124): the newest
+  // row's reasons; older rows carry none and show the bare badge as before.
+  const escalationReasons = React.useMemo(() => {
+    const out = new Map<string, string[]>();
+    for (const e of [...(escalations.data ?? [])].sort((a, b) =>
+      a.firedAt < b.firedAt ? 1 : -1,
+    )) {
+      if (!out.has(e.sessionId) && e.reasons && e.reasons.length > 0) {
+        out.set(e.sessionId, e.reasons);
+      }
+    }
+    return out;
+  }, [escalations.data]);
   const [listFilter, setListFilter] = React.useState<'all' | 'escalated'>('all');
   const qc = useQueryClient();
   const [openSession, setOpenSession] = React.useState<string | null>(null);
@@ -551,6 +564,14 @@ export default function ConversationsPage() {
                             {escalatedSessions.has(c.sessionId) && (
                               <span className="ml-vm-2 inline-flex items-center rounded-vm-pill border border-vm-border px-vm-2 py-vm-1 font-label text-vm-warning">
                                 Escalated
+                              </span>
+                            )}
+                            {escalationReasons.has(c.sessionId) && (
+                              <span
+                                className="ml-vm-1 text-vm-0 text-vm-text-muted"
+                                data-testid="escalation-reasons"
+                              >
+                                — {escalationReasons.get(c.sessionId)?.join(', ')}
                               </span>
                             )}
                           </div>
