@@ -20,6 +20,9 @@ bundle.
 - `src/app/(app)/dashboard/conversations/page.tsx` — conversation, evidence, and
   takeover presentation.
 - `src/components/config/connection-control.tsx` — connection lifecycle actions.
+- `src/components/config/acknowledgements.tsx` — every acknowledgement listed and withdrawable
+  (round 6 WP-D); `knowledge-connections.tsx` — connected knowledge sources with re-sync,
+  reconnect, disconnect/remove crawl.
 - `src/components/config/consent-landing.tsx` — post-consent state messaging.
 - `src/components/config/labels.ts` — served provider display-label resolution.
 - `src/components/config/channels-pillar.tsx` — channel configuration and consent.
@@ -56,6 +59,10 @@ bundle.
   delivered through polling.
 - Team availability describes people, never the Luciel: no copy may imply Luciel is
   offline, closed, or has hours. Off = the generic "follow up shortly" wording.
+- Round 6 WP-D: everything connected can be switched or disconnected with its toggle OFF
+  (off rows carry a "Manage connection" disclosure); the channel→send-tool cascade is the
+  SERVER's (F163) — never issue a second PUT for it; `chipKind(status, available)`; the
+  designate toast phrases the served status (`numberOutcomePhrase`, F159).
 - The Today card never derives a state locally: capabilities, needs and counts come from
   `GET /admin/luciel/status`. A test that mocks `@/lib/hooks` wholesale must stub
   `useEmployeeStatus` and `useLucielMutations` or the Overview page cannot render.

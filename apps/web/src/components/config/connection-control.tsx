@@ -224,6 +224,10 @@ export function ConnectionControl({
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [credentials, setCredentials] = React.useState<Record<string, string>>({});
   const [destinationValue, setDestinationValue] = React.useState('');
+  // Round 6 WP-D: a bound destination can be changed in place, and a credential-form
+  // connection's details edited without a disconnect (a blank secret keeps the stored one).
+  const [rebinding, setRebinding] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
 
   const selectedProvider =
     provider ??
@@ -387,8 +391,37 @@ export function ConnectionControl({
         channels: unboundChannels.length > 0 ? unboundChannels : metaChannels,
       });
       setDestinationValue('');
+      setRebinding(false);
+      say('info', `${label} now answers on the new id.`);
     } catch (err) {
       failed(err, `We could not save that id for ${label}. Please try again.`);
+    }
+  };
+
+  const prefilledCredentials = () =>
+    Object.fromEntries(
+      credentialFields
+        .filter((f) => !f.secret)
+        .map((f) => {
+          const stored = connection?.nonSecretConfig?.[f.name];
+          return [f.name, typeof stored === 'string' ? stored : ''];
+        }),
+    );
+
+  const saveEditedDetails = async () => {
+    if (!connection) return;
+    setNotice(null);
+    // A blank secret means "keep the one on file" — the server merges it.
+    const fields = Object.fromEntries(
+      Object.entries(credentials).filter(([, v]) => v.trim() !== ''),
+    );
+    try {
+      await submitCredentials.mutateAsync({ connectionId: connection.connectionId, fields });
+      setCredentials({});
+      setEditing(false);
+      say('info', `${providerName} details updated. Anything you left blank was kept as it was.`);
+    } catch (err) {
+      failed(err, `We could not update the ${providerName} details. Nothing was changed.`);
     }
   };
 
@@ -422,7 +455,7 @@ export function ConnectionControl({
           <StatusChip kind="action_needed" detail={`add the ${destinationField.label}`} />
         ) : (
           <StatusChip
-            kind={chipKind(status) ?? 'action_needed'}
+            kind={chipKind(status, selectedOption?.configured !== false) ?? 'action_needed'}
             detail={chipDetail(status, label)}
           />
         )}
@@ -435,6 +468,18 @@ export function ConnectionControl({
               Disconnect
             </Button>
           </>
+        )}
+        {isLive && isCredentialForm && !providedElsewhere && !editing && (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setCredentials(prefilledCredentials());
+              setEditing(true);
+            }}
+          >
+            Edit details
+          </Button>
         )}
       </div>
 
@@ -529,8 +574,8 @@ export function ConnectionControl({
               staged, so abandoning the new provider's sign-in costs nothing. */}
           {switching && (
             <p className="mb-vm-2 text-vm-0 text-vm-text-muted">
-              Your current connection stays live until the new one is verified — backing out of
-              the sign-in changes nothing.
+              Your current connection stays live until the new one is verified — backing out of the
+              sign-in changes nothing.
             </p>
           )}
           <div className="grid gap-vm-2">
@@ -661,12 +706,47 @@ export function ConnectionControl({
           </ul>
         )}
 
+      {/* Round 6 WP-D: edit a credential-form connection's details in place. */}
+      {editing && isCredentialForm && (
+        <div className="rounded-vm-card border border-vm-border p-vm-3" data-testid="edit-details">
+          <CredentialFields
+            idPrefix={`${connectionType}-edit`}
+            fields={credentialFields}
+            values={credentials}
+            onChange={setCredentials}
+          />
+          <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
+            Leave a secret blank to keep the one on file.
+          </p>
+          <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
+            <Button
+              variant="primary"
+              onClick={() => void saveEditedDetails()}
+              disabled={submitCredentials.isPending}
+            >
+              {submitCredentials.isPending ? 'Saving…' : 'Save details'}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setEditing(false);
+                setCredentials({});
+              }}
+              disabled={submitCredentials.isPending}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Destination step: connected is not live until this is bound (§2). */}
-      {needsDestination && destinationField && (
+      {(needsDestination || rebinding) && destinationField && (
         <div className="rounded-vm-card border border-vm-border p-vm-3">
           <p className="text-vm-1">
-            {providerName} is authorized. Tell us which one {label} answers on — messages to any
-            other one are dropped, because that id is how we route them to you.
+            {rebinding
+              ? `Enter the new ${destinationField.label} ${label} should answer on. The current one keeps working until you save.`
+              : `${providerName} is authorized. Tell us which one ${label} answers on — messages to any other one are dropped, because that id is how we route them to you.`}
           </p>
           <div className="mt-vm-3 flex items-end gap-vm-2">
             <div className="flex-1">
@@ -692,13 +772,39 @@ export function ConnectionControl({
             >
               {bindDestination.isPending ? 'Saving…' : 'Save'}
             </Button>
+            {rebinding && (
+              <Button
+                variant="ghost"
+                className="mb-vm-4"
+                onClick={() => {
+                  setRebinding(false);
+                  setDestinationValue('');
+                }}
+                disabled={bindDestination.isPending}
+              >
+                Keep current
+              </Button>
+            )}
           </div>
         </div>
       )}
 
       {isLive && destination && (
         <p className="text-vm-0 text-vm-text-muted">
-          Answering on <span className="font-label">{destination}</span>.
+          Answering on <span className="font-label">{destination}</span>.{' '}
+          {!rebinding && (
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              onClick={() => {
+                setDestinationValue('');
+                setRebinding(true);
+              }}
+              disabled={busy}
+            >
+              Change id
+            </button>
+          )}
         </p>
       )}
 
@@ -720,4 +826,3 @@ export function ConnectionControl({
     </div>
   );
 }
-

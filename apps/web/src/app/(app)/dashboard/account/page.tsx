@@ -205,7 +205,8 @@ export default function AccountPage() {
         confirmPendingLabel="Closing…"
         confirmVariant="danger"
         onConfirm={async () => {
-          await api.account.close();
+          // The modal above is the confirmation the server requires (F156).
+          await api.account.close({ confirmDeleteLuciel: true });
           close();
           router.replace('/');
         }}

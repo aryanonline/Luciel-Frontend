@@ -28,6 +28,7 @@ import { api } from '@/lib/api';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
 import { useQueryClient } from '@tanstack/react-query';
 import { KnowledgeScopeSections } from './knowledge-scope';
+import { KnowledgeConnections } from './knowledge-connections';
 
 /**
  * Knowledge pillar (Vision §3.3, Arch §3.2.2, Customer Journey §4.3). Ingestion
@@ -635,6 +636,9 @@ export function KnowledgePillar() {
             </li>
           ))}
       </ul>
+
+      {/* Round 6 WP-D: every knowledge connection listed, re-syncable and removable. */}
+      <KnowledgeConnections />
 
       {/* Scope selection for connected Drive/Notion sources (Decision #9). */}
       <KnowledgeScopeSections />

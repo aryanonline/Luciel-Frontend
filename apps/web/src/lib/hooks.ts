@@ -11,7 +11,6 @@ import type {
   TestSmsWhich,
   PersonalityConfig,
   CreateLucielRequest,
-  ProvisionEmailRequest,
   ConnectionType,
   MetaChannel,
   StartConnectionResult,
@@ -103,15 +102,6 @@ export const useAnalytics = () =>
 export const useAudit = () =>
   useQuery({ queryKey: qk.audit, queryFn: () => api.analytics.auditLog() });
 
-/** Email-address provisioning (Arch §3.1.6a, Decision #49): own-domain / VM-subdomain. */
-export function useProvisionEmail() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: ProvisionEmailRequest) => api.connections.provisionEmail(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.emailProvisioning }),
-  });
-}
-
 /**
  * Re-run the own-domain MX routing probe (Arch §3.1.6a). Stateless and
  * repeatable; with no background poller this is the only exit from
@@ -183,6 +173,19 @@ export function useConnectionLifecycle() {
     }),
     disconnect: useMutation<DisconnectResult, Error, { connectionId: string }>({
       mutationFn: ({ connectionId }) => api.connections.disconnect(connectionId),
+      onSuccess: invalidate,
+    }),
+    /** Round 6 WP-D: the number without the account, the attestation, the CSV records. */
+    removeSmsNumber: useMutation<Connection, Error, void>({
+      mutationFn: () => api.connections.removeSmsNumber(),
+      onSuccess: invalidate,
+    }),
+    withdrawSmsAttestation: useMutation<Connection, Error, void>({
+      mutationFn: () => api.connections.withdrawSmsAttestation(),
+      onSuccess: invalidate,
+    }),
+    clearRecordSourceCsv: useMutation<DisconnectResult, Error, void>({
+      mutationFn: () => api.connections.clearRecordSourceCsv(),
       onSuccess: invalidate,
     }),
     bindDestination: useMutation<
@@ -298,6 +301,14 @@ export function useLucielMutations() {
         invalidate();
         qc.invalidateQueries({ queryKey: qk.employeeStatus });
       },
+    }),
+    withdrawVoiceConsent: useMutation({
+      mutationFn: () => api.luciel.withdrawVoiceConsent(),
+      onSuccess: invalidate,
+    }),
+    withdrawSmsComplianceAck: useMutation({
+      mutationFn: () => api.luciel.withdrawSmsComplianceAck(),
+      onSuccess: invalidate,
     }),
     updateBusinessName: useMutation({
       mutationFn: (name: string | null) => api.luciel.updateBusinessName(name),

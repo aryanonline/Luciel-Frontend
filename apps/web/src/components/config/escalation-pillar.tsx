@@ -38,6 +38,16 @@ const SIGNALS: { id: EscalationSignal; label: string }[] = [
 
 type RoutingRule = NonNullable<EscalationContact['routing']>[number];
 
+const SAVED_CONTACT_FIELDS: {
+  key: 'primaryEmail' | 'primarySms' | 'secondaryEmail' | 'secondarySms';
+  label: string;
+}[] = [
+  { key: 'primaryEmail', label: 'Primary email' },
+  { key: 'primarySms', label: 'Primary SMS' },
+  { key: 'secondaryEmail', label: 'Backup email' },
+  { key: 'secondarySms', label: 'Backup SMS' },
+];
+
 /** A cleared field must go back as absent, not as an empty string. */
 const orUndefined = (value: string) => (value.trim() === '' ? undefined : value.trim());
 
@@ -180,6 +190,38 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
       <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
         The backup contact is only used if the primary one on that channel can&apos;t be reached.
       </p>
+
+      {/* Round 6 WP-D: each saved contact has its own Remove — clearing a field and
+          hoping the save noticed was the only way before. Reads the SERVED values. */}
+      {SAVED_CONTACT_FIELDS.some((f) => luciel.escalation[f.key]) && (
+        <ul className="mt-vm-3 space-y-vm-2" aria-label="Saved escalation contacts">
+          {SAVED_CONTACT_FIELDS.filter((f) => luciel.escalation[f.key]).map((f) => (
+            <li
+              key={f.key}
+              className="flex flex-wrap items-center justify-between gap-vm-2 text-vm-0"
+            >
+              <span>
+                {f.label}: {luciel.escalation[f.key]}
+              </span>
+              <Button
+                variant="ghost"
+                disabled={busy || dirty}
+                onClick={() =>
+                  void run(async () => {
+                    await updateEscalation.mutateAsync({
+                      ...luciel.escalation,
+                      [f.key]: undefined,
+                    });
+                    return `${f.label} removed. Escalations no longer reach ${luciel.escalation[f.key]}.`;
+                  }, 'We could not remove that contact. Nothing was changed — please try again.')
+                }
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* Server-owned deliverability truth per email contact (round 5B item 13).
           A hot lead routed to a typo'd or bouncing inbox vanishes silently —

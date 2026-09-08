@@ -38,7 +38,6 @@ import type {
   TenantNumbersResult,
   RecordSourceCsvResult,
   EmailProvisioning,
-  ProvisionEmailRequest,
   ConversationSummary,
   Message,
   SendMessageResult,
@@ -150,6 +149,10 @@ export interface LucielApiClient {
     updateDailyBrief(enabled: boolean): Promise<Luciel>;
     /** The short name Luciel calls the business; `null` clears it (round 6 WP-F). */
     updateBusinessName(name: string | null): Promise<Luciel>;
+    /** Withdraw the voice consent (round 6 WP-D): Voice goes off and asks again when re-enabled. */
+    withdrawVoiceConsent(): Promise<Luciel>;
+    /** Withdraw the SMS acknowledgement: SMS and Send SMS go off; re-enabling asks again. */
+    withdrawSmsComplianceAck(): Promise<Luciel>;
     /** Voice-enable one-time consent ack — hard gate, logged (Arch §3.1.2). */
     acknowledgeVoiceConsent(): Promise<Luciel>;
     pause(): Promise<Luciel>;
@@ -339,15 +342,11 @@ export interface LucielApiClient {
      * are never echoed back.
      */
     submitCredentials(connectionId: string, fields: Record<string, string>): Promise<Connection>;
-    /** Terminal teardown — drives the row to `revoked` (distinct from disconnect). */
-    revoke(connectionId: string): Promise<void>;
     /**
      * Email-address provisioning (Arch §3.1.6a, Decision #49). Returns the current
      * provisioning, or null if the admin has not provisioned an address yet.
      */
     getEmailProvisioning(): Promise<EmailProvisioning | null>;
-    /** Provision the send+receive address: own-domain (DNS/MX) or VM-subdomain. */
-    provisionEmail(req: ProvisionEmailRequest): Promise<EmailProvisioning>;
     /**
      * Swap a CONNECTED account for a new one, proven-before-cutover (Arch
      * §3.8.7 B, Decision #39): the current connection stays live until the new
@@ -360,6 +359,18 @@ export interface LucielApiClient {
      * webhooks at the new URL (2026-09-05 audit F142). Returns the SMS connection.
      */
     rotateSmsCapability(): Promise<Connection>;
+    /**
+     * Take the designated number off the Luciel, keeping the Twilio account (round 6
+     * WP-D). The row returns to "add your number"; `validation_error` when none is on file.
+     */
+    removeSmsNumber(): Promise<Connection>;
+    /** Withdraw the carrier-registration attestation: texting goes back behind the gate. */
+    withdrawSmsAttestation(): Promise<Connection>;
+    /**
+     * Clear the CSV records behind Look up a record (round 6 WP-D): the record source is
+     * handed back and the tool goes off — the result says so.
+     */
+    clearRecordSourceCsv(): Promise<DisconnectResult>;
   };
 
   conversations: {
@@ -425,7 +436,11 @@ export interface LucielApiClient {
   account: {
     /** Close account — requires Luciel deleted first; export-first (Arch §3.6.6). */
     requestExport(): Promise<{ ok: boolean }>;
-    close(): Promise<void>;
+    /**
+     * Round 6 WP-D (F156): while a Luciel is still active or paused the server refuses
+     * (`conflict`) unless the caller confirms that closing deletes it.
+     */
+    close(opts?: { confirmDeleteLuciel?: boolean }): Promise<void>;
   };
 
   contact: {

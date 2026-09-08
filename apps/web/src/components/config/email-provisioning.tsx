@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Banner, Button, CardDescription, StatusChip } from '@luciel/ui';
+import { Banner, Button, CardDescription, StatusChip, Modal } from '@luciel/ui';
 import { chipForConnection, LucielApiError } from '@luciel/api-client';
 import {
   useConnectionLifecycle,
@@ -37,7 +37,11 @@ import { type ActionNotice } from '@/lib/use-action-notice';
  * (P2-9).
  */
 
-export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannelEnabled: boolean }) {
+export function EmailChannelProvisioning({
+  emailChannelEnabled,
+}: {
+  emailChannelEnabled: boolean;
+}) {
   const provisioning = useEmailProvisioning();
   // The BYO mailbox rides the ONE email_sender connection (§3.1.6a): the row
   // decides whether connecting is a fresh connect or a staged swap, and the
@@ -45,7 +49,8 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
   const connections = useConnections();
   const providers = useConnectionProviders('email_sender');
   const swap = useSwapConnection();
-  const { connect, reconnect } = useConnectionLifecycle();
+  const { connect, reconnect, disconnect } = useConnectionLifecycle();
+  const [disconnectOpen, setDisconnectOpen] = React.useState(false);
   // Legacy own-domain routing (§3.1.6a): nothing polls DNS in the background,
   // so the pending card offers the on-demand MX re-probe explicitly.
   const reverifyEmail = useReverifyEmail();
@@ -134,8 +139,8 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
     <div className="rounded-vm-card border border-vm-border p-vm-4">
       <h3 className="text-vm-2 font-label">Connect your own work mailbox</h3>
       <p className="mt-vm-1 text-vm-1 text-vm-text-muted">
-        Replies come from your own address and land in your own Sent folder — the most
-        professional setup, one sign-in.
+        Replies come from your own address and land in your own Sent folder — the most professional
+        setup, one sign-in.
       </p>
       {providers.isPending ? (
         <p className="mt-vm-2 text-vm-1 text-vm-text-muted" role="status">
@@ -150,8 +155,8 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
            no platform OAuth client, so there is no connect button to press. */
         <div className="mt-vm-2">
           <p className="text-vm-1">
-            Not available yet — the mailbox sign-in is not switched on at our end. We&apos;ll
-            switch this on as soon as it&apos;s ready — there is nothing for you to do.
+            Not available yet — the mailbox sign-in is not switched on at our end. We&apos;ll switch
+            this on as soon as it&apos;s ready — there is nothing for you to do.
           </p>
           {outlookOption && (
             <ul className="mt-vm-2 grid gap-vm-1 text-vm-0 text-vm-text-muted">
@@ -260,6 +265,44 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
               address, and sent mail lands in your own Sent folder.
             </p>
           )}
+          {/* Round 6 WP-D: the mailbox can be switched (staged, the current one keeps
+              working until the new one verifies) or disconnected from here. */}
+          <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
+            <Button
+              variant="ghost"
+              onClick={() => void connectMailbox()}
+              disabled={mailboxBusy || !senderRow}
+            >
+              {mailboxBusy ? 'Opening sign-in…' : 'Switch mailbox'}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setDisconnectOpen(true)}
+              disabled={mailboxBusy || disconnect.isPending || !senderRow}
+            >
+              Disconnect mailbox
+            </Button>
+          </div>
+          <Modal
+            open={disconnectOpen}
+            onOpenChange={setDisconnectOpen}
+            title="Disconnect this mailbox?"
+            description="We delete the saved sign-in and stop answering mail sent to it. The Email channel switches off until you connect a mailbox again."
+            confirmLabel="Disconnect mailbox"
+            confirmPendingLabel="Disconnecting…"
+            confirmVariant="danger"
+            onConfirm={async () => {
+              if (!senderRow) return;
+              await disconnect.mutateAsync({ connectionId: senderRow.connectionId });
+              setMailboxNotice({
+                tone: 'info',
+                text: 'The mailbox is disconnected and its saved sign-in was deleted. Email is off until you connect a mailbox again.',
+              });
+              setDisconnectOpen(false);
+            }}
+          >
+            <p className="text-vm-1">Nothing about your leads or conversation history changes.</p>
+          </Modal>
           {mailboxNotice && (
             <Banner className="mt-vm-3" tone={mailboxNotice.tone}>
               {mailboxNotice.text}
@@ -282,9 +325,9 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
               {provisioning.data.status === 'pending_email_routing' ? (
                 <div className="mt-vm-3">
                   <p className="text-vm-1 text-vm-text-muted">
-                    One copy-paste and you&apos;re done: add these records at your domain host. Email
-                    sent to this address starts reaching Luciel as soon as they publish — until then
-                    the address isn&apos;t live.
+                    One copy-paste and you&apos;re done: add these records at your domain host.
+                    Email sent to this address starts reaching Luciel as soon as they publish —
+                    until then the address isn&apos;t live.
                   </p>
                   <ul className="mt-vm-3 space-y-vm-2">
                     {(provisioning.data.dnsRecords ?? []).map((r, i) => (
@@ -339,9 +382,9 @@ export function EmailChannelProvisioning({ emailChannelEnabled }: { emailChannel
                 </div>
               ) : (
                 <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
-                  This is Luciel&apos;s current address: it answers email sent here, and anything
-                  it sends goes out from here. Connecting your own mailbox above moves Luciel onto
-                  it — your address keeps working until the mailbox verifies.
+                  This is Luciel&apos;s current address: it answers email sent here, and anything it
+                  sends goes out from here. Connecting your own mailbox above moves Luciel onto it —
+                  your address keeps working until the mailbox verifies.
                 </p>
               )}
             </div>

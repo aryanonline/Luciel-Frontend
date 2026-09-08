@@ -29,6 +29,7 @@ import {
   useTwilioNumbers,
 } from '@/lib/hooks';
 import { useActionNotice } from '@/lib/use-action-notice';
+import { api } from '@/lib/api';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
 import { ConnectionControl } from './connection-control';
 import { SmsWebhookTokenRotate } from './sms-webhook-token';
@@ -101,13 +102,13 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const {
     updateChannels,
     acknowledgeVoiceConsent,
-    updateTools,
     startConnection,
     reverifySmsNumber,
     attestSmsRegistration,
   } = useLucielMutations();
   const connections = useConnections();
-  const { connect, reconnect, submitCredentials } = useConnectionLifecycle();
+  const { connect, reconnect, submitCredentials, disconnect, removeSmsNumber } =
+    useConnectionLifecycle();
   // One row per type (§3.8.2), so a surface reads the grant it rides: WhatsApp
   // and Messenger share the Facebook row, Instagram has its own.
   const connectionFor = (type: ConnectionType) =>
@@ -278,7 +279,10 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         provider: 'twilio',
         phoneNumber: number,
       });
-      return `${number} is on file. Voice answers on it now; SMS starts once its carrier registration verifies.`;
+      // Audit F159: phrase the outcome from the SERVED status, never from the happy path
+      // — a number the account cannot operate must not be announced as answering.
+      const row = (await api.connections.list()).find((c) => c.connectionType === 'sms_sender');
+      return numberOutcomePhrase(number, row?.status, row?.statusDetail);
     }, 'We could not save that number. It has not been added — please check it and try again.');
     // Both the field and the editing state survive a failure: collapsing back to
     // the old number would hide what they typed and imply the change took.
@@ -311,15 +315,16 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
     void channelAction.run(
       async () => {
         const nextChannels = luciel.channels.map((c) => (c.id === id ? { ...c, enabled } : c));
-        await updateChannels.mutateAsync(nextChannels);
+        const served = await updateChannels.mutateAsync(nextChannels);
 
-        // Cascade: disabling a channel force-disables its dependent send tool (Arch §3.3).
+        // The dependent send tool goes off WITH its channel — server-side, in the same
+        // write (round 6 WP-D, audit F163). The toast reads what the server did.
         const dependentToolId = enabled ? undefined : CHANNEL_TOOL_CASCADE[id];
-        if (dependentToolId) {
-          const nextTools = luciel.tools.map((t) =>
-            t.id === dependentToolId ? { ...t, enabled: false } : t,
-          );
-          await updateTools.mutateAsync(nextTools);
+        const wentOff =
+          dependentToolId !== undefined &&
+          luciel.tools.some((t) => t.id === dependentToolId && t.enabled) &&
+          served.tools.some((t) => t.id === dependentToolId && !t.enabled);
+        if (dependentToolId && wentOff) {
           // The tool's product label, never the raw wire id ("Send SMS", not
           // "send sms") — the one de-snaked enum that had leaked into a toast.
           return `${channelLabel[id]} is off, and ${toolMeta[dependentToolId].label} was switched off with it.`;
@@ -434,6 +439,52 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   {offRowConnectionNote(c.connectionStatus)}
                 </p>
               )}
+              {/* Round 6 WP-D: an OFF row with a saved connection can still be managed —
+                  switched, reconnected or disconnected — without turning it on first. */}
+              {!c.enabled && surfaces && offRowConnectionNote(c.connectionStatus) && (
+                <details className="mt-vm-2 pl-[3.5rem]">
+                  <summary className="cursor-pointer text-vm-0 underline underline-offset-2">
+                    Manage connection
+                  </summary>
+                  <div className="mt-vm-3 grid gap-vm-4">
+                    {surfaces.map((surface) => (
+                      <ConnectionControl
+                        key={`off-${surface.provider}-${surface.channels.join()}`}
+                        connectionType={surface.connectionType}
+                        label={surface.label}
+                        connection={connectionFor(surface.connectionType)}
+                        provider={surface.provider}
+                        destinationField={{ ...surface.destination, channels: surface.channels }}
+                        unavailableReason={surface.unavailableReason}
+                      />
+                    ))}
+                  </div>
+                </details>
+              )}
+              {!c.enabled &&
+                c.id === 'sms' &&
+                phonePanelHost === null &&
+                (numberConfigured || Boolean(smsConnection?.nonSecretConfig?.accountSid)) && (
+                  <details className="mt-vm-2 pl-[3.5rem]">
+                    <summary className="cursor-pointer text-vm-0 underline underline-offset-2">
+                      Manage phone number
+                    </summary>
+                    <div className="mt-vm-3">
+                      <NumberTeardown
+                        designatedNumber={designatedNumber}
+                        numberConfigured={numberConfigured}
+                        removeNumber={removeSmsNumber}
+                        disconnectTwilio={async () => {
+                          if (smsConnection) {
+                            await disconnect.mutateAsync({
+                              connectionId: smsConnection.connectionId,
+                            });
+                          }
+                        }}
+                      />
+                    </div>
+                  </details>
+                )}
               {showControl && surfaces && (
                 <div className="mt-vm-3 grid gap-vm-4 pl-[3.5rem]">
                   {surfaces.map((surface) => (
@@ -487,6 +538,12 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     phoneValid={phoneValid}
                     saving={channelAction.busy}
                     onSubmitNumber={() => void submitNumber()}
+                    removeNumber={removeSmsNumber}
+                    disconnectTwilio={async () => {
+                      if (smsConnection) {
+                        await disconnect.mutateAsync({ connectionId: smsConnection.connectionId });
+                      }
+                    }}
                     availableNumbers={twilioNumbers.data?.numbers ?? null}
                     onPickNumber={(n) => void submitNumberValue(n)}
                     smsEnabled={Boolean(smsChannel?.enabled)}
@@ -700,6 +757,9 @@ interface PhoneNumberPanelProps {
   phoneValid: boolean;
   saving: boolean;
   onSubmitNumber: () => void;
+  /** Round 6 WP-D: the number without the account, and the account itself. */
+  removeNumber: ReturnType<typeof useConnectionLifecycle>['removeSmsNumber'];
+  disconnectTwilio: () => Promise<void>;
   /** 2026-09-05 audit F142: the owner's webhook-token rotation, rendered under the panel. */
   webhookTokenControl?: React.ReactNode;
   /**
@@ -758,6 +818,8 @@ function PhoneNumberPanel({
   phoneValid,
   saving,
   onSubmitNumber,
+  removeNumber,
+  disconnectTwilio,
   webhookTokenControl,
   availableNumbers,
   onPickNumber,
@@ -996,6 +1058,12 @@ function PhoneNumberPanel({
             <Button variant="ghost" onClick={onStartRotate}>
               Update Twilio credentials
             </Button>
+            <NumberTeardown
+              designatedNumber={designatedNumber}
+              numberConfigured={numberConfigured}
+              removeNumber={removeNumber}
+              disconnectTwilio={disconnectTwilio}
+            />
           </div>
         </div>
       ) : (
@@ -1089,5 +1157,103 @@ function PhoneNumberPanel({
       )}
       {webhookTokenControl}
     </div>
+  );
+}
+
+/**
+ * Audit F159: the designate toast phrases the SERVED state. A number the account
+ * cannot operate, or one still behind carrier registration, is never announced as
+ * answering.
+ */
+export function numberOutcomePhrase(
+  number: string,
+  status: string | undefined,
+  detail?: string | null,
+): string {
+  switch (status) {
+    case 'connected':
+      return `${number} is on file. Voice and texting answer on it now.`;
+    case 'pending_carrier_registration':
+      return `${number} is on file. Voice answers on it now; texting starts once its carrier registration verifies.`;
+    case 'not_operable_hosting_required':
+      return `${number} is saved but it isn't in your Twilio account yet — host it there, then Re-verify.`;
+    default:
+      return detail ? `${number} is saved. ${detail}` : `${number} is saved.`;
+  }
+}
+
+/**
+ * Round 6 WP-D: take the number off the Luciel (keeping the Twilio account), or hand
+ * the whole Twilio account back — each behind the Modal's async-confirm contract.
+ */
+function NumberTeardown({
+  designatedNumber,
+  numberConfigured,
+  removeNumber,
+  disconnectTwilio,
+}: {
+  designatedNumber?: string;
+  numberConfigured: boolean;
+  removeNumber: ReturnType<typeof useConnectionLifecycle>['removeSmsNumber'];
+  disconnectTwilio: () => Promise<void>;
+}) {
+  const [open, setOpen] = React.useState<'number' | 'account' | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
+  return (
+    <>
+      {numberConfigured && (
+        <Button variant="ghost" onClick={() => setOpen('number')}>
+          Remove number
+        </Button>
+      )}
+      <Button variant="ghost" onClick={() => setOpen('account')}>
+        Disconnect Twilio account
+      </Button>
+      {notice && (
+        <p className="basis-full text-vm-0 text-vm-text-muted" role="status">
+          {notice}
+        </p>
+      )}
+      <Modal
+        open={open === 'number'}
+        onOpenChange={(next) => {
+          if (!next) setOpen(null);
+        }}
+        title={`Remove ${designatedNumber ?? 'this number'}?`}
+        description="Luciel stops texting and calling from it. Your Twilio account stays connected, so you can pick another of its numbers any time."
+        confirmLabel="Remove number"
+        confirmPendingLabel="Removing…"
+        confirmVariant="danger"
+        onConfirm={async () => {
+          await removeNumber.mutateAsync();
+          setNotice('The number is removed. Pick another of your numbers whenever you are ready.');
+          setOpen(null);
+        }}
+      >
+        <p className="text-vm-1">
+          Calls and texts to this number are no longer answered by Luciel.
+        </p>
+      </Modal>
+      <Modal
+        open={open === 'account'}
+        onOpenChange={(next) => {
+          if (!next) setOpen(null);
+        }}
+        title="Disconnect your Twilio account?"
+        description="We delete the saved credentials and hand the account back. SMS and Voice switch off until you connect an account again; your number stays yours."
+        confirmLabel="Disconnect Twilio"
+        confirmPendingLabel="Disconnecting…"
+        confirmVariant="danger"
+        onConfirm={async () => {
+          await disconnectTwilio();
+          setNotice('Twilio is disconnected and its saved credentials were deleted.');
+          setOpen(null);
+        }}
+      >
+        <p className="text-vm-1">
+          You can connect it again later — nothing about your number changes.
+        </p>
+      </Modal>
+    </>
   );
 }
