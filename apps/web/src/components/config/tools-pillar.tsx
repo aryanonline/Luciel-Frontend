@@ -13,6 +13,7 @@ import type {
 import { useCapabilities, useConnections, useLucielMutations } from '@/lib/hooks';
 import { useActionNotice } from '@/lib/use-action-notice';
 import { ConnectionControl } from './connection-control';
+import { CalendlyEventTypePicker } from './calendly-event-type';
 import { toolMeta, chipKind, channelLabel, offRowConnectionNote } from './labels';
 
 /**
@@ -360,6 +361,12 @@ function CapabilityRow({
             unavailableReason={CONNECTION_COPY[group.connectionType]?.unavailableReason}
             disabledReason={disabledReason}
           />
+          {/* Calendly books ONE event type (round 6 WP-H): the owner picks which,
+              here, beside the connection it belongs to. Other calendars book
+              straight onto the calendar and have nothing to choose. */}
+          {connection?.provider === 'calendly' && connection.status === 'connected' && (
+            <CalendlyEventTypePicker connection={connection} />
+          )}
         </div>
       )}
     </li>

@@ -15,6 +15,7 @@ import type {
   MetaChannel,
   StartConnectionResult,
   TeamAvailabilityUpdate,
+  ConnectionSettingsUpdate,
 } from '@luciel/api-client';
 
 /**
@@ -41,6 +42,7 @@ export const qk = {
   employeeStatus: ['employeeStatus'] as const,
   audit: ['audit'] as const,
   twilioNumbers: (connectionId: string) => ['twilioNumbers', connectionId] as const,
+  calendlyEventTypes: (connectionId: string) => ['calendlyEventTypes', connectionId] as const,
 };
 
 export const useSession = () =>
@@ -70,6 +72,30 @@ export const useTwilioNumbers = (connectionId?: string) =>
     queryFn: () => api.connections.listTwilioNumbers(connectionId as string),
     enabled: Boolean(connectionId),
   });
+/**
+ * The owner's Calendly event types for the "customers book" picker (round 6 WP-H).
+ * `eventTypes: null` in the result = the account could not be read right now.
+ */
+export const useCalendlyEventTypes = (connectionId?: string) =>
+  useQuery({
+    queryKey: qk.calendlyEventTypes(connectionId ?? ''),
+    queryFn: () => api.connections.listCalendlyEventTypes(connectionId as string),
+    enabled: Boolean(connectionId),
+  });
+/** A provider setting that is not a credential (today: the Calendly event type). */
+export function useUpdateConnectionSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { connectionId: string; req: ConnectionSettingsUpdate }) =>
+      api.connections.updateSettings(args.connectionId, args.req),
+    onSuccess: (_row, args) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.connections }),
+        qc.invalidateQueries({ queryKey: qk.calendlyEventTypes(args.connectionId) }),
+        qc.invalidateQueries({ queryKey: qk.employeeStatus }),
+      ]),
+  });
+}
 /** Owner-facing capability groups — the source of the scheduling control (Decision #8). */
 export const useCapabilities = () =>
   useQuery({ queryKey: qk.capabilities, queryFn: () => api.luciel.capabilities() });

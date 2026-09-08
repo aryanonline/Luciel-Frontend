@@ -23,6 +23,9 @@ bundle.
 - `src/components/config/acknowledgements.tsx` — every acknowledgement listed and withdrawable
   (round 6 WP-D); `knowledge-connections.tsx` — connected knowledge sources with re-sync,
   reconnect, disconnect/remove crawl.
+- `src/components/config/calendly-event-type.tsx` — which Calendly event type customers
+  book (round 6 WP-H): served list with the chosen one marked, PUT /connections/{id}/settings,
+  honest copy when Calendly cannot be read; mounted under a connected Calendly calendar only.
 - `src/components/config/consent-landing.tsx` — post-consent state messaging.
 - `src/components/config/labels.ts` — served provider display-label resolution.
 - `src/components/config/channels-pillar.tsx` — channel configuration and consent.

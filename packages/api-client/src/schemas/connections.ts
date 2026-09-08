@@ -232,6 +232,34 @@ export const tenantNumbersResult = z.object({
 export type TenantNumbersResult = z.infer<typeof tenantNumbersResult>;
 
 /**
+ * One of the owner's Calendly event types (round 6 WP-H, F055). Customers book
+ * exactly ONE event type; the owner picks it here. `GET /connections/{id}/calendly/
+ * event-types` serves `eventTypes: null` when the account could not be read (the
+ * token is unusable) — say so, never an empty picker that looks like "no types".
+ */
+export const calendlyEventType = z.object({
+  uri: z.string(),
+  name: z.string(),
+  active: z.boolean(),
+  durationMinutes: z.number().int(),
+  schedulingUrl: z.string(),
+});
+export type CalendlyEventType = z.infer<typeof calendlyEventType>;
+
+export const calendlyEventTypes = z.object({
+  eventTypes: z.array(calendlyEventType).nullable(),
+  chosenUri: z.string().nullable().optional(),
+});
+export type CalendlyEventTypes = z.infer<typeof calendlyEventTypes>;
+
+/** `PUT /connections/{id}/settings` — provider settings that are not credentials. */
+export const connectionSettingsUpdate = z.object({
+  eventTypeUri: z.string().optional(),
+  eventTypeName: z.string().optional(),
+});
+export type ConnectionSettingsUpdate = z.infer<typeof connectionSettingsUpdate>;
+
+/**
  * Result of uploading the live-lookup CSV (record_source connection). The rows
  * REPLACE the previous table (the backend's replace-on-upload semantics) and the
  * connection flips to connected with "N records on file". Live-caught
