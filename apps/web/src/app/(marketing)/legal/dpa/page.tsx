@@ -3,12 +3,13 @@ import { LegalPage } from '@/components/marketing/legal-page';
 
 export const metadata: Metadata = { title: 'Data Processing Addendum — VantageMind' };
 
-/** DPA — plain-language summary, DRAFT/not-in-force (Legal Part C). */
+/** DPA — plain-language summary; the early-access terms in effect (Legal Part C; D11, 2026-09-14). */
 export default function DpaPage() {
   return (
     <LegalPage
       title="Data Processing Addendum"
-      lastUpdated="Draft — pending counsel"
+      version="0.1"
+      lastUpdated="2026-09-15"
       intro="This addendum governs how VantageMind processes your end customers’ (leads’) personal data on your behalf. You are the controller; VantageMind is the processor, acting on your documented instructions. It forms part of the Terms of Service."
       sections={[
         {

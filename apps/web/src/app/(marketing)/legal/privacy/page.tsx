@@ -3,12 +3,13 @@ import { LegalPage } from '@/components/marketing/legal-page';
 
 export const metadata: Metadata = { title: 'Privacy Policy — VantageMind' };
 
-/** Privacy Policy — plain-language summary, DRAFT/not-in-force (Legal Part B). */
+/** Privacy Policy — plain-language summary; the early-access terms in effect (Legal Part B; D11, 2026-09-14). */
 export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      lastUpdated="Draft — pending counsel"
+      version="0.1"
+      lastUpdated="2026-09-15"
       intro="This summary explains how VantageMind handles personal information. For your end customers’ (leads’) data you are the controller and we are the processor, acting on your instructions; the processing terms are in our Data Processing Addendum."
       sections={[
         {

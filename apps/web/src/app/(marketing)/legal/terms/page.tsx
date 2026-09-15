@@ -4,7 +4,7 @@ import { LegalPage } from '@/components/marketing/legal-page';
 export const metadata: Metadata = { title: 'Terms of Service — VantageMind' };
 
 /**
- * Terms of Service — plain-language summary, DRAFT/not-in-force (Legal Part A).
+ * Terms of Service — plain-language summary; the early-access terms in effect (Legal Part A; owner decision D11, 2026-09-14).
  * Mirrors the product commitments (single plan, PAYG, dunning, lifecycle,
  * single-login, SLA) WITHOUT verbatim draft clauses or bracketed placeholders.
  */
@@ -12,8 +12,9 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Service"
-      lastUpdated="Draft — pending counsel"
-      intro="These terms describe the commercial relationship between you (the account owner) and VantageMind. The summary below mirrors the product as documented; the binding version is finalized with counsel before launch."
+      version="0.1"
+      lastUpdated="2026-09-15"
+      intro="These terms describe the commercial relationship between you (the account owner) and VantageMind. The summary below mirrors the product as documented; a counsel-reviewed version will replace it with at least 30 days' notice."
       sections={[
         {
           heading: 'The plan',
