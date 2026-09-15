@@ -1,16 +1,22 @@
-import { Container, Section, Banner } from '@luciel/ui';
+import { Container, Section } from '@luciel/ui';
 
 /**
- * Shared legal page shell. IMPORTANT (Space Instructions §0/§6, Legal doc
- * header): the Legal document is a DRAFT, NOT IN FORCE, and its bracketed
- * placeholder text must never be reproduced verbatim in the UI. So these pages:
- *   - carry a prominent DRAFT banner,
- *   - summarize the structure and the commitments that mirror the product docs
- *     (pricing, retention, residency, breach window) in plain language,
- *   - contain NO bracketed counsel placeholders and NO verbatim draft clauses.
- * They exist so the public-facing legal surfaces and footer links are present;
- * counsel-approved final copy replaces the body before launch.
+ * Shared legal page shell.
+ *
+ * Owner decision D11 (round 7, 2026-09-14): the plain-language summaries on these
+ * pages ARE the early-access terms in effect — they mirror the product documents
+ * (pricing, retention, residency, breach window, single-login) — while the detailed
+ * Legal document stays counsel's draft. So these pages carry a version and a real
+ * last-updated date instead of a "Draft — not yet in force" banner, promise the
+ * 30-day notice a material change carries (Legal §A10), and still reproduce NO
+ * bracketed counsel placeholders and NO verbatim draft clauses.
+ *
+ * Owner decision D12: the single contact address for privacy requests, security
+ * disclosures and support is info@vantagemind.ai (the privacy@/security@ aliases
+ * never existed). A unit test pins this address across apps/web/src.
  */
+export const LEGAL_CONTACT_EMAIL = 'info@vantagemind.ai';
+
 export interface LegalSection {
   heading: string;
   body: string[];
@@ -19,25 +25,26 @@ export interface LegalSection {
 export function LegalPage({
   title,
   intro,
+  version,
   lastUpdated,
   sections,
 }: {
   title: string;
   intro: string;
+  /** Early-access terms version, e.g. "0.1". */
+  version: string;
+  /** ISO date of the last change to this page's substance. */
   lastUpdated: string;
   sections: LegalSection[];
 }) {
   return (
     <Section className="pt-vm-8">
       <Container size="md">
-        <Banner tone="warning" className="mb-vm-5">
-          <strong>Draft — not yet in force.</strong> This page is a plain-language summary of terms
-          we intend to publish. It is not legal advice and is pending review and approval by
-          qualified counsel. The binding, counsel-approved version will replace this before launch.
-        </Banner>
-
         <h1 className="font-heading text-vm-7 tracking-tight">{title}</h1>
-        <p className="mt-vm-2 text-vm-0 text-vm-text-muted">Last updated: {lastUpdated}</p>
+        <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
+          Early-access terms, version {version} — last updated {lastUpdated}. A counsel-reviewed
+          version will replace these with at least 30 days&apos; notice.
+        </p>
         <p className="mt-vm-4 text-vm-2 leading-relaxed text-vm-text-muted">{intro}</p>
 
         <div className="mt-vm-7 space-y-vm-6">
@@ -56,8 +63,11 @@ export function LegalPage({
         </div>
 
         <p className="mt-vm-8 border-t border-vm-border pt-vm-4 text-vm-1 text-vm-text-muted">
-          Questions about this document? Contact privacy@vantagemind.ai. Security disclosures:
-          security@vantagemind.ai.
+          Questions about this document, privacy requests, or security disclosures:{' '}
+          <a href={`mailto:${LEGAL_CONTACT_EMAIL}`} className="text-vm-accent underline">
+            {LEGAL_CONTACT_EMAIL}
+          </a>
+          .
         </p>
       </Container>
     </Section>
