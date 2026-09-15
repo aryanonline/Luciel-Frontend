@@ -78,9 +78,17 @@ jobs:
           TAG: ${{ steps.build.outputs.tag }}
         run: |
           set -euo pipefail
-          aws ecr wait image-scan-complete --repository-name "$REPO" --image-id imageTag="$TAG"
-          aws ecr describe-image-scan-findings --repository-name "$REPO" \
-            --image-id imageTag="$TAG" --max-results 1000 --output json > scan-findings.json
+          # Scan-on-push takes a few seconds to even REGISTER, so poll until the scan
+          # exists and completes — the ECR waiter errors on ScanNotFound instead of
+          # retrying (round 7: that raced the very first run of this gate). If it never
+          # completes, scan-findings.json is absent or non-COMPLETE and the gate fails closed.
+          for i in $(seq 1 60); do
+            if aws ecr describe-image-scan-findings --repository-name "$REPO" --image-id imageTag="$TAG" --max-results 1000 --output json > scan-findings.json 2>/dev/null; then
+              status=$(node -e "const s=JSON.parse(require('fs').readFileSync('scan-findings.json','utf8'));process.stdout.write(String(s.imageScanStatus?.status??''))")
+              [ "$status" = "COMPLETE" ] && break
+            fi
+            echo "[gate] scan not ready (attempt $i) - waiting 5s"; sleep 5
+          done
           node scripts/image-scan-gate.mjs scan-findings.json .security/cve-allowlist.json 2>&1 | tee gate.txt
 
       - name: Post the outcome on the month's review issue
