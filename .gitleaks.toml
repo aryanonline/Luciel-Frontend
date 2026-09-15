@@ -6,7 +6,22 @@ title = "Luciel frontend"
 useDefault = true
 
 [allowlist]
-description = "Public-by-design values the default rules read as generic API keys"
+description = "Public-by-design values and test fixtures the default rules read as generic API keys"
 # The hCaptcha SITE key is embedded in every served page (NEXT_PUBLIC_*); the secret
 # key lives in the platform secret and never in this repository.
-regexes = ["6f66ccc8-ae5a-4d20-90f6-e49adfa8c10e"]
+#
+# The two `vm_live_…` values are FAKE embed keys used by unit tests and the mock
+# adapter (an embed key is a public identifier that appears in every customer's page
+# markup; the real ones are minted server-side). The nightly full-history scan
+# (round 7 WP-0, 2026-09-14) flagged them in commits f865921 and 711b765; the push
+# scan never saw them because it diffs only the pushed range. Waived by value AND by
+# fixture path so a real key pasted into those files would still trip the scan.
+regexes = [
+  "6f66ccc8-ae5a-4d20-90f6-e49adfa8c10e",
+  "vm_live_test123456",
+  "vm_live_a8f3c2",
+]
+paths = [
+  "apps/web/tests/unit/widget-preview-session[.]test[.]tsx",
+  "packages/api-client/src/adapters/mock-data[.]ts",
+]

@@ -45,10 +45,15 @@ jobs:
         continue-on-error: true
         run: pnpm outdated -r 2>&1 | tee outdated.txt || true
 
-      - name: Waivers expiring within 14 days
+      - name: Waivers expiring within 35 days
         id: expiry
         continue-on-error: true
-        run: node scripts/allowlist-expiry.mjs --within-days 14 --markdown expiry.md
+        run: node scripts/allowlist-expiry.mjs --within-days 35 --markdown expiry.md
+
+      - name: Image CVE waivers expiring within 35 days
+        id: image_expiry
+        continue-on-error: true
+        run: node scripts/allowlist-expiry.mjs --within-days 35 --allowlist .security/cve-allowlist.json --markdown image-expiry.md
 
       - name: Open or update the month's review issue
         env:
@@ -56,6 +61,7 @@ jobs:
           REPO: ${{ github.repository }}
           AUDIT_OUTCOME: ${{ steps.audit.outcome }}
           EXPIRY_OUTCOME: ${{ steps.expiry.outcome }}
+          IMAGE_EXPIRY_OUTCOME: ${{ steps.image_expiry.outcome }}
         run: |
           set -euo pipefail
           month=$(date -u +%Y-%m)
@@ -66,8 +72,11 @@ jobs:
             echo "## Audit gate — **$AUDIT_OUTCOME**"
             echo '```'; tail -n 40 audit.txt 2>/dev/null || echo "(no output)"; echo '```'
             echo
-            echo "## Waivers — **$EXPIRY_OUTCOME** (⚠️ = expires within 14 days)"
+            echo "## Waivers — **$EXPIRY_OUTCOME** (⚠️ = expires within 35 days)"
             cat expiry.md 2>/dev/null || echo "(no waivers file)"
+            echo
+            echo "## Image CVE waivers — **$IMAGE_EXPIRY_OUTCOME** (⚠️ = expires within 35 days)"
+            cat image-expiry.md 2>/dev/null || echo "(no image waivers file)"
             echo
             echo "## Outdated (advisory)"
             echo '```'; tail -n 60 outdated.txt 2>/dev/null || echo "(none)"; echo '```'
@@ -83,4 +92,4 @@ jobs:
           fi
           # The review is written either way; the run itself fails when the gate or a
           # waiver's expiry demands attention, so the failure is visible in Actions too.
-          [ "$AUDIT_OUTCOME" = "success" ] && [ "$EXPIRY_OUTCOME" = "success" ]
+          [ "$AUDIT_OUTCOME" = "success" ] && [ "$EXPIRY_OUTCOME" = "success" ] && [ "$IMAGE_EXPIRY_OUTCOME" = "success" ]

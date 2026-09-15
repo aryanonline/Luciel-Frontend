@@ -1,0 +1,110 @@
+name: image-rebuild
+
+# Weekly base-image refresh + scan, WITHOUT a deploy (round 7 WP-9; mirrors the
+# backend workflow of the same name).
+#
+# Every waiver in .security/cve-allowlist.json is a bet that Debian ships a fix and
+# the next rebuild adopts it. Nothing rebuilt the web image on a schedule before, so
+# a fix reached the running service only when somebody dispatched a deploy. This job
+# rebuilds the web image from the release branch every Monday, pushes it under a
+# `weekly-<date>` tag (the repo's lifecycle policy expires it), waits for the ECR
+# scan, runs the SAME governed gate the deploy uses in REPORT mode, and posts the
+# outcome on the month's "Dependency & CVE review" issue for the monthly steward.
+# It never deploys and never touches a running service or the widget CDN.
+
+on:
+  schedule:
+    - cron: '45 7 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: image-rebuild
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ca-central-1
+  ACCOUNT: '729005488042'
+  RELEASE_BRANCH: ${{ vars.RELEASE_BRANCH || 'feat/docs-conformance-build-20260713-r2' }}
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_BRANCH }}
+
+      - name: Configure AWS via OIDC (dev frontend deploy role — dev ECR is the scratch registry)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.ACCOUNT }}:role/luciel-dev-frontend-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.7.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+
+      - name: Build + push the weekly web image (no deploy)
+        id: build
+        env:
+          ECR: ${{ steps.ecr.outputs.registry }}
+          REPO: luciel-dev-web
+        run: |
+          set -euo pipefail
+          TAG="weekly-$(date -u +%Y%m%d)"
+          docker build --pull -f apps/web/Dockerfile \
+            --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.vantagemind.ai \
+            --build-arg NEXT_PUBLIC_API_ADAPTER=http \
+            -t "$ECR/$REPO:$TAG" .
+          docker push "$ECR/$REPO:$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the ECR scan and run the gate in report mode
+        id: gate
+        continue-on-error: true
+        env:
+          REPO: luciel-dev-web
+          TAG: ${{ steps.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          aws ecr wait image-scan-complete --repository-name "$REPO" --image-id imageTag="$TAG"
+          aws ecr describe-image-scan-findings --repository-name "$REPO" \
+            --image-id imageTag="$TAG" --max-results 1000 --output json > scan-findings.json
+          node scripts/image-scan-gate.mjs scan-findings.json .security/cve-allowlist.json 2>&1 | tee gate.txt
+
+      - name: Post the outcome on the month's review issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          TAG: ${{ steps.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          month=$(date -u +%Y-%m)
+          title="Dependency & CVE review $month"
+          {
+            echo "### Weekly image rebuild — \`$TAG\` — gate **$GATE_OUTCOME**"
+            echo
+            echo "Fresh build of the release branch, scanned by ECR (run ${{ github.run_id }}). Not deployed."
+            echo
+            echo '```'; cat gate.txt 2>/dev/null || echo "(no gate output)"; echo '```'
+            echo
+            echo "Lines reading \`no longer matches any finding\` are waivers to RETIRE; \`not allowlisted\` lines are new findings a person (or the monthly steward) must review."
+          } > comment.md
+          existing=$(gh issue list --repo "$REPO" --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body-file comment.md
+          else
+            gh issue create --repo "$REPO" --title "$title" --label dependencies --body-file comment.md
+          fi

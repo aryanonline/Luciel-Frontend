@@ -138,6 +138,11 @@ pnpm --filter @luciel/ui test
 pnpm --filter @luciel/ui build
 ```
 
+`pnpm test:scripts` runs the repo-script tests (`scripts/*.test.mjs`; the image CVE gate).
+The web image CVE gate is `scripts/image-scan-gate.mjs` with the dated allowlist in
+`.security/cve-allowlist.json` (round 7 WP-0): it fails closed, blocks HIGH + CRITICAL,
+and an expired waiver blocks the deploy. The base image is `node:22.x-trixie-slim`.
+
 Required whole-workspace verification:
 
 ```bash
