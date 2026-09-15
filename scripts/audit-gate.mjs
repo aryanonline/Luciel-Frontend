@@ -18,7 +18,24 @@ try {
   // pnpm exits non-zero when it found something; the JSON is still on stdout.
   raw = err.stdout?.toString() ?? '';
 }
-const report = raw.trim() ? JSON.parse(raw) : { advisories: {} };
+// Fail CLOSED (round 7 WP-0): an empty or unparseable report means the audit did not
+// run (registry unreachable, pnpm spawn failure, output-format change), not that the
+// tree is clean — and auto-merge trusts this gate, so a silent pass would merge blind.
+if (!raw.trim()) {
+  console.error('audit gate: pnpm audit produced no output — cannot prove the tree is clean, failing closed');
+  process.exit(1);
+}
+let report;
+try {
+  report = JSON.parse(raw);
+} catch (err) {
+  console.error(`audit gate: pnpm audit output is not JSON (${err.message}) — failing closed`);
+  process.exit(1);
+}
+if (!report || typeof report !== 'object' || !('advisories' in report)) {
+  console.error('audit gate: pnpm audit output has no advisories section — failing closed');
+  process.exit(1);
+}
 const advisories = Object.values(report.advisories ?? {}).filter((a) => a.severity === 'high' || a.severity === 'critical');
 
 const waivers = new Map(allowlist.waivers.map((w) => [w.ghsa, w]));

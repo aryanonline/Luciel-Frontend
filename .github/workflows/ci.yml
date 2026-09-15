@@ -36,6 +36,9 @@ jobs:
       - name: Dependency audit (pnpm audit — blocks on high/critical; waivers expire)
         run: node scripts/audit-gate.mjs
 
+      - name: Repo-script tests (image CVE gate)
+        run: pnpm test:scripts
+
       - name: Typecheck (all packages)
         run: pnpm -r typecheck
 

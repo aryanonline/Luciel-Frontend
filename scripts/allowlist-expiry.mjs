@@ -23,7 +23,13 @@ const markdown = opt('--markdown', null);
 const file = resolve(opt('--allowlist', '.security/audit-allowlist.json'));
 
 const data = JSON.parse(readFileSync(file, 'utf8'));
-const waivers = Array.isArray(data.waivers) ? data.waivers : [];
+// Two allowlist shapes share this report: the pnpm audit waivers (`waivers[]`, keyed
+// by GHSA) and the image CVE allowlist (`allow[]`, keyed by CVE; round 7 WP-0).
+const waivers = Array.isArray(data.waivers)
+  ? data.waivers
+  : Array.isArray(data.allow)
+    ? data.allow.map((e) => ({ ghsa: e.cve, package: e.package, expires: e.expires }))
+    : [];
 const today = new Date();
 today.setUTCHours(0, 0, 0, 0);
 

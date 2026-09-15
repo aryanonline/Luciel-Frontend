@@ -59,9 +59,12 @@ jobs:
   build:
     needs: guard
     runs-on: ubuntu-latest
-    # dev creds are enough to PUSH to ECR/S3 (resources are per-env; we push the
-    # dev artifacts here and re-tag per env in deploy). Build does not deploy.
-    environment: dev
+    # The image is built and scanned in the TARGET environment's own ECR repo
+    # (round 7 WP-0): before this the build always pushed to luciel-dev-web, so a
+    # prod dispatch rolled the prod service without ever having pushed a prod image.
+    environment: ${{ inputs.environment || 'dev' }}
+    env:
+      ENVIRONMENT: ${{ inputs.environment || 'dev' }}
     outputs:
       image_tag: ${{ github.sha }}
     steps:
@@ -70,7 +73,7 @@ jobs:
       - name: Configure AWS via OIDC (frontend deploy role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::729005488042:role/luciel-dev-frontend-github-deploy
+          role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
@@ -94,7 +97,7 @@ jobs:
       - name: Build + push web image (context = repo root, Dockerfile apps/web)
         env:
           ECR: ${{ steps.ecr.outputs.registry }}
-          REPO: luciel-dev-web
+          REPO: luciel-${{ env.ENVIRONMENT }}-web
           TAG: ${{ github.sha }}
         run: |
           docker build -f apps/web/Dockerfile \
@@ -104,29 +107,21 @@ jobs:
             -t "$ECR/$REPO:$TAG" -t "$ECR/$REPO:latest" .
           docker push "$ECR/$REPO:$TAG"
           docker push "$ECR/$REPO:latest"
-          # Block on CRITICAL CVEs (ECR scan-on-push), EXCEPT a narrow, documented
-          # allowlist of unfixable base-image perl CVEs. The Dockerfile purges the
-          # non-essential perl packages; these 3 may still be attributed to perl-base
-          # (Essential, cannot be safely removed) and have NO fixed version in Debian
-          # yet. perl is not in the Node runtime's execution path. Revisit when Debian
-          # ships a fix. Any OTHER critical still blocks; a NEW critical still blocks.
-          aws ecr wait image-scan-complete --repository-name "$REPO" --image-id imageTag="$TAG" || true
-          ALLOWLIST="CVE-2026-12087 CVE-2026-13221 CVE-2026-57433"
-          CRIT_NAMES=$(aws ecr describe-image-scan-findings --repository-name "$REPO" \
-            --image-id imageTag="$TAG" \
-            --query 'imageScanFindings.findings[?severity==`CRITICAL`].name' \
-            --output text 2>/dev/null | tr '\t' '\n' | sed '/^$/d' || true)
-          BLOCKING=""
-          for cve in $CRIT_NAMES; do
-            case " $ALLOWLIST " in
-              *" $cve "*) echo "::warning::allowlisted base-image CVE $cve (unfixable perl, not in runtime path)";;
-              *) BLOCKING="$BLOCKING $cve";;
-            esac
-          done
-          if [ -n "$(echo "$BLOCKING" | tr -d ' ')" ]; then
-            echo "::error::Non-allowlisted CRITICAL CVEs in web image:$BLOCKING - blocking"; exit 1
-          fi
-          echo "CVE gate passed (allowlisted-only or none critical)"
+
+      - name: Image CVE gate (fails closed; HIGH + CRITICAL; governed, expiring allowlist)
+        env:
+          REPO: luciel-${{ env.ENVIRONMENT }}-web
+          TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Governed CVE gate (scripts/image-scan-gate.mjs, mirroring the backend's
+          # scripts/check_image_scan.py): fails CLOSED on scan unavailability, on any
+          # non-allowlisted CRITICAL or HIGH, and on expired allowlist entries. The
+          # describe call is NOT error-swallowed — an API error must fail the deploy,
+          # not print PASS (round 7 WP-0; the previous inline gate did exactly that).
+          aws ecr wait image-scan-complete --repository-name "$REPO" --image-id imageTag="$TAG"
+          aws ecr describe-image-scan-findings --repository-name "$REPO"             --image-id imageTag="$TAG" --max-results 1000 --output json > scan-findings.json
+          node scripts/image-scan-gate.mjs scan-findings.json .security/cve-allowlist.json
 
       - name: Stash widget dist for deploy jobs
         uses: actions/upload-artifact@v4
