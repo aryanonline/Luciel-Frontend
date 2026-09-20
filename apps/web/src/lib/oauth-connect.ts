@@ -45,12 +45,19 @@ const PROVIDER_AUTHORIZE_HOSTS = [
 
 const ACTION_NEEDED = 'Action needed:';
 
-/** Survives the round-trip to the provider; the callback needs the connection id. */
+/**
+ * The attempt in flight, stashed when the browser is handed to the provider.
+ * The provider redirects to the BACKEND's `GET /api/v1/connections/{client}/callback`,
+ * which redeems the code and 303s back to /dashboard/configure, where the consent
+ * landing reads the served row (round 7 WP-10, item 11: the frontend callback route
+ * that used to read this stash was dead and is gone). The stash records which flow
+ * was started — tests read it as the proof — and nothing on the way back needs it.
+ */
 const PENDING_KEY = 'luciel.pendingOauthConnection';
 
 /**
- * Which callback route completes this flow. `knowledge` is the knowledge-sync
- * route (unchanged, and the one that reports a failed exchange only in its 409
+ * Which BACKEND completion route this flow belongs to. `knowledge` is the
+ * knowledge-sync route (the one that reports a failed exchange only in its 409
  * body); `connection` is the GENERIC route that serves every other connection
  * type and persists the failure reason on the row (contract §2).
  */
@@ -133,37 +140,6 @@ export function rememberPendingConnection(pending: PendingConnection): void {
   try {
     sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
   } catch {
-    /* private mode / storage disabled — the callback falls back to the query. */
-  }
-}
-
-/**
- * The flow stashed when this provider's connect started. A provider mismatch
- * falls back to whatever single flow is pending: the redirect path segment is
- * the backend's choice, and `state` is bound to (admin, instance, connection,
- * provider) server-side, so a wrong guess is rejected there rather than here.
- */
-export function recallPendingConnection(provider: string): PendingConnection | null {
-  try {
-    const raw = sessionStorage.getItem(PENDING_KEY);
-    if (!raw) return null;
-    const pending = JSON.parse(raw) as Partial<PendingConnection>;
-    if (!pending.connectionId) return null;
-    return {
-      provider: pending.provider ?? provider,
-      connectionId: pending.connectionId,
-      callbackKind: pending.callbackKind === 'connection' ? 'connection' : 'knowledge',
-      state: pending.state,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function clearPendingConnection(): void {
-  try {
-    sessionStorage.removeItem(PENDING_KEY);
-  } catch {
-    /* nothing to clear */
+    /* private mode / storage disabled — the backend callback needs nothing from here. */
   }
 }
