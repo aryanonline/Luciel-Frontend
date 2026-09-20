@@ -123,6 +123,30 @@ export function boundDestination(
   return channels.map((c) => perChannel[c]).find(Boolean) ?? legacy;
 }
 
+/**
+ * What a TOGGLED-OFF messaging row should say about its saved grant (round 7
+ * WP-10, item 8). The raw grant status is not enough: a Meta grant is one row for
+ * WhatsApp and Messenger, and "connected" on it says nothing about whether THIS
+ * surface's id was ever bound — so "nothing to set up again" over a row whose
+ * WhatsApp number id was never entered promised a re-enable that would land on
+ * "Action needed: add the WhatsApp phone number ID". Derived from the bound
+ * destination: connected AND bound → nothing to set up; connected but unbound →
+ * the id is still owed; expired/error/dormant → the shared status wording.
+ */
+export function offRowSurfaceNote(
+  surface: MessagingSurface,
+  connection: Connection | undefined,
+  statusNote: (status: Connection['status'] | undefined) => string | null,
+): string | null {
+  if (!connection) return null;
+  if (connection.status === 'connected') {
+    return boundDestination(connection, surface.channels)
+      ? statusNote('connected')
+      : `Its sign-in is saved, but ${surface.label} still needs its ${surface.destination.label} before it answers — turn this back on to add it.`;
+  }
+  return statusNote(connection.status);
+}
+
 /** Whether a just-authorized provider has everything it needs to answer. */
 export type MessagingReadiness =
   /** Nothing further is owed — either it is live, or it binds no destination. */
