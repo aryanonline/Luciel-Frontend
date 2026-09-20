@@ -78,6 +78,24 @@ function ConfigureBody() {
     );
   }
 
+  if (luciel.state === 'luciel_grace_window') {
+    // Round 7 WP-10, item 4: a Luciel in its 30-day grace window is inert — the backend
+    // refuses every pillar write ("Configuration cannot be changed while the Luciel is
+    // luciel_grace_window"), so rendering six editable pillars only manufactured failed
+    // saves. The one thing that can be done is restore it, and that lives on Account.
+    return (
+      <Banner tone="warning">
+        {luciel.name} is deleted and in its 30-day restore window, so its configuration cannot be
+        edited right now. Everything here is kept exactly as it was: restore it and it comes back
+        fully active, with nothing to set up again.{' '}
+        <Link href="/dashboard/account" className="underline">
+          Restore it from the Account page
+        </Link>
+        .
+      </Banner>
+    );
+  }
+
   return (
     <>
       <PageHeader
