@@ -25,8 +25,11 @@ concurrency:
 
 jobs:
   merge:
+    # Runs on EVERY completed CI run for a Dependabot branch, green or red: a major
+    # is labelled either way so the monthly steward's `major-update` triage sees it
+    # (round 7: eslint 8→10 and tailwind 3→4 sat unlabelled for weeks because their
+    # CI was red and this job only ran on success). Only a GREEN minor/patch merges.
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request' &&
       startsWith(github.event.workflow_run.head_branch, 'dependabot/')
     runs-on: ubuntu-latest
@@ -37,6 +40,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           REPO: ${{ github.repository }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
           pr=$(gh pr list --repo "$REPO" --head "$HEAD_BRANCH" --state open \
@@ -89,7 +93,11 @@ jobs:
               print("minor")
           PY
           )
-          echo "update kind: $kind"
+          echo "update kind: $kind (CI: $CI_CONCLUSION)"
+          if [ "$kind" = "minor" ] && [ "$CI_CONCLUSION" != "success" ]; then
+            echo "CI for #$number concluded '$CI_CONCLUSION' — a minor/patch update is merged only when green; leaving it"
+            exit 0
+          fi
           if [ "$kind" = "minor" ]; then
             # A refused merge (a check still pending, a conflict, a setting) must be
             # visible, not a silent exit 0 that leaves the PR open for weeks (round 7).
@@ -102,8 +110,15 @@ jobs:
               echo "::error::auto-merge of #$number was refused"; exit 1
             fi
           else
+            if gh pr view "$number" --repo "$REPO" --json labels --jq '.labels[].name' | grep -qx major-update; then
+              echo "#$number already carries major-update"; exit 0
+            fi
             gh pr edit "$number" --repo "$REPO" --add-label major-update || true
-            gh pr comment "$number" --repo "$REPO" --body \
-              "CI is green, but this is a **major** (or unclassifiable) update — a migration, not an upkeep. Left for a person to review and merge."
+            if [ "$CI_CONCLUSION" = "success" ]; then
+              body="CI is green, but this is a **major** (or unclassifiable) update — a migration, not an upkeep. Left for a person to review and merge."
+            else
+              body="CI concluded **$CI_CONCLUSION** and this is a **major** (or unclassifiable) update — a migration, not an upkeep. Left for a person (or the monthly steward) to review."
+            fi
+            gh pr comment "$number" --repo "$REPO" --body "$body"
             echo "labelled #$number major-update"
           fi
