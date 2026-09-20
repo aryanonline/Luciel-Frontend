@@ -57,6 +57,13 @@ export const MESSAGING_SURFACES: Partial<Record<ChannelId, MessagingSurface[]>> 
       },
       unavailableReason: 'Meta app not configured',
       note: 'This Meta sign-in is shared with Facebook Messenger — one sign-in covers both rows, and each names its own id.',
+      // The WhatsApp Business API binds a WhatsApp Business account to a number,
+      // and a number already active on the consumer WhatsApp app is refused until
+      // it is migrated off that app (Arch §3.1.4 "WhatsApp-eligible"). Said here,
+      // before the sign-in, rather than discovered as a failed binding after it
+      // (round 7 WP-10, item 6).
+      prerequisite:
+        'Requires a number for the WhatsApp Business API. A number already active on the consumer WhatsApp app cannot be used until it is migrated off that app — your SMS/Voice number can be reused once it is WhatsApp-eligible, or designate a different number.',
     },
   ],
   messenger: [
@@ -114,6 +121,30 @@ export function boundDestination(
   const legacy = typeof config?.destination === 'string' ? config.destination : undefined;
   if (channels.length === 0) return legacy;
   return channels.map((c) => perChannel[c]).find(Boolean) ?? legacy;
+}
+
+/**
+ * What a TOGGLED-OFF messaging row should say about its saved grant (round 7
+ * WP-10, item 8). The raw grant status is not enough: a Meta grant is one row for
+ * WhatsApp and Messenger, and "connected" on it says nothing about whether THIS
+ * surface's id was ever bound — so "nothing to set up again" over a row whose
+ * WhatsApp number id was never entered promised a re-enable that would land on
+ * "Action needed: add the WhatsApp phone number ID". Derived from the bound
+ * destination: connected AND bound → nothing to set up; connected but unbound →
+ * the id is still owed; expired/error/dormant → the shared status wording.
+ */
+export function offRowSurfaceNote(
+  surface: MessagingSurface,
+  connection: Connection | undefined,
+  statusNote: (status: Connection['status'] | undefined) => string | null,
+): string | null {
+  if (!connection) return null;
+  if (connection.status === 'connected') {
+    return boundDestination(connection, surface.channels)
+      ? statusNote('connected')
+      : `Its sign-in is saved, but ${surface.label} still needs its ${surface.destination.label} before it answers — turn this back on to add it.`;
+  }
+  return statusNote(connection.status);
 }
 
 /** Whether a just-authorized provider has everything it needs to answer. */

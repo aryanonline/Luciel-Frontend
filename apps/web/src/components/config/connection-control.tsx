@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { Banner, Button, Field, Input, Modal, StatusChip } from '@luciel/ui';
 import {
   LucielApiError,
@@ -20,7 +21,7 @@ import {
 import { authorizeOrExplain } from '@/lib/oauth-connect';
 import type { ActionNotice } from '@/lib/use-action-notice';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
-import { channelLabel, chipKind, toolMeta } from './labels';
+import { channelLabel, chipKind, DORMANT_NOTE, toolMeta } from './labels';
 import { boundDestination } from './messaging-surfaces';
 
 /**
@@ -76,6 +77,62 @@ export interface ConnectionControlProps {
   unavailableReason?: string;
   /** Server-derived hold-off reason from the dependent tool (read-only, contract §3). */
   disabledReason?: string | null;
+  /**
+   * The state of the `GET /connections` read that `connection` came from (round 7
+   * WP-10, item 2). An absent row means "nothing connected" ONLY once that read
+   * has settled: while it is pending, or after it failed, the row is unknown, and
+   * the control says so instead of rendering "Action needed: connect X" — which
+   * counted the owner's attention against a state nobody had read. Defaults to
+   * `ready` for call sites that hand over a row they already hold.
+   */
+  readState?: ConnectionReadState;
+  /** Re-run the failed read. Rendered as the retry beside the error note. */
+  onRetryRead?: () => void;
+}
+
+export type ConnectionReadState = 'pending' | 'error' | 'ready';
+
+/**
+ * Maps a TanStack query's flags onto the control's read state, so every pillar
+ * threads the same three values and none of them re-derives "unknown" on its own.
+ */
+export function connectionReadState(query: { isPending: boolean; isError: boolean }) {
+  return query.isPending ? 'pending' : query.isError ? 'error' : 'ready';
+}
+
+/**
+ * What an unsettled `GET /connections` read looks like wherever a connection's
+ * state would otherwise be claimed: a quiet "checking…" while it loads, and a
+ * retryable "we could not read it" after a failure. Neither is a chip, so
+ * neither can be mistaken for — or counted as — Action needed.
+ */
+export function ConnectionReadNote({
+  state,
+  label,
+  onRetry,
+}: {
+  state: Exclude<ConnectionReadState, 'ready'>;
+  label: string;
+  onRetry?: () => void;
+}) {
+  if (state === 'pending') {
+    return (
+      <span className="text-vm-0 text-vm-text-muted" role="status">
+        Checking the {label} connection…
+      </span>
+    );
+  }
+  return (
+    <Banner tone="warning">
+      We could not read this connection&apos;s state, so nothing here is shown as needing your
+      attention — it may be connected already.{' '}
+      {onRetry && (
+        <button type="button" className="underline underline-offset-2" onClick={onRetry}>
+          Retry
+        </button>
+      )}
+    </Banner>
+  );
 }
 
 /** Chip detail per raw status, so "Action needed" always says what to do. */
@@ -117,6 +174,25 @@ function statusDetailNote(detail: string | null | undefined): string | null {
   if (trimmed.includes(' ')) return trimmed;
   const words = trimmed.replace(/[_-]+/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * A `provisioned` provider is a platform-provisioned resource (today: the CSV
+ * record source). There is no sign-in and no credential form — the upload IS
+ * the connection, and it lives under Knowledge → records. The backend answers
+ * a start for it with `requiresClientForm` and refuses the credential POST
+ * that would follow, so no connect button may ever be offered for it.
+ */
+function isProvisioned(option: { authKind: string } | undefined): boolean {
+  return option?.authKind === 'provisioned';
+}
+
+/** Where a provisioned resource is actually set up, in the owner's words. */
+function provisionedNote(option: { displayName: string; helpText: string } | undefined): string {
+  const where =
+    'There is nothing to sign in to here — upload your CSV under Knowledge → records, and Luciel looks records up in it.';
+  const help = option?.helpText?.trim();
+  return help ? `${where} ${help}` : where;
 }
 
 /** Human names for whatever a disconnect took down with it (contract §1). */
@@ -189,8 +265,14 @@ export function ConnectionControl({
   destinationField,
   unavailableReason,
   disabledReason,
+  readState = 'ready',
+  onRetryRead,
 }: ConnectionControlProps) {
   const providers = useConnectionProviders(connectionType);
+  // The row is unknown until its read settles (item 2): claim nothing, offer
+  // nothing — a Connect button on a row that may already be connected is as
+  // wrong as the "Action needed" chip it sat under.
+  const readUnknown = readState !== 'ready';
   const { connect, reconnect, disconnect, bindDestination, submitCredentials } =
     useConnectionLifecycle();
   // Switching accounts/providers rides the proven-before-cutover SWAP (Arch
@@ -238,12 +320,17 @@ export function ConnectionControl({
     fallbackProvider;
   const selectedOption = choices.find((o) => o.provider === selectedProvider);
   const providerName = selectedOption?.displayName ?? label;
-  // A credential_form provider with no fields is not connected from here at all
-  // (CSV lives under Knowledge) — say where it happens instead of offering a
-  // button that would be refused.
   const isCredentialForm = selectedOption?.authKind === 'credential_form';
   const credentialFields = selectedOption?.credentialFields ?? [];
-  const providedElsewhere = isCredentialForm && credentialFields.length === 0;
+  // Provided elsewhere: nothing here can connect it, so say where it happens
+  // instead of offering a button that would be refused. The served registry marks
+  // the CSV record source `provisioned` — a platform-provisioned resource with no
+  // sign-in and no form — and the old guard (a credential form with no fields)
+  // never matched it, so the real backend rendered "Connect CSV upload" that
+  // dead-ended on "Provider 'csv' does not take a credential form." (round 7
+  // WP-10, item 1). The field-less credential form is kept as the older shape.
+  const providedElsewhere =
+    isProvisioned(selectedOption) || (isCredentialForm && credentialFields.length === 0);
 
   // A pinned provider that is not the one currently connected means this surface
   // is asking for a different grant than the row holds (an older Meta provider
@@ -265,7 +352,7 @@ export function ConnectionControl({
   // error naming the free allowance), so no connect/switch surface renders —
   // the chip's billing note is the honest action instead of a dead button.
   const isDormant = status === 'dormant';
-  const offerConnect = (!isLive || switching) && !isDormant;
+  const offerConnect = (!isLive || switching) && !isDormant && !readUnknown;
   const busy =
     connect.isPending ||
     swap.isPending ||
@@ -324,6 +411,13 @@ export function ConnectionControl({
     const targetOption = choices.find((o) => o.provider === targetProvider);
     const targetName = targetOption?.displayName ?? label;
     const targetIsCredentialForm = targetOption?.authKind === 'credential_form';
+    // Never start a flow for a provisioned resource: the backend would answer
+    // `requiresClientForm` and then refuse the credential POST. Say where the
+    // setup happens instead (round 7 WP-10, item 1).
+    if (isProvisioned(targetOption)) {
+      say('info', provisionedNote(targetOption));
+      return;
+    }
     // An existing row is re-credentialed in place: SWAP when the account or
     // provider is changing (staged alongside the live one; cutover only after
     // the replacement verifies), reconnect when it is the same one expiring.
@@ -441,14 +535,21 @@ export function ConnectionControl({
     <div className="space-y-vm-3">
       {purpose && <p className="text-vm-1 text-vm-text-muted">{purpose}</p>}
 
-      {prerequisite && status !== 'connected' && (
+      {prerequisite && status !== 'connected' && !readUnknown && (
         <p className="text-vm-0 text-vm-text-muted" role="note">
           {prerequisite}
         </p>
       )}
 
       <div className="flex flex-wrap items-center gap-vm-3">
-        {needsDestination && destinationField ? (
+        {readUnknown ? (
+          /* Not a chip: an unread row is neither connected nor needing action. */
+          <ConnectionReadNote
+            state={readState as Exclude<ConnectionReadState, 'ready'>}
+            label={label}
+            onRetry={onRetryRead}
+          />
+        ) : needsDestination && destinationField ? (
           /* Name the surface's OWN id field: three Meta rows each owe a
              different id, and a generic "name the id" chip cannot tell the
              owner which of the three they are being asked for. */
@@ -482,6 +583,20 @@ export function ConnectionControl({
           </Button>
         )}
       </div>
+
+      {/* Dormant is a billing state (audit F162): the chip says "paused until a
+          payment method is added", and this is the way there — the same sentence
+          the off-row note uses, with the Billing page an actual link (round 7
+          WP-10, item 10). */}
+      {isDormant && (
+        <p className="text-vm-0 text-vm-text-muted" role="note">
+          {DORMANT_NOTE.lead}{' '}
+          <Link href={DORMANT_NOTE.href} className="underline underline-offset-2">
+            {DORMANT_NOTE.action}
+          </Link>{' '}
+          {DORMANT_NOTE.tail}
+        </p>
+      )}
 
       {/* The server's own words about a not-live row (round 5, item 3):
           `statusDetail` renders as a muted note under the chip, minus the
@@ -531,6 +646,19 @@ export function ConnectionControl({
         </Banner>
       )}
 
+      {/* Proven-before-cutover reassurance (Arch §3.8.7 B): the switch is staged,
+          so abandoning the new sign-in costs nothing. Rendered for EVERY switch —
+          it used to live inside the multi-provider branch only, so a pinned or
+          single-provider surface (Meta, a webhook, a Twilio number) switched with
+          no word that the current connection keeps serving until the replacement
+          verifies (round 7 WP-10, item 9). */}
+      {switching && offerConnect && (
+        <p className="text-vm-0 text-vm-text-muted" role="note" data-testid="swap-reassurance">
+          Your current connection stays live until the new one is verified — backing out of the
+          sign-in changes nothing.
+        </p>
+      )}
+
       {/* Honest-disabled: nothing here can be connected yet, so there is no
           connect button to press. The choices stay visible so the owner can see
           what this will offer (contract §1). */}
@@ -570,37 +698,39 @@ export function ConnectionControl({
           information, never as disabled controls. */}
       {offerConnect && !nothingAvailable && !pinned && connectable.length > 1 && (
         <div className="rounded-vm-card border border-vm-border p-vm-3">
-          {/* Proven-before-cutover reassurance (Arch §3.8.7 B): the switch is
-              staged, so abandoning the new provider's sign-in costs nothing. */}
-          {switching && (
-            <p className="mb-vm-2 text-vm-0 text-vm-text-muted">
-              Your current connection stays live until the new one is verified — backing out of the
-              sign-in changes nothing.
-            </p>
-          )}
           <div className="grid gap-vm-2">
-            {connectable.map((option) => (
-              <div key={option.provider} className="flex flex-wrap items-center gap-vm-2">
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setChosen(option.provider);
-                    setCredentials({});
-                    if (option.authKind !== 'credential_form') {
-                      beginConnectFor(option.provider);
-                    }
-                  }}
-                >
-                  {busy
-                    ? 'Working…'
-                    : boundElsewhere || switching
-                      ? `Switch to ${option.displayName}`
-                      : `Connect ${option.displayName}`}
-                </Button>
-                <span className="text-vm-0 text-vm-text-muted">{option.helpText}</span>
-              </div>
-            ))}
+            {connectable.map((option) =>
+              isProvisioned(option) ? (
+                /* A provisioned resource (the CSV record source) gets no button
+                   even beside connectable siblings: the upload under Knowledge
+                   is the whole connection (round 7 WP-10, item 1). */
+                <p key={option.provider} className="text-vm-0 text-vm-text-muted" role="note">
+                  <span className="font-label text-vm-text">{option.displayName}</span> —{' '}
+                  {provisionedNote(option)}
+                </p>
+              ) : (
+                <div key={option.provider} className="flex flex-wrap items-center gap-vm-2">
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setChosen(option.provider);
+                      setCredentials({});
+                      if (option.authKind !== 'credential_form') {
+                        beginConnectFor(option.provider);
+                      }
+                    }}
+                  >
+                    {busy
+                      ? 'Working…'
+                      : boundElsewhere || switching
+                        ? `Switch to ${option.displayName}`
+                        : `Connect ${option.displayName}`}
+                  </Button>
+                  <span className="text-vm-0 text-vm-text-muted">{option.helpText}</span>
+                </div>
+              ),
+            )}
           </div>
           {choices.some((o) => !o.configured) && (
             <ul className="mt-vm-2 grid gap-vm-1 text-vm-0 text-vm-text-muted">
@@ -653,7 +783,11 @@ export function ConnectionControl({
         (!multiConnect || (chosen !== null && isCredentialForm && !providedElsewhere)) && (
           <div className="flex flex-wrap items-center gap-vm-2">
             {providedElsewhere ? (
-              <span className="text-vm-1 text-vm-text-muted">{selectedOption?.helpText}</span>
+              <span className="text-vm-1 text-vm-text-muted" role="note">
+                {isProvisioned(selectedOption)
+                  ? provisionedNote(selectedOption)
+                  : selectedOption?.helpText}
+              </span>
             ) : (
               <Button
                 variant="secondary"

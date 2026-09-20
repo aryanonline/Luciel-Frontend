@@ -2,6 +2,15 @@ import type { LucielApiClient, PageOptions } from '../client';
 import type { BillingInfo } from '../schemas';
 import { createTransport, type TransportOptions } from './transport';
 
+/** POST /admin/account/export as served: camelCase or the endpoint's snake_case. */
+interface AccountExportWire {
+  ok?: boolean;
+  downloadUrl?: string;
+  download_url?: string;
+  ttlDays?: number;
+  ttl_days?: number;
+}
+
 /** Ingest endpoints take `file` + `name` as multipart form fields. */
 function formData(file: File, name: string): FormData {
   const form = new FormData();
@@ -206,7 +215,19 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       auditLog: (page) => t.get(`/api/v1/admin/usage/audit-log${pageQuery(page)}`),
     },
     account: {
-      requestExport: () => t.post('/api/v1/admin/account/export'),
+      // The export endpoint's own model is not on the camelCase WireModel (its
+      // contract test reads `download_url`), so both spellings are accepted and
+      // normalised to the frozen schema shape (round 7 WP-10, item 12).
+      requestExport: async () => {
+        const raw = await t.post<AccountExportWire>('/api/v1/admin/account/export');
+        const downloadUrl = raw?.downloadUrl ?? raw?.download_url;
+        const ttlDays = raw?.ttlDays ?? raw?.ttl_days;
+        return {
+          ok: raw?.ok ?? true,
+          ...(typeof downloadUrl === 'string' && downloadUrl ? { downloadUrl } : {}),
+          ...(typeof ttlDays === 'number' ? { ttlDays } : {}),
+        };
+      },
       close: (opts) =>
         t.post('/api/v1/admin/account/close', {
           confirmDeleteLuciel: opts?.confirmDeleteLuciel ?? false,

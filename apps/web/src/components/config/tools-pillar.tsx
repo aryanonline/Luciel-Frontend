@@ -12,7 +12,11 @@ import type {
 } from '@luciel/api-client';
 import { useCapabilities, useConnections, useLucielMutations } from '@/lib/hooks';
 import { useActionNotice } from '@/lib/use-action-notice';
-import { ConnectionControl } from './connection-control';
+import {
+  ConnectionControl,
+  connectionReadState,
+  type ConnectionReadState,
+} from './connection-control';
 import { CalendlyEventTypePicker } from './calendly-event-type';
 import { toolMeta, chipKind, channelLabel, offRowConnectionNote } from './labels';
 
@@ -122,6 +126,10 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
     connectionType
       ? connections.data?.find((c) => c.connectionType === connectionType)
       : undefined;
+  // Round 7 WP-10, item 2: an absent row means "nothing connected" only once the
+  // read has settled; every control below is told which it is.
+  const connectionsRead = connectionReadState(connections);
+  const retryConnections = () => void connections.refetch();
 
   /**
    * Returns true when the tool's required channel is enabled, or when the
@@ -211,6 +219,8 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
             group={group}
             tools={luciel.tools.filter((t) => group.toolIds.includes(t.id))}
             connection={connectionFor(group.connectionType)}
+            readState={connectionsRead}
+            onRetryRead={retryConnections}
             onToggle={(enabled) => writeEnabled(group.toolIds, enabled, group.label)}
           />
         ))}
@@ -222,6 +232,15 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
           const channelBlocked = channelDep !== undefined && !isChannelEnabled(t.id);
           const on = t.enabled && !channelBlocked;
           const chip = target ? null : chipKind(t.connectionStatus);
+          // Off + a saved connection: the toggle never disconnects (Arch §3.8.7),
+          // so the OFF row says the connection survives — and, when the tool
+          // reaches an external system, keeps it manageable below.
+          const offNote =
+            !on && !channelBlocked
+              ? offRowConnectionNote(
+                  target ? connectionFor(target.connectionType)?.status : t.connectionStatus,
+                )
+              : null;
           return (
             <li key={t.id} className="py-vm-3">
               <div className="flex items-start justify-between gap-vm-3">
@@ -258,30 +277,43 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
                         account and number with the SMS channel above.
                       </p>
                     )}
-                    {/* Off + a saved connection: say it survives the toggle —
-                        the connect control below only renders while on, so
-                        without this the connection (even one needing a
-                        reconnect) went invisible. */}
-                    {!on &&
-                      !channelBlocked &&
-                      offRowConnectionNote(
-                        target
-                          ? connectionFor(target.connectionType)?.status
-                          : t.connectionStatus,
-                      ) && (
-                        <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
-                          {offRowConnectionNote(
-                            target
-                              ? connectionFor(target.connectionType)?.status
-                              : t.connectionStatus,
-                          )}
-                        </p>
-                      )}
+                    {/* Say the saved connection survives the toggle — the
+                        connect control only renders while on, so without
+                        this the connection (even one needing a reconnect)
+                        went invisible. */}
+                    {offNote && (
+                      <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+                        {offNote}
+                      </p>
+                    )}
                   </div>
                 </div>
                 {/* A tool with a connection gets its chip from the control below. */}
                 {on && chip && <StatusChip kind={chip} />}
               </div>
+
+              {/* Round 7 WP-10, item 3 (the channels' round 6 WP-D rule, applied here):
+                  an OFF tool with a saved connection can still be switched, reconnected
+                  or disconnected without turning it on first — the same control, behind
+                  a disclosure so an off row does not open a full panel unasked. */}
+              {offNote && target && (
+                <details className="mt-vm-2 pl-[3.5rem]">
+                  <summary className="cursor-pointer text-vm-0 underline underline-offset-2">
+                    Manage connection
+                  </summary>
+                  <div className="mt-vm-3">
+                    <ConnectionControl
+                      connectionType={target.connectionType}
+                      label={meta.connectLabel ?? meta.label}
+                      connection={connectionFor(target.connectionType)}
+                      fallbackProvider={target.fallbackProvider}
+                      unavailableReason={CONNECTION_COPY[target.connectionType]?.unavailableReason}
+                      readState={connectionsRead}
+                      onRetryRead={retryConnections}
+                    />
+                  </div>
+                </details>
+              )}
 
               {on && target && (
                 <div className="mt-vm-3 pl-[3.5rem]">
@@ -293,6 +325,8 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
                     fallbackProvider={target.fallbackProvider}
                     unavailableReason={CONNECTION_COPY[target.connectionType]?.unavailableReason}
                     disabledReason={t.disabledReason}
+                    readState={connectionsRead}
+                    onRetryRead={retryConnections}
                   />
                 </div>
               )}
@@ -315,11 +349,15 @@ function CapabilityRow({
   group,
   tools,
   connection,
+  readState,
+  onRetryRead,
   onToggle,
 }: {
   group: CapabilityGroup;
   tools: AddonTool[];
   connection?: Connection;
+  readState: ConnectionReadState;
+  onRetryRead: () => void;
   onToggle: (enabled: boolean) => void;
 }) {
   const enabled = tools.length > 0 && tools.every((t) => t.enabled);
@@ -351,6 +389,28 @@ function CapabilityRow({
         </div>
       </div>
 
+      {/* Round 7 WP-10, item 3: the OFF capability's saved connection stays
+          manageable (switch / reconnect / disconnect) behind a disclosure. */}
+      {!enabled && group.connectionType && offRowConnectionNote(connection?.status) && (
+        <details className="mt-vm-2 pl-[3.5rem]">
+          <summary className="cursor-pointer text-vm-0 underline underline-offset-2">
+            Manage connection
+          </summary>
+          <div className="mt-vm-3">
+            <ConnectionControl
+              connectionType={group.connectionType}
+              label={
+                CONNECTION_COPY[group.connectionType]?.connectLabel ?? group.label.toLowerCase()
+              }
+              connection={connection}
+              unavailableReason={CONNECTION_COPY[group.connectionType]?.unavailableReason}
+              readState={readState}
+              onRetryRead={onRetryRead}
+            />
+          </div>
+        </details>
+      )}
+
       {enabled && group.connectionType && (
         <div className="mt-vm-3 pl-[3.5rem]">
           <ConnectionControl
@@ -360,6 +420,8 @@ function CapabilityRow({
             connection={connection}
             unavailableReason={CONNECTION_COPY[group.connectionType]?.unavailableReason}
             disabledReason={disabledReason}
+            readState={readState}
+            onRetryRead={onRetryRead}
           />
           {/* Calendly books ONE event type (round 6 WP-H): the owner picks which,
               here, beside the connection it belongs to. Other calendars book

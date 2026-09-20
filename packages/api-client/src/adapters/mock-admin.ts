@@ -1004,7 +1004,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           row.statusDetail = `Action needed: ${option.displayName} is not available yet.`;
           return ok({ authorizeUrl: null, statusDetail: row.statusDetail });
         }
-        if (option?.authKind === 'credential_form') {
+        // A provisioned resource (the CSV record source) has no sign-in either; the
+        // backend answers the same `requiresClientForm` a credential form gets, and
+        // the credential POST that would follow is refused (submitCredentials below).
+        // The UI must never get this far — it says where the upload happens instead.
+        if (option?.authKind === 'credential_form' || option?.authKind === 'provisioned') {
           return ok({ requiresClientForm: true });
         }
         return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
@@ -1470,7 +1474,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (!option || option.authKind !== 'credential_form') {
           throw new LucielApiError({
             code: 'validation_error',
-            message: 'This connection is completed with a sign-in, not typed details.',
+            // The backend's own refusal wording for a provider that takes no form (a
+            // provisioned resource such as the CSV record source, or an OAuth provider).
+            message: `Provider '${c.provider}' does not take a credential form.`,
           });
         }
         for (const field of option.credentialFields) {
@@ -1753,7 +1759,14 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     account: {
       async requestExport() {
         guardVerified();
-        return ok({ ok: true });
+        // The bundle's time-limited link comes back in the body as well as by email
+        // (round 7 WP-10, item 12) — the mock hands back the same shape the backend
+        // does, so the UI can show the link and the link's life.
+        return ok({
+          ok: true,
+          downloadUrl: `${MOCK_AUTHORIZE_ORIGIN}/api/v1/admin/account/export/${nextId()}`,
+          ttlDays: 7,
+        });
       },
       async close(opts) {
         guardVerified();

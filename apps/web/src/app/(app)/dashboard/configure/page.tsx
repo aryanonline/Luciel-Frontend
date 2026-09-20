@@ -78,6 +78,24 @@ function ConfigureBody() {
     );
   }
 
+  if (luciel.state === 'luciel_grace_window') {
+    // Round 7 WP-10, item 4: a Luciel in its 30-day grace window is inert — the backend
+    // refuses every pillar write ("Configuration cannot be changed while the Luciel is
+    // luciel_grace_window"), so rendering six editable pillars only manufactured failed
+    // saves. The one thing that can be done is restore it, and that lives on Account.
+    return (
+      <Banner tone="warning">
+        {luciel.name} is deleted and in its 30-day restore window, so its configuration cannot be
+        edited right now. Everything here is kept exactly as it was: restore it and it comes back
+        fully active, with nothing to set up again.{' '}
+        <Link href="/dashboard/account" className="underline">
+          Restore it from the Account page
+        </Link>
+        .
+      </Banner>
+    );
+  }
+
   return (
     <>
       <PageHeader
@@ -87,10 +105,14 @@ function ConfigureBody() {
 
       {/* When a change takes effect (Arch §3.8.7 rule E, Decision #39): additive/
           neutral edits snapshot-defer to NEW conversations; turning something off,
-          revoking, or any safety change takes effect immediately. Banner pairs
-          color + icon + text (AA). */}
+          revoking, or any safety change takes effect immediately. Rule E.1 is the
+          carve-out (round 7 WP-10, item 5): the channel a conversation is RIDING ON
+          is never severed by a disable — new conversations stop, the one underway
+          finishes there. Banner pairs color + icon + text (AA). */}
       <Banner tone="info">
-        Changes apply to new conversations. Turning something off takes effect immediately.
+        Changes apply to new conversations. Turning something off takes effect immediately. One
+        exception: turning a channel off stops new conversations on it right away, but a
+        conversation already underway on that channel finishes there.
       </Banner>
 
       <ChannelsPillar luciel={luciel} />

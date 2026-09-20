@@ -126,12 +126,24 @@ export function offRowConnectionNote(status: ConnectionStatus | undefined): stri
       return 'Its saved connection needs a reconnect — turn this back on to fix it.';
     case 'dormant':
       // Audit F162: dormant is a billing state, not a broken connection.
-      return 'Its connection is dormant: usage past the free conversations could not be billed. Add a card on the Billing page and it resumes.';
+      return `${DORMANT_NOTE.lead} ${DORMANT_NOTE.action} ${DORMANT_NOTE.tail}`;
     default:
       // unconfigured / not_connected / revoked: nothing saved worth noting.
       return null;
   }
 }
+
+/**
+ * The ONE dormant wording (audit F162), in parts so the connection control can
+ * make "Add a card on the Billing page" an actual link to /dashboard/billing
+ * (round 7 WP-10, item 10) while the off-row note keeps the same sentence.
+ */
+export const DORMANT_NOTE = {
+  lead: 'Its connection is dormant: usage past the free conversations could not be billed.',
+  action: 'Add a card on the Billing page',
+  tail: 'and it resumes.',
+  href: '/dashboard/billing',
+} as const;
 
 /**
  * Human labels for `ConnectionType` — the OTHER half of a Connections row.
