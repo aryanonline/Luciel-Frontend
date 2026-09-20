@@ -22,6 +22,17 @@ describe('P0-5: config-timing note on the configure surface', () => {
       ),
     ).toBeInTheDocument();
   });
+
+  // Round 7 WP-10, item 5 — the rule E.1 carve-out: the channel a conversation is
+  // riding on is never severed by a disable; only NEW conversations stop.
+  it('states the mid-conversation carve-out for a channel turned off (Arch §3.8.7 E.1)', async () => {
+    renderWithQuery(<ConfigurePage />);
+    expect(
+      await screen.findByText(
+        /turning a channel off stops new conversations on it right away, but a conversation already underway on that channel finishes there/i,
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 describe('P0-5: connection swap affordance on the dashboard', () => {

@@ -443,7 +443,7 @@ describe('WP-D: the channel→tool cascade is the server’s (F163)', () => {
     await waitFor(() => expect(calls.updateChannels).toHaveLength(1));
     expect(calls.updateTools).toBe(0);
     expect(
-      await screen.findByText('Email is off, and Send email was switched off with it.'),
+      await screen.findByText(/^Email is off, and Send email was switched off with it./),
     ).toBeVisible();
   });
 });
