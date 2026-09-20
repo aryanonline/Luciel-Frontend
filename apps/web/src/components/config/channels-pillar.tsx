@@ -31,12 +31,16 @@ import {
 import { useActionNotice } from '@/lib/use-action-notice';
 import { api } from '@/lib/api';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
-import { ConnectionControl } from './connection-control';
+import {
+  ConnectionControl,
+  ConnectionReadNote,
+  connectionReadState,
+} from './connection-control';
 import { SmsWebhookTokenRotate } from './sms-webhook-token';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
 import { channelLabel, chipKind, offRowConnectionNote, toolMeta } from './labels';
-import { MESSAGING_SURFACES } from './messaging-surfaces';
+import { MESSAGING_SURFACES, offRowSurfaceNote } from './messaging-surfaces';
 
 /**
  * Channels pillar (Vision §3.1, Customer Journey §4.1). Multi-select of channels.
@@ -92,6 +96,15 @@ const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], keyof typeof too
   email: 'send_email',
 };
 
+/**
+ * What turning a channel OFF does to a conversation already on it (Arch §3.8.7
+ * rule E.1; round 7 WP-10, item 5): new conversations stop immediately, but the
+ * channel a lead is mid-sentence on is never severed by a disable — that
+ * conversation finishes there. Said in the toast, where the owner just acted.
+ */
+export const CHANNEL_OFF_TIMING =
+  'New conversations on it stop now; a conversation already underway on it finishes there.';
+
 /** UX-only E.164 shape check (client validation is never a security control). */
 const E164 = /^\+[1-9]\d{7,14}$/;
 
@@ -113,6 +126,11 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   // and Messenger share the Facebook row, Instagram has its own.
   const connectionFor = (type: ConnectionType) =>
     connections.data?.find((c) => c.connectionType === type);
+  // Round 7 WP-10, item 2: an absent row means "nothing connected" only once the
+  // read has settled. Threaded into every control below, and read directly by the
+  // phone rows, whose chips this pillar derives itself.
+  const connectionsRead = connectionReadState(connections);
+  const retryConnections = () => void connections.refetch();
   const smsConnection = connectionFor('sms_sender');
   const smsProviders = useConnectionProviders('sms_sender');
   const twilioOption = smsProviders.data
@@ -166,6 +184,17 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const needsTwilio = phoneEnabled && !twilioConnected && !needsCredentialRefresh;
   const needsNumber =
     phoneEnabled && twilioConnected && !numberConfigured && !needsCredentialRefresh;
+  // The Twilio account's presence is read off the sms_sender ROW (its Account SID),
+  // so until that read settles neither "connect your Twilio account" nor "add your
+  // number" can be claimed. Every other phone state — number on file, pending
+  // carrier registration, not hosted in the account, credential refresh — is
+  // served on the Luciel itself and needs no row to be true, so those still render.
+  const phoneReadUnknown =
+    phoneEnabled &&
+    connectionsRead !== 'ready' &&
+    !numberConfigured &&
+    !needsCredentialRefresh &&
+    numberStatus !== 'not_operable_hosting_required';
   const phonePending = phoneEnabled && numberStatus === 'pending_carrier_registration';
   const phoneValid = E164.test(phoneNumber.trim());
   // C9 picker: fetch the account's own numbers only while the designate step is
@@ -327,9 +356,9 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         if (dependentToolId && wentOff) {
           // The tool's product label, never the raw wire id ("Send SMS", not
           // "send sms") — the one de-snaked enum that had leaked into a toast.
-          return `${channelLabel[id]} is off, and ${toolMeta[dependentToolId].label} was switched off with it.`;
+          return `${channelLabel[id]} is off, and ${toolMeta[dependentToolId].label} was switched off with it. ${CHANNEL_OFF_TIMING}`;
         }
-        return `${channelLabel[id]} is ${enabled ? 'on' : 'off'}.`;
+        return enabled ? `${channelLabel[id]} is on.` : `${channelLabel[id]} is off. ${CHANNEL_OFF_TIMING}`;
       },
       `We could not turn ${channelLabel[id]} ${enabled ? 'on' : 'off'}. Nothing was changed — please try again.`,
     );
@@ -377,6 +406,19 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
           // knows authorized-without-a-destination is not live (contract §2).
           const showControl = Boolean(surfaces) && c.enabled;
           const chip = isPhoneChannel || showControl ? null : chipKind(c.connectionStatus);
+          // Off-row note (round 7 WP-10, item 8): a messaging surface reads its grant
+          // ROW and its bound destination, never the raw grant status alone.
+          const offRowNote = surfaces
+            ? (surfaces
+                .map((surface) =>
+                  offRowSurfaceNote(
+                    surface,
+                    connectionFor(surface.connectionType),
+                    offRowConnectionNote,
+                  ),
+                )
+                .find(Boolean) ?? null)
+            : offRowConnectionNote(c.connectionStatus);
           return (
             <li key={c.id} className="py-vm-3">
               <div className="flex items-center justify-between">
@@ -393,7 +435,13 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     enabled row with no visible status leaves "is this live?"
                     unanswered at the toggle (honest connection states). */}
                 {c.enabled && isPhoneChannel ? (
-                  numberStatus === 'not_operable_hosting_required' ? (
+                  phoneReadUnknown ? (
+                    <ConnectionReadNote
+                      state={connectionsRead as 'pending' | 'error'}
+                      label="Twilio"
+                      onRetry={retryConnections}
+                    />
+                  ) : numberStatus === 'not_operable_hosting_required' ? (
                     <StatusChip
                       kind="action_needed"
                       detail="this number isn't in your Twilio account yet"
@@ -434,14 +482,14 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   §3.8.7), but the connect surface only renders while on — say
                   the connection survives so the owner knows re-enabling needs
                   no re-setup (or that a reconnect is waiting). */}
-              {!c.enabled && offRowConnectionNote(c.connectionStatus) && (
+              {!c.enabled && offRowNote && (
                 <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
-                  {offRowConnectionNote(c.connectionStatus)}
+                  {offRowNote}
                 </p>
               )}
               {/* Round 6 WP-D: an OFF row with a saved connection can still be managed —
                   switched, reconnected or disconnected — without turning it on first. */}
-              {!c.enabled && surfaces && offRowConnectionNote(c.connectionStatus) && (
+              {!c.enabled && surfaces && offRowNote && (
                 <details className="mt-vm-2 pl-[3.5rem]">
                   <summary className="cursor-pointer text-vm-0 underline underline-offset-2">
                     Manage connection
@@ -456,6 +504,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                         provider={surface.provider}
                         destinationField={{ ...surface.destination, channels: surface.channels }}
                         unavailableReason={surface.unavailableReason}
+                        readState={connectionsRead}
+                        onRetryRead={retryConnections}
                       />
                     ))}
                   </div>
@@ -501,6 +551,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                           channels: surface.channels,
                         }}
                         unavailableReason={surface.unavailableReason}
+                        readState={connectionsRead}
+                        onRetryRead={retryConnections}
                       />
                       <p className="mt-vm-2 text-vm-0 text-vm-text-muted" role="note">
                         {surface.note}
@@ -512,7 +564,16 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
               {/* The shared BYO phone setup renders INSIDE the first enabled
                   phone row, so the fields sit under the toggle that revealed
                   them instead of after the whole list. */}
-              {c.id === phonePanelHost && (
+              {c.id === phonePanelHost && phoneReadUnknown && (
+                <div className="mt-vm-3 pl-[3.5rem]">
+                  <ConnectionReadNote
+                    state={connectionsRead as 'pending' | 'error'}
+                    label="Twilio"
+                    onRetry={retryConnections}
+                  />
+                </div>
+              )}
+              {c.id === phonePanelHost && !phoneReadUnknown && (
                 <div className="mt-vm-3 pl-[3.5rem]">
                   <PhoneNumberPanel
                     phonePending={phonePending}

@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardTitle, CardDescription, Button, Modal, Banner, PageHeader } from '@luciel/ui';
+import type { AccountExportResult } from '@luciel/api-client';
 import { useLuciel, useLucielMutations } from '@/lib/hooks';
 import { api } from '@/lib/api';
 
@@ -13,8 +14,11 @@ import { api } from '@/lib/api';
  *    no grace timer. In-flight conversations finish.
  *  - Delete Luciel: 30-day grace, restorable to ACTIVE (not paused); account
  *    shell survives (you can build a fresh Luciel without re-signing-up).
- *  - Close account: requires the Luciel deleted first; export-first; ends the
- *    login/email/billing.
+ *  - Close account: SUBSUMES deleting the Luciel (Arch §3.6.6; round 6 WP-D
+ *    F156 / round 7 WP-10 item 13) — a Luciel still serving is put through the
+ *    same fused delete first, the closure runs `confirmDeleteLuciel`, and the
+ *    hard cascade removes EVERYTHING 30 days after closure. Export-first; ends
+ *    the login/email/billing.
  * Each carries its correct, distinct confirmation copy.
  *
  * Every action here is irreversible or nearly so, which is exactly why none of
@@ -30,16 +34,28 @@ export default function AccountPage() {
   const m = useLucielMutations();
   const [dialog, setDialog] = React.useState<Dialog>(null);
   const [inlineError, setInlineError] = React.useState<string | null>(null);
+  /**
+   * The served export result (round 7 WP-10, item 12): the API answers with the
+   * time-limited download link, and the UI used to discard it — email was the only
+   * delivery, and a failed request closed the dialog as if it had worked. The link
+   * now renders in the dialog on success (the email sentence stays), and a failure
+   * stays in the dialog with its reason (Modal's async contract).
+   */
+  const [exportResult, setExportResult] = React.useState<AccountExportResult | null>(null);
 
-  const close = () => setDialog(null);
+  const close = () => {
+    setDialog(null);
+    setExportResult(null);
+  };
   const isPaused = luciel?.state === 'paused';
   const inGrace = luciel?.state === 'luciel_grace_window';
   /**
-   * Closing the account requires the Luciel deleted first (client.ts account.close).
-   * Gate on that rather than letting the API reject a confirmed destructive
-   * action, and point at the step that unblocks it (P0-5).
+   * A Luciel still serving (active or paused). Closing no longer waits for it to be
+   * deleted: the backend accepts `confirmDeleteLuciel` and runs the fused
+   * delete-then-close itself (round 7 WP-10, item 13). The flag only changes what
+   * the confirmation says — that closing deletes the Luciel first.
    */
-  const liveLuciel = Boolean(luciel) && !inGrace;
+  const liveLuciel = luciel?.state === 'active' || isPaused;
 
   /** Inline (non-modal) actions still have to report; the modals report themselves. */
   const runInline = async (action: () => Promise<unknown>, failure: string) => {
@@ -128,22 +144,22 @@ export default function AccountPage() {
       <Card>
         <CardTitle>Close my account</CardTitle>
         <CardDescription>
-          Ends the account itself — login, email, and billing. Because it&apos;s the bigger step, it
-          can only happen once your Luciel is deleted, so it unlocks after the step above. This is
-          &ldquo;close the office entirely.&rdquo;
+          Ends the account itself — login, email, and billing. It&apos;s the bigger step: if your
+          Luciel is still running, closing deletes it first, and everything is permanently deleted
+          30 days after closure. This is &ldquo;close the office entirely.&rdquo;
         </CardDescription>
         <div className="mt-vm-3 flex gap-vm-2">
           <Button variant="secondary" onClick={() => setDialog('export')}>
             Download all my data
           </Button>
-          <Button variant="danger" onClick={() => setDialog('close')} disabled={liveLuciel}>
+          <Button variant="danger" onClick={() => setDialog('close')}>
             Close my account
           </Button>
         </div>
         {liveLuciel && (
           <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
-            Delete your Luciel first — that&apos;s the step above. Your data stays exportable
-            throughout its 30-day grace window.
+            Your Luciel is still running. You can delete it first (the step above) or let closing
+            do it — the confirmation says so and offers your export before anything ends.
           </p>
         )}
       </Card>
@@ -177,35 +193,52 @@ export default function AccountPage() {
         }}
       />
 
-      {/* Export-first. */}
+      {/* Export-first. The dialog stays open on success to show the served link,
+          and on failure to show the reason — it never closes as if it had worked. */}
       <Modal
         open={dialog === 'export'}
         onOpenChange={close}
         title="Download all your data"
-        description="We'll prepare a bundle (conversations, leads, your uploaded files, audit log, and your connection configuration — provider and non-secret config only, never secrets). You'll get an email with a download link that works for 7 days; the data stays exportable through the 30-day grace window."
-        confirmLabel="Prepare my export"
+        description={
+          exportResult
+            ? undefined
+            : "We'll prepare a bundle (conversations, leads, your uploaded files, audit log, and your connection configuration — provider and non-secret config only, never secrets). The download link appears here and is also emailed to you; it works for 7 days, and the data stays exportable through the 30-day grace window."
+        }
+        confirmLabel={exportResult ? undefined : 'Prepare my export'}
         confirmPendingLabel="Preparing…"
-        onConfirm={async () => {
-          await api.account.requestExport();
-          close();
-        }}
-      />
+        cancelLabel={exportResult ? 'Done' : 'Cancel'}
+        onConfirm={
+          exportResult
+            ? undefined
+            : async () => {
+                setExportResult(await api.account.requestExport());
+              }
+        }
+      >
+        {exportResult && <ExportReady result={exportResult} />}
+      </Modal>
 
       {/*
-        Close-account confirmation. Reachable only once the Luciel is deleted, and
-        it offers the export one last time before the account ends — the second
-        half of the two-step the card describes.
+        Close-account confirmation — the subsumed flow (round 7 WP-10, item 13).
+        It states that a Luciel still running is deleted first, offers the export
+        one last time, and says when the data goes: the cascade deletes EVERYTHING
+        30 days after closure (Legal §B5) — never "retained for a year".
       */}
       <Modal
         open={dialog === 'close'}
         onOpenChange={close}
         title="Close your account?"
-        description="This ends your login, email, and billing. After closure, transcripts and audit log are retained for 1 year, then permanently deleted — the export is how you keep anything beyond that. This can't be undone."
-        confirmLabel="Close account"
+        description={
+          liveLuciel
+            ? `This ends your login, email, and billing. ${luciel?.name ?? 'Your Luciel'} is still running, so closing deletes it first. Everything — conversations, leads, knowledge, connections, and your audit log — is permanently deleted 30 days after closure; the export is how you keep anything. This can't be undone.`
+            : 'This ends your login, email, and billing. Everything — conversations, leads, knowledge, connections, and your audit log — is permanently deleted 30 days after closure; the export is how you keep anything. This can\'t be undone.'
+        }
+        confirmLabel={liveLuciel ? 'Delete my Luciel and close account' : 'Close account'}
         confirmPendingLabel="Closing…"
         confirmVariant="danger"
         onConfirm={async () => {
-          // The modal above is the confirmation the server requires (F156).
+          // This dialog IS the confirmation the server requires before it deletes a
+          // Luciel that is still running as part of the closure (F156).
           await api.account.close({ confirmDeleteLuciel: true });
           close();
           router.replace('/');
@@ -220,6 +253,40 @@ export default function AccountPage() {
           </div>
         </Banner>
       </Modal>
+    </div>
+  );
+}
+
+/**
+ * The export outcome, from the served result (round 7 WP-10, item 12): the link
+ * itself when the server returned one, how long it lives, and that it was also
+ * emailed — so a lost email is never the only way to the owner's own data. An
+ * older server's bare `{ ok: true }` degrades to the email sentence alone.
+ */
+function ExportReady({ result }: { result: AccountExportResult }) {
+  const days = result.ttlDays;
+  const life = days === undefined ? '' : ` It works for ${days} day${days === 1 ? '' : 's'}.`;
+  return (
+    <div className="space-y-vm-2 text-vm-1" role="status">
+      <p className="font-label">Your export is ready.</p>
+      {result.downloadUrl ? (
+        <p>
+          <a
+            href={result.downloadUrl}
+            className="underline underline-offset-2"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Download your export
+          </a>
+          {life}
+        </p>
+      ) : null}
+      <p className="text-vm-text-muted">
+        {result.downloadUrl
+          ? 'We also emailed this link to you.'
+          : `We emailed the download link to you.${life}`}
+      </p>
     </div>
   );
 }

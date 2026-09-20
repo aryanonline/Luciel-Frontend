@@ -382,10 +382,16 @@ export const seedConnectionProviders: ConnectionProviders[] = [
         scopeKind: null,
       },
       {
+        // Served EXACTLY as the backend registry serves it (round 7 WP-10, item 1):
+        // `provisioned` — a platform-provisioned resource, no credential form and no
+        // sign-in. The mock used to say `credential_form` with no fields, which the
+        // control read as "provided elsewhere" while the real backend's `provisioned`
+        // fell through to a "Connect CSV upload" button that dead-ended on
+        // "Provider 'csv' does not take a credential form."
         provider: 'csv',
-        displayName: 'CSV file',
-        authKind: 'credential_form',
-        helpText: 'Look records up in a CSV you upload under Knowledge.',
+        displayName: 'CSV upload',
+        authKind: 'provisioned',
+        helpText: 'Upload a spreadsheet of records; re-upload to refresh.',
         configured: true,
         credentialFields: [],
         scopeKind: null,
@@ -631,5 +637,19 @@ export const seedAudit: AuditEvent[] = [
     eventType: 'connection_status_changed',
     at: '2026-06-14T16:00:00Z',
     detail: 'hubspot crm: connected → expired',
+  },
+  // Types the backend actually emits (app/audit/events.py; round 7 WP-10, item 14),
+  // one with a served detail and one without, so the page models both.
+  {
+    eventId: 'evt-3',
+    eventType: 'lifecycle_transition',
+    at: '2026-06-15T09:30:00Z',
+    detail: 'active → paused',
+    actorUserId: USER_ID,
+  },
+  {
+    eventId: 'evt-4',
+    eventType: 'data_export_ready',
+    at: '2026-06-16T11:00:00Z',
   },
 ];

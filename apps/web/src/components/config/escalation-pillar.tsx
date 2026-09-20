@@ -82,11 +82,21 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
   } = useServerDraft<EscalationContact>(luciel.escalation);
   const { busy, notice, run } = useActionNotice();
 
-  // SMS notifications require the SMS channel enabled (Arch §3.5.1). Offering
-  // the SMS route on an account that can't send SMS silently routes a
-  // high-value-lead page into nothing — the option stays visible but disabled,
-  // with the reason, until the channel is on.
-  const smsRoutable = luciel.channels.some((c) => c.id === 'sms' && c.enabled);
+  // SMS notifications require the SMS channel enabled AND its number connected
+  // (Arch §3.5.1, §3.8.7 rule A: enabled and connection-healthy). Offering the
+  // SMS route on an account that can't send SMS silently routes a high-value-lead
+  // page into nothing — the option stays visible but disabled, with the honest
+  // reason: the channel is off, the number is not connected yet, or texting still
+  // waits on carrier registration (round 7 WP-10, item 7).
+  const smsChannel = luciel.channels.find((c) => c.id === 'sms');
+  const smsRoutable = Boolean(smsChannel?.enabled) && smsChannel?.connectionStatus === 'connected';
+  const smsOptionLabel = smsRoutable
+    ? 'SMS'
+    : !smsChannel?.enabled
+      ? 'SMS — enable the SMS channel first'
+      : smsChannel.connectionStatus === 'pending_carrier_registration'
+        ? 'SMS — complete carrier registration first'
+        : 'SMS — connect your number first';
 
   // Server-owned sibling of the escalation blob (5B #13); tolerate its absence
   // so a payload from before the field existed still renders the pillar.
@@ -298,7 +308,7 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
             >
               <option value="email">Email</option>
               <option value="sms" disabled={!smsRoutable}>
-                {smsRoutable ? 'SMS' : 'SMS — enable the SMS channel first'}
+                {smsOptionLabel}
               </option>
             </Select>
           )}
@@ -330,7 +340,7 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
                 >
                   <option value="email">Email</option>
                   <option value="sms" disabled={!smsRoutable}>
-                    {smsRoutable ? 'SMS' : 'SMS — enable the SMS channel first'}
+                    {smsOptionLabel}
                   </option>
                 </Select>
               </div>
