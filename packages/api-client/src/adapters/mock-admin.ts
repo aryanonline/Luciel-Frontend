@@ -1004,7 +1004,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           row.statusDetail = `Action needed: ${option.displayName} is not available yet.`;
           return ok({ authorizeUrl: null, statusDetail: row.statusDetail });
         }
-        if (option?.authKind === 'credential_form') {
+        // A provisioned resource (the CSV record source) has no sign-in either; the
+        // backend answers the same `requiresClientForm` a credential form gets, and
+        // the credential POST that would follow is refused (submitCredentials below).
+        // The UI must never get this far — it says where the upload happens instead.
+        if (option?.authKind === 'credential_form' || option?.authKind === 'provisioned') {
           return ok({ requiresClientForm: true });
         }
         return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
@@ -1470,7 +1474,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (!option || option.authKind !== 'credential_form') {
           throw new LucielApiError({
             code: 'validation_error',
-            message: 'This connection is completed with a sign-in, not typed details.',
+            // The backend's own refusal wording for a provider that takes no form (a
+            // provisioned resource such as the CSV record source, or an OAuth provider).
+            message: `Provider '${c.provider}' does not take a credential form.`,
           });
         }
         for (const field of option.credentialFields) {

@@ -382,10 +382,16 @@ export const seedConnectionProviders: ConnectionProviders[] = [
         scopeKind: null,
       },
       {
+        // Served EXACTLY as the backend registry serves it (round 7 WP-10, item 1):
+        // `provisioned` — a platform-provisioned resource, no credential form and no
+        // sign-in. The mock used to say `credential_form` with no fields, which the
+        // control read as "provided elsewhere" while the real backend's `provisioned`
+        // fell through to a "Connect CSV upload" button that dead-ended on
+        // "Provider 'csv' does not take a credential form."
         provider: 'csv',
-        displayName: 'CSV file',
-        authKind: 'credential_form',
-        helpText: 'Look records up in a CSV you upload under Knowledge.',
+        displayName: 'CSV upload',
+        authKind: 'provisioned',
+        helpText: 'Upload a spreadsheet of records; re-upload to refresh.',
         configured: true,
         credentialFields: [],
         scopeKind: null,
