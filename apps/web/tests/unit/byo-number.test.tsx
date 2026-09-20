@@ -87,7 +87,11 @@ const channelRow = (name: RegExp): HTMLElement => {
 describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own Twilio account', () => {
   it('renders the action-needed chip with one-click connect primary and the key form behind it', async () => {
     renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
-    expect(screen.getByText(/action needed: connect your Twilio account/i)).toBeInTheDocument();
+    // The Twilio account lives on the sms_sender row, so the ask waits for the
+    // connections read to settle (round 7 WP-10, item 2) — never claimed before.
+    expect(
+      await screen.findByText(/action needed: connect your Twilio account/i),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
         /your number stays yours and your carrier costs are billed by Twilio directly/i,
@@ -101,8 +105,9 @@ describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own T
     expect(await screen.findByLabelText(/Twilio Account SID/i)).toBeInTheDocument();
   });
 
-  it('renders the phone panel INSIDE the SMS row, not after the channel list', () => {
+  it('renders the phone panel INSIDE the SMS row, not after the channel list', async () => {
     renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
+    await screen.findByText(/action needed: connect your Twilio account/i);
     // The owner-reported defect: the number setup rendered "way below" the SMS
     // toggle, as a sibling after the whole <ul>. It belongs inside the row.
     const smsRow = channelRow(/Enable SMS/i);
@@ -112,12 +117,13 @@ describe('P0-1: SMS enabled with nothing connected asks for the tenant’s own T
     ).toBeInTheDocument();
   });
 
-  it('hosts the panel on the Voice row when SMS is off and Voice is on', () => {
+  it('hosts the panel on the Voice row when SMS is off and Voice is on', async () => {
     const voiceOnly: Luciel = {
       ...base,
       channels: base.channels.map((c) => (c.id === 'voice' ? { ...c, enabled: true } : c)),
     };
     renderWithQuery(<ChannelsPillar luciel={voiceOnly} />);
+    await screen.findByText(/Your business phone number/i);
     const voiceRow = channelRow(/Enable Voice/i);
     expect(within(voiceRow).getByText(/Your business phone number/i)).toBeInTheDocument();
     // No second enabled phone row exists, so no cross-reference note renders.
@@ -256,8 +262,8 @@ describe('Legal §A2/§A6: enabling SMS is gated on the carrier/consent acknowle
     expect(confirm).not.toBeDisabled();
   });
 
-  it('discloses STOP/HELP handling durably once SMS is on, not only in the modal', () => {
+  it('discloses STOP/HELP handling durably once SMS is on, not only in the modal', async () => {
     renderWithQuery(<ChannelsPillar luciel={withSmsEnabledNoNumber} />);
-    expect(screen.getByText(/honors STOP and HELP automatically/i)).toBeInTheDocument();
+    expect(await screen.findByText(/honors STOP and HELP automatically/i)).toBeInTheDocument();
   });
 });
