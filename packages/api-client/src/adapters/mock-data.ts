@@ -638,4 +638,18 @@ export const seedAudit: AuditEvent[] = [
     at: '2026-06-14T16:00:00Z',
     detail: 'hubspot crm: connected → expired',
   },
+  // Types the backend actually emits (app/audit/events.py; round 7 WP-10, item 14),
+  // one with a served detail and one without, so the page models both.
+  {
+    eventId: 'evt-3',
+    eventType: 'lifecycle_transition',
+    at: '2026-06-15T09:30:00Z',
+    detail: 'active → paused',
+    actorUserId: USER_ID,
+  },
+  {
+    eventId: 'evt-4',
+    eventType: 'data_export_ready',
+    at: '2026-06-16T11:00:00Z',
+  },
 ];
