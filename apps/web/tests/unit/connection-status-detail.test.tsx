@@ -88,4 +88,17 @@ describe('round 5: served statusDetail renders as an honest note on not-live row
     expect(screen.queryByRole('button', { name: /connect/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /switch/i })).not.toBeInTheDocument();
   });
+
+  // Round 7 WP-10, item 10: the dormant chip names the fix (a card) — the way
+  // there is a real link to the Billing page, in the F162 wording.
+  it('dormant links to the Billing page in the off-row wording', async () => {
+    renderWithQuery(
+      <ConnectionControl connectionType="crm" label="your CRM" connection={row('dormant')} />,
+    );
+    const link = await screen.findByRole('link', { name: 'Add a card on the Billing page' });
+    expect(link).toHaveAttribute('href', '/dashboard/billing');
+    expect(
+      screen.getByText(/usage past the free conversations could not be billed/i),
+    ).toBeInTheDocument();
+  });
 });

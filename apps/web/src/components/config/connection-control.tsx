@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { Banner, Button, Field, Input, Modal, StatusChip } from '@luciel/ui';
 import {
   LucielApiError,
@@ -20,7 +21,7 @@ import {
 import { authorizeOrExplain } from '@/lib/oauth-connect';
 import type { ActionNotice } from '@/lib/use-action-notice';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
-import { channelLabel, chipKind, toolMeta } from './labels';
+import { channelLabel, chipKind, DORMANT_NOTE, toolMeta } from './labels';
 import { boundDestination } from './messaging-surfaces';
 
 /**
@@ -513,6 +514,20 @@ export function ConnectionControl({
           </Button>
         )}
       </div>
+
+      {/* Dormant is a billing state (audit F162): the chip says "paused until a
+          payment method is added", and this is the way there — the same sentence
+          the off-row note uses, with the Billing page an actual link (round 7
+          WP-10, item 10). */}
+      {isDormant && (
+        <p className="text-vm-0 text-vm-text-muted" role="note">
+          {DORMANT_NOTE.lead}{' '}
+          <Link href={DORMANT_NOTE.href} className="underline underline-offset-2">
+            {DORMANT_NOTE.action}
+          </Link>{' '}
+          {DORMANT_NOTE.tail}
+        </p>
+      )}
 
       {/* The server's own words about a not-live row (round 5, item 3):
           `statusDetail` renders as a muted note under the chip, minus the
