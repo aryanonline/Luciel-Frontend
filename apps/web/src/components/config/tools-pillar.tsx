@@ -12,7 +12,11 @@ import type {
 } from '@luciel/api-client';
 import { useCapabilities, useConnections, useLucielMutations } from '@/lib/hooks';
 import { useActionNotice } from '@/lib/use-action-notice';
-import { ConnectionControl } from './connection-control';
+import {
+  ConnectionControl,
+  connectionReadState,
+  type ConnectionReadState,
+} from './connection-control';
 import { CalendlyEventTypePicker } from './calendly-event-type';
 import { toolMeta, chipKind, channelLabel, offRowConnectionNote } from './labels';
 
@@ -122,6 +126,10 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
     connectionType
       ? connections.data?.find((c) => c.connectionType === connectionType)
       : undefined;
+  // Round 7 WP-10, item 2: an absent row means "nothing connected" only once the
+  // read has settled; every control below is told which it is.
+  const connectionsRead = connectionReadState(connections);
+  const retryConnections = () => void connections.refetch();
 
   /**
    * Returns true when the tool's required channel is enabled, or when the
@@ -211,6 +219,8 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
             group={group}
             tools={luciel.tools.filter((t) => group.toolIds.includes(t.id))}
             connection={connectionFor(group.connectionType)}
+            readState={connectionsRead}
+            onRetryRead={retryConnections}
             onToggle={(enabled) => writeEnabled(group.toolIds, enabled, group.label)}
           />
         ))}
@@ -293,6 +303,8 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
                     fallbackProvider={target.fallbackProvider}
                     unavailableReason={CONNECTION_COPY[target.connectionType]?.unavailableReason}
                     disabledReason={t.disabledReason}
+                    readState={connectionsRead}
+                    onRetryRead={retryConnections}
                   />
                 </div>
               )}
@@ -315,11 +327,15 @@ function CapabilityRow({
   group,
   tools,
   connection,
+  readState,
+  onRetryRead,
   onToggle,
 }: {
   group: CapabilityGroup;
   tools: AddonTool[];
   connection?: Connection;
+  readState: ConnectionReadState;
+  onRetryRead: () => void;
   onToggle: (enabled: boolean) => void;
 }) {
   const enabled = tools.length > 0 && tools.every((t) => t.enabled);
@@ -360,6 +376,8 @@ function CapabilityRow({
             connection={connection}
             unavailableReason={CONNECTION_COPY[group.connectionType]?.unavailableReason}
             disabledReason={disabledReason}
+            readState={readState}
+            onRetryRead={onRetryRead}
           />
           {/* Calendly books ONE event type (round 6 WP-H): the owner picks which,
               here, beside the connection it belongs to. Other calendars book

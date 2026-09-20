@@ -31,7 +31,11 @@ import {
 import { useActionNotice } from '@/lib/use-action-notice';
 import { api } from '@/lib/api';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
-import { ConnectionControl } from './connection-control';
+import {
+  ConnectionControl,
+  ConnectionReadNote,
+  connectionReadState,
+} from './connection-control';
 import { SmsWebhookTokenRotate } from './sms-webhook-token';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
@@ -122,6 +126,11 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   // and Messenger share the Facebook row, Instagram has its own.
   const connectionFor = (type: ConnectionType) =>
     connections.data?.find((c) => c.connectionType === type);
+  // Round 7 WP-10, item 2: an absent row means "nothing connected" only once the
+  // read has settled. Threaded into every control below, and read directly by the
+  // phone rows, whose chips this pillar derives itself.
+  const connectionsRead = connectionReadState(connections);
+  const retryConnections = () => void connections.refetch();
   const smsConnection = connectionFor('sms_sender');
   const smsProviders = useConnectionProviders('sms_sender');
   const twilioOption = smsProviders.data
@@ -175,6 +184,17 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
   const needsTwilio = phoneEnabled && !twilioConnected && !needsCredentialRefresh;
   const needsNumber =
     phoneEnabled && twilioConnected && !numberConfigured && !needsCredentialRefresh;
+  // The Twilio account's presence is read off the sms_sender ROW (its Account SID),
+  // so until that read settles neither "connect your Twilio account" nor "add your
+  // number" can be claimed. Every other phone state — number on file, pending
+  // carrier registration, not hosted in the account, credential refresh — is
+  // served on the Luciel itself and needs no row to be true, so those still render.
+  const phoneReadUnknown =
+    phoneEnabled &&
+    connectionsRead !== 'ready' &&
+    !numberConfigured &&
+    !needsCredentialRefresh &&
+    numberStatus !== 'not_operable_hosting_required';
   const phonePending = phoneEnabled && numberStatus === 'pending_carrier_registration';
   const phoneValid = E164.test(phoneNumber.trim());
   // C9 picker: fetch the account's own numbers only while the designate step is
@@ -402,7 +422,13 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     enabled row with no visible status leaves "is this live?"
                     unanswered at the toggle (honest connection states). */}
                 {c.enabled && isPhoneChannel ? (
-                  numberStatus === 'not_operable_hosting_required' ? (
+                  phoneReadUnknown ? (
+                    <ConnectionReadNote
+                      state={connectionsRead as 'pending' | 'error'}
+                      label="Twilio"
+                      onRetry={retryConnections}
+                    />
+                  ) : numberStatus === 'not_operable_hosting_required' ? (
                     <StatusChip
                       kind="action_needed"
                       detail="this number isn't in your Twilio account yet"
@@ -465,6 +491,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                         provider={surface.provider}
                         destinationField={{ ...surface.destination, channels: surface.channels }}
                         unavailableReason={surface.unavailableReason}
+                        readState={connectionsRead}
+                        onRetryRead={retryConnections}
                       />
                     ))}
                   </div>
@@ -510,6 +538,8 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                           channels: surface.channels,
                         }}
                         unavailableReason={surface.unavailableReason}
+                        readState={connectionsRead}
+                        onRetryRead={retryConnections}
                       />
                       <p className="mt-vm-2 text-vm-0 text-vm-text-muted" role="note">
                         {surface.note}
@@ -521,7 +551,16 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
               {/* The shared BYO phone setup renders INSIDE the first enabled
                   phone row, so the fields sit under the toggle that revealed
                   them instead of after the whole list. */}
-              {c.id === phonePanelHost && (
+              {c.id === phonePanelHost && phoneReadUnknown && (
+                <div className="mt-vm-3 pl-[3.5rem]">
+                  <ConnectionReadNote
+                    state={connectionsRead as 'pending' | 'error'}
+                    label="Twilio"
+                    onRetry={retryConnections}
+                  />
+                </div>
+              )}
+              {c.id === phonePanelHost && !phoneReadUnknown && (
                 <div className="mt-vm-3 pl-[3.5rem]">
                   <PhoneNumberPanel
                     phonePending={phonePending}

@@ -77,6 +77,62 @@ export interface ConnectionControlProps {
   unavailableReason?: string;
   /** Server-derived hold-off reason from the dependent tool (read-only, contract §3). */
   disabledReason?: string | null;
+  /**
+   * The state of the `GET /connections` read that `connection` came from (round 7
+   * WP-10, item 2). An absent row means "nothing connected" ONLY once that read
+   * has settled: while it is pending, or after it failed, the row is unknown, and
+   * the control says so instead of rendering "Action needed: connect X" — which
+   * counted the owner's attention against a state nobody had read. Defaults to
+   * `ready` for call sites that hand over a row they already hold.
+   */
+  readState?: ConnectionReadState;
+  /** Re-run the failed read. Rendered as the retry beside the error note. */
+  onRetryRead?: () => void;
+}
+
+export type ConnectionReadState = 'pending' | 'error' | 'ready';
+
+/**
+ * Maps a TanStack query's flags onto the control's read state, so every pillar
+ * threads the same three values and none of them re-derives "unknown" on its own.
+ */
+export function connectionReadState(query: { isPending: boolean; isError: boolean }) {
+  return query.isPending ? 'pending' : query.isError ? 'error' : 'ready';
+}
+
+/**
+ * What an unsettled `GET /connections` read looks like wherever a connection's
+ * state would otherwise be claimed: a quiet "checking…" while it loads, and a
+ * retryable "we could not read it" after a failure. Neither is a chip, so
+ * neither can be mistaken for — or counted as — Action needed.
+ */
+export function ConnectionReadNote({
+  state,
+  label,
+  onRetry,
+}: {
+  state: Exclude<ConnectionReadState, 'ready'>;
+  label: string;
+  onRetry?: () => void;
+}) {
+  if (state === 'pending') {
+    return (
+      <span className="text-vm-0 text-vm-text-muted" role="status">
+        Checking the {label} connection…
+      </span>
+    );
+  }
+  return (
+    <Banner tone="warning">
+      We could not read this connection&apos;s state, so nothing here is shown as needing your
+      attention — it may be connected already.{' '}
+      {onRetry && (
+        <button type="button" className="underline underline-offset-2" onClick={onRetry}>
+          Retry
+        </button>
+      )}
+    </Banner>
+  );
 }
 
 /** Chip detail per raw status, so "Action needed" always says what to do. */
@@ -209,8 +265,14 @@ export function ConnectionControl({
   destinationField,
   unavailableReason,
   disabledReason,
+  readState = 'ready',
+  onRetryRead,
 }: ConnectionControlProps) {
   const providers = useConnectionProviders(connectionType);
+  // The row is unknown until its read settles (item 2): claim nothing, offer
+  // nothing — a Connect button on a row that may already be connected is as
+  // wrong as the "Action needed" chip it sat under.
+  const readUnknown = readState !== 'ready';
   const { connect, reconnect, disconnect, bindDestination, submitCredentials } =
     useConnectionLifecycle();
   // Switching accounts/providers rides the proven-before-cutover SWAP (Arch
@@ -290,7 +352,7 @@ export function ConnectionControl({
   // error naming the free allowance), so no connect/switch surface renders —
   // the chip's billing note is the honest action instead of a dead button.
   const isDormant = status === 'dormant';
-  const offerConnect = (!isLive || switching) && !isDormant;
+  const offerConnect = (!isLive || switching) && !isDormant && !readUnknown;
   const busy =
     connect.isPending ||
     swap.isPending ||
@@ -473,14 +535,21 @@ export function ConnectionControl({
     <div className="space-y-vm-3">
       {purpose && <p className="text-vm-1 text-vm-text-muted">{purpose}</p>}
 
-      {prerequisite && status !== 'connected' && (
+      {prerequisite && status !== 'connected' && !readUnknown && (
         <p className="text-vm-0 text-vm-text-muted" role="note">
           {prerequisite}
         </p>
       )}
 
       <div className="flex flex-wrap items-center gap-vm-3">
-        {needsDestination && destinationField ? (
+        {readUnknown ? (
+          /* Not a chip: an unread row is neither connected nor needing action. */
+          <ConnectionReadNote
+            state={readState as Exclude<ConnectionReadState, 'ready'>}
+            label={label}
+            onRetry={onRetryRead}
+          />
+        ) : needsDestination && destinationField ? (
           /* Name the surface's OWN id field: three Meta rows each owe a
              different id, and a generic "name the id" chip cannot tell the
              owner which of the three they are being asked for. */
