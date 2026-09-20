@@ -54,11 +54,39 @@ describe('escalation routing: SMS option gated on the SMS channel (Arch §3.5.1)
     }
   });
 
-  it('offers SMS normally once the SMS channel is enabled', () => {
+  it('offers SMS normally once the SMS channel is enabled AND its number is connected', () => {
     renderWithQuery(<EscalationPillar luciel={withSms} />);
     for (const option of smsOptions()) {
       expect(option.disabled).toBe(false);
       expect(option.textContent).toBe('SMS');
+    }
+  });
+
+  // Round 7 WP-10, item 7: enabled is not enough — the route is usable only when
+  // the number is connected (Arch §3.8.7 rule A), and the disabled option says
+  // which step is missing rather than "enable the SMS channel" on a channel
+  // that is already on.
+  const smsEnabledWith = (connectionStatus: string): Luciel => ({
+    ...base,
+    channels: base.channels.map((c) =>
+      c.id === 'sms' ? { ...c, enabled: true, connectionStatus: connectionStatus as never } : c,
+    ),
+  });
+
+  it('disables SMS with "connect your number first" when the channel is on but unconnected', () => {
+    renderWithQuery(<EscalationPillar luciel={smsEnabledWith('unconfigured')} />);
+    for (const option of smsOptions()) {
+      expect(option.disabled).toBe(true);
+      expect(option.textContent).toContain('connect your number first');
+      expect(option.textContent).not.toContain('enable the SMS channel');
+    }
+  });
+
+  it('disables SMS with "complete carrier registration first" while texting waits on 10DLC', () => {
+    renderWithQuery(<EscalationPillar luciel={smsEnabledWith('pending_carrier_registration')} />);
+    for (const option of smsOptions()) {
+      expect(option.disabled).toBe(true);
+      expect(option.textContent).toContain('complete carrier registration first');
     }
   });
 });
