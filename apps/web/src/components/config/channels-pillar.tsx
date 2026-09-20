@@ -40,7 +40,7 @@ import { SmsWebhookTokenRotate } from './sms-webhook-token';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
 import { channelLabel, chipKind, offRowConnectionNote, toolMeta } from './labels';
-import { MESSAGING_SURFACES } from './messaging-surfaces';
+import { MESSAGING_SURFACES, offRowSurfaceNote } from './messaging-surfaces';
 
 /**
  * Channels pillar (Vision §3.1, Customer Journey §4.1). Multi-select of channels.
@@ -406,6 +406,19 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
           // knows authorized-without-a-destination is not live (contract §2).
           const showControl = Boolean(surfaces) && c.enabled;
           const chip = isPhoneChannel || showControl ? null : chipKind(c.connectionStatus);
+          // Off-row note (round 7 WP-10, item 8): a messaging surface reads its grant
+          // ROW and its bound destination, never the raw grant status alone.
+          const offRowNote = surfaces
+            ? (surfaces
+                .map((surface) =>
+                  offRowSurfaceNote(
+                    surface,
+                    connectionFor(surface.connectionType),
+                    offRowConnectionNote,
+                  ),
+                )
+                .find(Boolean) ?? null)
+            : offRowConnectionNote(c.connectionStatus);
           return (
             <li key={c.id} className="py-vm-3">
               <div className="flex items-center justify-between">
@@ -469,14 +482,14 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                   §3.8.7), but the connect surface only renders while on — say
                   the connection survives so the owner knows re-enabling needs
                   no re-setup (or that a reconnect is waiting). */}
-              {!c.enabled && offRowConnectionNote(c.connectionStatus) && (
+              {!c.enabled && offRowNote && (
                 <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
-                  {offRowConnectionNote(c.connectionStatus)}
+                  {offRowNote}
                 </p>
               )}
               {/* Round 6 WP-D: an OFF row with a saved connection can still be managed —
                   switched, reconnected or disconnected — without turning it on first. */}
-              {!c.enabled && surfaces && offRowConnectionNote(c.connectionStatus) && (
+              {!c.enabled && surfaces && offRowNote && (
                 <details className="mt-vm-2 pl-[3.5rem]">
                   <summary className="cursor-pointer text-vm-0 underline underline-offset-2">
                     Manage connection
