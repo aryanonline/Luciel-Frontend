@@ -646,6 +646,19 @@ export function ConnectionControl({
         </Banner>
       )}
 
+      {/* Proven-before-cutover reassurance (Arch §3.8.7 B): the switch is staged,
+          so abandoning the new sign-in costs nothing. Rendered for EVERY switch —
+          it used to live inside the multi-provider branch only, so a pinned or
+          single-provider surface (Meta, a webhook, a Twilio number) switched with
+          no word that the current connection keeps serving until the replacement
+          verifies (round 7 WP-10, item 9). */}
+      {switching && offerConnect && (
+        <p className="text-vm-0 text-vm-text-muted" role="note" data-testid="swap-reassurance">
+          Your current connection stays live until the new one is verified — backing out of the
+          sign-in changes nothing.
+        </p>
+      )}
+
       {/* Honest-disabled: nothing here can be connected yet, so there is no
           connect button to press. The choices stay visible so the owner can see
           what this will offer (contract §1). */}
@@ -685,14 +698,6 @@ export function ConnectionControl({
           information, never as disabled controls. */}
       {offerConnect && !nothingAvailable && !pinned && connectable.length > 1 && (
         <div className="rounded-vm-card border border-vm-border p-vm-3">
-          {/* Proven-before-cutover reassurance (Arch §3.8.7 B): the switch is
-              staged, so abandoning the new provider's sign-in costs nothing. */}
-          {switching && (
-            <p className="mb-vm-2 text-vm-0 text-vm-text-muted">
-              Your current connection stays live until the new one is verified — backing out of the
-              sign-in changes nothing.
-            </p>
-          )}
           <div className="grid gap-vm-2">
             {connectable.map((option) =>
               isProvisioned(option) ? (
