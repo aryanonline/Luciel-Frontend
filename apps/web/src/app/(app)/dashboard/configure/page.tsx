@@ -105,10 +105,14 @@ function ConfigureBody() {
 
       {/* When a change takes effect (Arch §3.8.7 rule E, Decision #39): additive/
           neutral edits snapshot-defer to NEW conversations; turning something off,
-          revoking, or any safety change takes effect immediately. Banner pairs
-          color + icon + text (AA). */}
+          revoking, or any safety change takes effect immediately. Rule E.1 is the
+          carve-out (round 7 WP-10, item 5): the channel a conversation is RIDING ON
+          is never severed by a disable — new conversations stop, the one underway
+          finishes there. Banner pairs color + icon + text (AA). */}
       <Banner tone="info">
-        Changes apply to new conversations. Turning something off takes effect immediately.
+        Changes apply to new conversations. Turning something off takes effect immediately. One
+        exception: turning a channel off stops new conversations on it right away, but a
+        conversation already underway on that channel finishes there.
       </Banner>
 
       <ChannelsPillar luciel={luciel} />

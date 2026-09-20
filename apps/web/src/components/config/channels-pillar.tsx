@@ -92,6 +92,15 @@ const CHANNEL_TOOL_CASCADE: Partial<Record<ChannelConfig['id'], keyof typeof too
   email: 'send_email',
 };
 
+/**
+ * What turning a channel OFF does to a conversation already on it (Arch §3.8.7
+ * rule E.1; round 7 WP-10, item 5): new conversations stop immediately, but the
+ * channel a lead is mid-sentence on is never severed by a disable — that
+ * conversation finishes there. Said in the toast, where the owner just acted.
+ */
+export const CHANNEL_OFF_TIMING =
+  'New conversations on it stop now; a conversation already underway on it finishes there.';
+
 /** UX-only E.164 shape check (client validation is never a security control). */
 const E164 = /^\+[1-9]\d{7,14}$/;
 
@@ -327,9 +336,9 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
         if (dependentToolId && wentOff) {
           // The tool's product label, never the raw wire id ("Send SMS", not
           // "send sms") — the one de-snaked enum that had leaked into a toast.
-          return `${channelLabel[id]} is off, and ${toolMeta[dependentToolId].label} was switched off with it.`;
+          return `${channelLabel[id]} is off, and ${toolMeta[dependentToolId].label} was switched off with it. ${CHANNEL_OFF_TIMING}`;
         }
-        return `${channelLabel[id]} is ${enabled ? 'on' : 'off'}.`;
+        return enabled ? `${channelLabel[id]} is on.` : `${channelLabel[id]} is off. ${CHANNEL_OFF_TIMING}`;
       },
       `We could not turn ${channelLabel[id]} ${enabled ? 'on' : 'off'}. Nothing was changed — please try again.`,
     );
