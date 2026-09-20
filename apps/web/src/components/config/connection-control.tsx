@@ -119,6 +119,25 @@ function statusDetailNote(detail: string | null | undefined): string | null {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * A `provisioned` provider is a platform-provisioned resource (today: the CSV
+ * record source). There is no sign-in and no credential form — the upload IS
+ * the connection, and it lives under Knowledge → records. The backend answers
+ * a start for it with `requiresClientForm` and refuses the credential POST
+ * that would follow, so no connect button may ever be offered for it.
+ */
+function isProvisioned(option: { authKind: string } | undefined): boolean {
+  return option?.authKind === 'provisioned';
+}
+
+/** Where a provisioned resource is actually set up, in the owner's words. */
+function provisionedNote(option: { displayName: string; helpText: string } | undefined): string {
+  const where =
+    'There is nothing to sign in to here — upload your CSV under Knowledge → records, and Luciel looks records up in it.';
+  const help = option?.helpText?.trim();
+  return help ? `${where} ${help}` : where;
+}
+
 /** Human names for whatever a disconnect took down with it (contract §1). */
 function disabledSummary(tools: string[], channels: string[]): string | null {
   const names = [
@@ -238,12 +257,17 @@ export function ConnectionControl({
     fallbackProvider;
   const selectedOption = choices.find((o) => o.provider === selectedProvider);
   const providerName = selectedOption?.displayName ?? label;
-  // A credential_form provider with no fields is not connected from here at all
-  // (CSV lives under Knowledge) — say where it happens instead of offering a
-  // button that would be refused.
   const isCredentialForm = selectedOption?.authKind === 'credential_form';
   const credentialFields = selectedOption?.credentialFields ?? [];
-  const providedElsewhere = isCredentialForm && credentialFields.length === 0;
+  // Provided elsewhere: nothing here can connect it, so say where it happens
+  // instead of offering a button that would be refused. The served registry marks
+  // the CSV record source `provisioned` — a platform-provisioned resource with no
+  // sign-in and no form — and the old guard (a credential form with no fields)
+  // never matched it, so the real backend rendered "Connect CSV upload" that
+  // dead-ended on "Provider 'csv' does not take a credential form." (round 7
+  // WP-10, item 1). The field-less credential form is kept as the older shape.
+  const providedElsewhere =
+    isProvisioned(selectedOption) || (isCredentialForm && credentialFields.length === 0);
 
   // A pinned provider that is not the one currently connected means this surface
   // is asking for a different grant than the row holds (an older Meta provider
@@ -324,6 +348,13 @@ export function ConnectionControl({
     const targetOption = choices.find((o) => o.provider === targetProvider);
     const targetName = targetOption?.displayName ?? label;
     const targetIsCredentialForm = targetOption?.authKind === 'credential_form';
+    // Never start a flow for a provisioned resource: the backend would answer
+    // `requiresClientForm` and then refuse the credential POST. Say where the
+    // setup happens instead (round 7 WP-10, item 1).
+    if (isProvisioned(targetOption)) {
+      say('info', provisionedNote(targetOption));
+      return;
+    }
     // An existing row is re-credentialed in place: SWAP when the account or
     // provider is changing (staged alongside the live one; cutover only after
     // the replacement verifies), reconnect when it is the same one expiring.
@@ -579,28 +610,38 @@ export function ConnectionControl({
             </p>
           )}
           <div className="grid gap-vm-2">
-            {connectable.map((option) => (
-              <div key={option.provider} className="flex flex-wrap items-center gap-vm-2">
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setChosen(option.provider);
-                    setCredentials({});
-                    if (option.authKind !== 'credential_form') {
-                      beginConnectFor(option.provider);
-                    }
-                  }}
-                >
-                  {busy
-                    ? 'Working…'
-                    : boundElsewhere || switching
-                      ? `Switch to ${option.displayName}`
-                      : `Connect ${option.displayName}`}
-                </Button>
-                <span className="text-vm-0 text-vm-text-muted">{option.helpText}</span>
-              </div>
-            ))}
+            {connectable.map((option) =>
+              isProvisioned(option) ? (
+                /* A provisioned resource (the CSV record source) gets no button
+                   even beside connectable siblings: the upload under Knowledge
+                   is the whole connection (round 7 WP-10, item 1). */
+                <p key={option.provider} className="text-vm-0 text-vm-text-muted" role="note">
+                  <span className="font-label text-vm-text">{option.displayName}</span> —{' '}
+                  {provisionedNote(option)}
+                </p>
+              ) : (
+                <div key={option.provider} className="flex flex-wrap items-center gap-vm-2">
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setChosen(option.provider);
+                      setCredentials({});
+                      if (option.authKind !== 'credential_form') {
+                        beginConnectFor(option.provider);
+                      }
+                    }}
+                  >
+                    {busy
+                      ? 'Working…'
+                      : boundElsewhere || switching
+                        ? `Switch to ${option.displayName}`
+                        : `Connect ${option.displayName}`}
+                  </Button>
+                  <span className="text-vm-0 text-vm-text-muted">{option.helpText}</span>
+                </div>
+              ),
+            )}
           </div>
           {choices.some((o) => !o.configured) && (
             <ul className="mt-vm-2 grid gap-vm-1 text-vm-0 text-vm-text-muted">
@@ -653,7 +694,11 @@ export function ConnectionControl({
         (!multiConnect || (chosen !== null && isCredentialForm && !providedElsewhere)) && (
           <div className="flex flex-wrap items-center gap-vm-2">
             {providedElsewhere ? (
-              <span className="text-vm-1 text-vm-text-muted">{selectedOption?.helpText}</span>
+              <span className="text-vm-1 text-vm-text-muted" role="note">
+                {isProvisioned(selectedOption)
+                  ? provisionedNote(selectedOption)
+                  : selectedOption?.helpText}
+              </span>
             ) : (
               <Button
                 variant="secondary"
