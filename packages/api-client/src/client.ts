@@ -1,5 +1,6 @@
 import type {
   Session,
+  AccountExportResult,
   SignupRequest,
   LoginRequest,
   ForgotPasswordRequest,
@@ -447,8 +448,14 @@ export interface LucielApiClient {
   };
 
   account: {
-    /** Close account — requires Luciel deleted first; export-first (Arch §3.6.6). */
-    requestExport(): Promise<{ ok: boolean }>;
+    /**
+     * Self-serve export (Arch §3.6.6 / §5.10; round 7 WP-10, item 12). The bundle
+     * is built and stored, and the time-limited link comes back HERE as well as by
+     * email — so an email that never arrives is not the owner's only path to their
+     * own data. `downloadUrl`/`ttlDays` are optional only for an older server's bare
+     * `{ ok: true }`; the UI then falls back to the email sentence alone.
+     */
+    requestExport(): Promise<AccountExportResult>;
     /**
      * Round 6 WP-D (F156): while a Luciel is still active or paused the server refuses
      * (`conflict`) unless the caller confirms that closing deletes it.

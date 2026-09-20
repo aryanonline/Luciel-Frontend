@@ -1759,7 +1759,14 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     account: {
       async requestExport() {
         guardVerified();
-        return ok({ ok: true });
+        // The bundle's time-limited link comes back in the body as well as by email
+        // (round 7 WP-10, item 12) — the mock hands back the same shape the backend
+        // does, so the UI can show the link and the link's life.
+        return ok({
+          ok: true,
+          downloadUrl: `${MOCK_AUTHORIZE_ORIGIN}/api/v1/admin/account/export/${nextId()}`,
+          ttlDays: 7,
+        });
       },
       async close(opts) {
         guardVerified();

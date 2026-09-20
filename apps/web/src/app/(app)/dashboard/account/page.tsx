@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardTitle, CardDescription, Button, Modal, Banner, PageHeader } from '@luciel/ui';
+import type { AccountExportResult } from '@luciel/api-client';
 import { useLuciel, useLucielMutations } from '@/lib/hooks';
 import { api } from '@/lib/api';
 
@@ -30,8 +31,19 @@ export default function AccountPage() {
   const m = useLucielMutations();
   const [dialog, setDialog] = React.useState<Dialog>(null);
   const [inlineError, setInlineError] = React.useState<string | null>(null);
+  /**
+   * The served export result (round 7 WP-10, item 12): the API answers with the
+   * time-limited download link, and the UI used to discard it — email was the only
+   * delivery, and a failed request closed the dialog as if it had worked. The link
+   * now renders in the dialog on success (the email sentence stays), and a failure
+   * stays in the dialog with its reason (Modal's async contract).
+   */
+  const [exportResult, setExportResult] = React.useState<AccountExportResult | null>(null);
 
-  const close = () => setDialog(null);
+  const close = () => {
+    setDialog(null);
+    setExportResult(null);
+  };
   const isPaused = luciel?.state === 'paused';
   const inGrace = luciel?.state === 'luciel_grace_window';
   /**
@@ -177,19 +189,30 @@ export default function AccountPage() {
         }}
       />
 
-      {/* Export-first. */}
+      {/* Export-first. The dialog stays open on success to show the served link,
+          and on failure to show the reason — it never closes as if it had worked. */}
       <Modal
         open={dialog === 'export'}
         onOpenChange={close}
         title="Download all your data"
-        description="We'll prepare a bundle (conversations, leads, your uploaded files, audit log, and your connection configuration — provider and non-secret config only, never secrets). You'll get an email with a download link that works for 7 days; the data stays exportable through the 30-day grace window."
-        confirmLabel="Prepare my export"
+        description={
+          exportResult
+            ? undefined
+            : "We'll prepare a bundle (conversations, leads, your uploaded files, audit log, and your connection configuration — provider and non-secret config only, never secrets). The download link appears here and is also emailed to you; it works for 7 days, and the data stays exportable through the 30-day grace window."
+        }
+        confirmLabel={exportResult ? undefined : 'Prepare my export'}
         confirmPendingLabel="Preparing…"
-        onConfirm={async () => {
-          await api.account.requestExport();
-          close();
-        }}
-      />
+        cancelLabel={exportResult ? 'Done' : 'Cancel'}
+        onConfirm={
+          exportResult
+            ? undefined
+            : async () => {
+                setExportResult(await api.account.requestExport());
+              }
+        }
+      >
+        {exportResult && <ExportReady result={exportResult} />}
+      </Modal>
 
       {/*
         Close-account confirmation. Reachable only once the Luciel is deleted, and
@@ -220,6 +243,40 @@ export default function AccountPage() {
           </div>
         </Banner>
       </Modal>
+    </div>
+  );
+}
+
+/**
+ * The export outcome, from the served result (round 7 WP-10, item 12): the link
+ * itself when the server returned one, how long it lives, and that it was also
+ * emailed — so a lost email is never the only way to the owner's own data. An
+ * older server's bare `{ ok: true }` degrades to the email sentence alone.
+ */
+function ExportReady({ result }: { result: AccountExportResult }) {
+  const days = result.ttlDays;
+  const life = days === undefined ? '' : ` It works for ${days} day${days === 1 ? '' : 's'}.`;
+  return (
+    <div className="space-y-vm-2 text-vm-1" role="status">
+      <p className="font-label">Your export is ready.</p>
+      {result.downloadUrl ? (
+        <p>
+          <a
+            href={result.downloadUrl}
+            className="underline underline-offset-2"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Download your export
+          </a>
+          {life}
+        </p>
+      ) : null}
+      <p className="text-vm-text-muted">
+        {result.downloadUrl
+          ? 'We also emailed this link to you.'
+          : `We emailed the download link to you.${life}`}
+      </p>
     </div>
   );
 }
