@@ -40,6 +40,22 @@ export const account = z.object({
 export type Account = z.infer<typeof account>;
 
 /**
+ * POST /admin/account/export (Arch §3.6.6 / §5.10; round 7 WP-10, item 12). The
+ * bundle is built and stored, and the time-limited link comes back in the body AS
+ * WELL AS by email — so an email that never arrives is not the owner's only path
+ * to their own data. `ttlDays` is the link's life. Both are optional on the wire
+ * so an older server's bare `{ ok: true }` still parses; the UI then falls back
+ * to the email sentence alone. The HTTP adapter normalises the endpoint's
+ * snake_case spelling (`download_url`, `ttl_days`) to this shape.
+ */
+export const accountExportResult = z.object({
+  ok: z.boolean().default(true),
+  downloadUrl: z.string().url().optional(),
+  ttlDays: z.number().int().positive().optional(),
+});
+export type AccountExportResult = z.infer<typeof accountExportResult>;
+
+/**
  * An account-level notice the dashboard must surface on next login (Legal §A5,
  * §A10, §B10). §A5 is the binding case: a REDUCTION to the free starter
  * allowance must be delivered both by email and "as an in-dashboard
