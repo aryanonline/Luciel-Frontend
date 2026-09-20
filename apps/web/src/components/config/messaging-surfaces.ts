@@ -57,6 +57,13 @@ export const MESSAGING_SURFACES: Partial<Record<ChannelId, MessagingSurface[]>> 
       },
       unavailableReason: 'Meta app not configured',
       note: 'This Meta sign-in is shared with Facebook Messenger — one sign-in covers both rows, and each names its own id.',
+      // The WhatsApp Business API binds a WhatsApp Business account to a number,
+      // and a number already active on the consumer WhatsApp app is refused until
+      // it is migrated off that app (Arch §3.1.4 "WhatsApp-eligible"). Said here,
+      // before the sign-in, rather than discovered as a failed binding after it
+      // (round 7 WP-10, item 6).
+      prerequisite:
+        'Requires a number for the WhatsApp Business API. A number already active on the consumer WhatsApp app cannot be used until it is migrated off that app — your SMS/Voice number can be reused once it is WhatsApp-eligible, or designate a different number.',
     },
   ],
   messenger: [
