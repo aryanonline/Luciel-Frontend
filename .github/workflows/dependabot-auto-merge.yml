@@ -73,12 +73,22 @@ jobs:
           m = re.search(r"(?i)\brequirement from (.+?) to (.+?)$", title)
           if m:
               def top(spec):
-                  majors = [int(v) for v in re.findall(r"(\d+)(?:\.\d+)*", spec)]
-                  return max(majors) if majors else None
+                  bounds = [
+                      (int(major), int(minor or 0))
+                      for major, minor in re.findall(r"(\d+)(?:\.(\d+))?(?:\.\d+)*", spec)
+                  ]
+                  return max(bounds) if bounds else None
               a, b = top(m.group(1)), top(m.group(2))
               if a is None or b is None:
                   print("unknown"); sys.exit()
-              print("major" if b != a else "minor"); sys.exit()
+              # A 0.x package carries its breaking changes in the SECOND component, so a
+              # raised 0.x upper bound is a migration too (kept identical to the backend
+              # workflow, where "fastapi <0.139 -> <0.14x" auto-merged on 2026-09-28).
+              if b[0] != a[0] or (b[0] == 0 and b[1] != a[1]):
+                  print("major")
+              else:
+                  print("minor")
+              sys.exit()
           m = re.search(r"from (\d+)(?:\.(\d+))?\S* to (\d+)(?:\.(\d+))?", title)
           if not m:
               print("unknown"); sys.exit()

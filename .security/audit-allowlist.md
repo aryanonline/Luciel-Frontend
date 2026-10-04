@@ -8,7 +8,11 @@ an expired entry is a failing build, not a silent pass. `scripts/allowlist-expir
 
 ## Current waivers
 
-None. The list is empty as of 2026-09-07.
+| Advisory | Package | Why it is waived | Expires | Exit |
+|---|---|---|---|---|
+| GHSA-vfj7-8cjw-p6xm | braces <=3.0.3 | Stack-exhaustion DoS on nested brace patterns; no patched release exists. Build/lint-time only (tailwindcss 3 and eslint-config-next tooling), patterns are this repo's own globs, not in any production path (`pnpm why braces --prod` is empty) or shipped bundle. | 2026-11-03 | A patched `braces`, or the Tailwind 4 migration (Dependabot #30, `major-update`), which drops the chokidar/micromatch path. |
+
+Round 7 (2026-10-04): the nightly audit went red on 2026-09-30 for two `brace-expansion` advisories (GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p). Those had fixes and were closed by raising the `pnpm.overrides` (1.x → ^1.1.20, 5.x → ^5.0.11), not waived.
 
 ## Retired waivers
 

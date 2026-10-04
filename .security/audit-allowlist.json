@@ -1,4 +1,12 @@
 {
-  "_comment": "Waivers for `scripts/audit-gate.mjs` (pnpm audit, high+ blocks). Each entry needs a reason and an expiry; an expired entry fails the build. Rationale in audit-allowlist.md. Empty since the Next 14 → 15 migration (2026-09-07) retired the eight Next advisories; a new entry is a reviewed commit, never a quiet renewal.",
-  "waivers": []
+  "_comment": "Waivers for `scripts/audit-gate.mjs` (pnpm audit, high+ blocks). Each entry needs a reason and an expiry; an expired entry fails the build. Rationale in audit-allowlist.md. A new entry is a reviewed commit, never a quiet renewal.",
+  "waivers": [
+    {
+      "ghsa": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "reason": "Stack-exhaustion DoS on deeply nested brace patterns; every release (<=3.0.3) is affected and NO patched version exists (advisory lists patched <0.0.0). braces reaches this repo only through build- and lint-time tooling — tailwindcss 3 (chokidar / fast-glob / micromatch) and eslint-config-next (fast-glob) — where the patterns are the repository's own content globs; it is in no production dependency path (pnpm why braces --prod is empty), is not in the web image's runtime bundle or the widget bundle, and no request can supply a pattern.",
+      "added": "2026-10-04",
+      "expires": "2026-11-03"
+    }
+  ]
 }
