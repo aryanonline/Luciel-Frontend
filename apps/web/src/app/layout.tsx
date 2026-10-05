@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { QueryProvider } from '@/lib/query-provider';
 
@@ -8,12 +8,18 @@ import { QueryProvider } from '@/lib/query-provider';
  * Inter is the single locked brand family (§5) — self-hosted via next/font so
  * it loads WITHOUT an external stylesheet that would weaken the strict CSP
  * (§3.6). next/font inlines the font CSS and serves the files same-origin.
+ *
+ * The font file is VENDORED (./fonts, Inter variable, latin subset, OFL-1.1 —
+ * licence beside it), not fetched by next/font/google: that loader downloads
+ * from Google Fonts during `next build`, so a Google outage failed the build
+ * (the scheduled CI run of 2026-10-04) and would block a deploy the same way.
+ * tests/unit/font-self-hosted.test.ts pins this.
  */
-const inter = Inter({
-  subsets: ['latin'],
+const inter = localFont({
+  src: './fonts/inter-latin-wght-normal.woff2',
   display: 'swap',
   variable: '--font-inter',
-  weight: ['400', '500', '600'],
+  weight: '100 900',
 });
 
 /**
