@@ -124,6 +124,24 @@ const CHANNELS_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, ChannelId[]>> 
 const ACTION_ADD_NUMBER =
   'Action needed: add your number. Your Twilio account is connected; tell us which of its numbers Luciel uses.';
 
+/**
+ * The Today card's dormant need, word for word as the server composes it
+ * (app/employee/status.py, round 7 WP-3a): a dormant channel or tool is a billing
+ * state, so the need links to Billing — never to a Connect that would refuse.
+ */
+const DORMANT_STATUS_DETAIL = 'paused until a card is on file';
+const DORMANT_NEED_DETAIL = 'Add a card on the Billing page and it resumes.';
+const BILLING_HREF = '/dashboard/billing';
+const CHANNEL_NEED_LABEL: Record<ChannelId, string> = {
+  widget: 'Website chat',
+  email: 'Email',
+  sms: 'Text messages',
+  voice: 'Phone calls',
+  whatsapp: 'WhatsApp',
+  messenger: 'Messenger',
+  instagram: 'Instagram',
+};
+
 /** Which UI channel each per-channel destination belongs to (contract §2). */
 const CHANNEL_BY_META_CHANNEL: Record<MetaChannel, ChannelId> = {
   whatsapp: 'whatsapp',
@@ -618,6 +636,31 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             detail: 'Right now any page that copies your embed key can use it.',
             href: '/dashboard/embed',
           });
+        }
+        // Round 7 WP-3a: dormant is a BILLING state — the credential is intact and
+        // Connect would refuse — so the need sends the owner to Billing, with the
+        // server's own words (app/employee/status.py DORMANT_NEED_DETAIL/BILLING_HREF).
+        for (const c of state.luciel.channels) {
+          if (c.enabled && c.connectionStatus === 'dormant') {
+            needs.push({
+              code: `channel_dormant:${c.id}`,
+              severity: 'attention',
+              title: `${CHANNEL_NEED_LABEL[c.id]}: ${DORMANT_STATUS_DETAIL}`,
+              detail: DORMANT_NEED_DETAIL,
+              href: BILLING_HREF,
+            });
+          }
+        }
+        for (const t of state.luciel.tools) {
+          if (t.enabled && t.connectionStatus === 'dormant') {
+            needs.push({
+              code: `tool_dormant:${t.id}`,
+              severity: 'attention',
+              title: `${t.id.replace(/_/g, ' ')}: ${DORMANT_STATUS_DETAIL}`,
+              detail: DORMANT_NEED_DETAIL,
+              href: BILLING_HREF,
+            });
+          }
         }
         const capabilities: EmployeeStatus['capabilities'] = state.luciel.channels.map((c) => ({
           id: c.id,
