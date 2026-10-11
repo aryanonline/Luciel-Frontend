@@ -3,6 +3,8 @@ import {
   mountWidget,
   WIDGET_HUMAN_TAKEOVER_NOTE,
   WIDGET_OFFSITE_NOTE,
+  WIDGET_PAUSED_NOTE,
+  WIDGET_POLL_HIDDEN_MS,
   WIDGET_POLL_OPEN_MS,
   WIDGET_TEXT_MAX_CHARS,
 } from './mount';
@@ -10,6 +12,7 @@ import {
   createWidgetClient,
   LucielApiError,
   type WidgetApiClient,
+  type WidgetRenderState,
 } from '@luciel/api-client/widget';
 
 /** Stub client so a reply with markdown in it can be asserted on. */
@@ -810,5 +813,157 @@ describe('widget mount', () => {
 
     const visitorLines = (shadow.querySelector('.vm-body') as HTMLElement).textContent ?? '';
     expect(visitorLines.match(/hello\?/g)).toHaveLength(1);
+  });
+
+  // --- Round 7 D9: the Website chat channel can be switched off ---------------
+
+  /** A client whose successive bootstraps walk through `states` (the last one
+   *  repeats), counting calls so a test can see the off-state poll happen. */
+  const clientSwitching = (states: WidgetRenderState[]) => {
+    const calls: Array<string | undefined> = [];
+    const client: WidgetApiClient = {
+      ...clientReplying('ok'),
+      bootstrap: async (_key, sessionId) => {
+        calls.push(sessionId);
+        const state = states[Math.min(calls.length, states.length) - 1] ?? 'active';
+        return {
+          renderState: state,
+          businessName: 'Northside Auto',
+          assistantName: 'Luciel',
+          openingMessage:
+            state === 'channel_off' || state === 'paused'
+              ? ''
+              : 'Hi — I am an AI assistant for Northside Auto.',
+          aiAssistantLabel: 'AI assistant',
+          poweredByVantageMind: true,
+        };
+      },
+    };
+    return { client, calls };
+  };
+
+  it('renders nothing when the Website chat channel is off — no launcher, no copy, no chrome (D9)', async () => {
+    vi.useFakeTimers();
+    try {
+      sessionStorage.clear();
+      const { client } = clientSwitching(['channel_off']);
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      await mountWidget({ embedKey: 'vm_live_demo', host, client });
+
+      const shadowHost = host.querySelector('[data-luciel-widget]') as HTMLElement;
+      expect(shadowHost.shadowRoot!.querySelector('.vm-launcher')).toBeNull();
+      expect((shadowHost.shadowRoot!.textContent ?? '').trim()).toBe('');
+      expect((shadowHost.shadowRoot!.textContent ?? '').toLowerCase()).not.toContain('offline');
+      // Exactly like paused today: not even pinned — no floating chrome at all.
+      expect(shadowHost.style.position).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('polls the bootstrap while the channel is off and shows the launcher once it is on again — no reload (D9)', async () => {
+    vi.useFakeTimers();
+    try {
+      sessionStorage.clear();
+      const { client, calls } = clientSwitching(['channel_off', 'channel_off', 'active']);
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      await mountWidget({ embedKey: 'vm_live_demo', host, client });
+      const shadow = (host.querySelector('[data-luciel-widget]') as HTMLElement).shadowRoot!;
+      expect(calls).toHaveLength(1);
+
+      // Still off after one closed-panel interval: still nothing, still polling.
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_HIDDEN_MS + 50);
+      expect(calls).toHaveLength(2);
+      expect(shadow.querySelector('.vm-launcher')).toBeNull();
+
+      // The owner switches Website chat back on: the next poll mounts the launcher
+      // into the page the visitor is already on.
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_HIDDEN_MS + 50);
+      expect(calls).toHaveLength(3);
+      const launcher = shadow.querySelector('.vm-launcher') as HTMLButtonElement;
+      expect(launcher).not.toBeNull();
+      expect((host.querySelector('[data-luciel-widget]') as HTMLElement).style.position).toBe(
+        'fixed',
+      );
+      // The empty off-render is gone — the shadow root holds the styles + panel only.
+      const emptyDivs = Array.from(shadow.children).filter(
+        (el) => el.tagName === 'DIV' && el.childNodes.length === 0,
+      );
+      expect(emptyDivs).toHaveLength(0);
+
+      // Once mounted, the bootstrap is not polled any more (no session → no history
+      // poll either): nothing keeps hammering the data plane.
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_HIDDEN_MS * 2);
+      expect(calls).toHaveLength(3);
+
+      // And the mounted panel is a real one: opening it shows the disclosure.
+      launcher.click();
+      expect((shadow.querySelector('.vm-ai-label') as HTMLElement).textContent).toBe(
+        'AI assistant',
+      );
+      expect(shadow.querySelector('.vm-body')?.textContent).toContain(
+        'Hi — I am an AI assistant for Northside Auto.',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the off-state poll stops once the server says paused (today's no-poll state) (D9)", async () => {
+    vi.useFakeTimers();
+    try {
+      sessionStorage.clear();
+      const { client, calls } = clientSwitching(['channel_off', 'paused']);
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      await mountWidget({ embedKey: 'vm_live_demo', host, client });
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_HIDDEN_MS + 50);
+      expect(calls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_HIDDEN_MS * 3);
+      expect(calls).toHaveLength(2);
+      const shadow = (host.querySelector('[data-luciel-widget]') as HTMLElement).shadowRoot!;
+      expect(shadow.querySelector('.vm-launcher')).toBeNull();
+      expect((shadow.textContent ?? '').trim()).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a switched-off channel that reaches an open panel says the message was not sent and closes the composer (D9)', async () => {
+    // The visitor's session expired, the owner switched Website chat off, and the
+    // visitor types again: the server holds the message and answers channel_off.
+    // Same honest line as a pause — never the takeover note.
+    sessionStorage.clear();
+    const client: WidgetApiClient = {
+      ...clientReplying('x'),
+      send: async () => ({
+        sessionId: '00000000-0000-4000-8000-0000000000e7',
+        reply: {
+          messageId: '00000000-0000-4000-8000-0000000000c2',
+          role: 'assistant',
+          text: '',
+          at: '2026-07-30T00:00:00.000Z',
+        },
+        renderState: 'channel_off',
+      }),
+    };
+    const shadow = await mountOpen(client);
+    (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'anyone there?';
+    (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+    await flush();
+    const transcript = (shadow.querySelector('.vm-body') as HTMLElement).textContent ?? '';
+    expect(transcript).toContain(WIDGET_PAUSED_NOTE);
+    expect(transcript).not.toContain(WIDGET_HUMAN_TAKEOVER_NOTE);
+    // No blank bubble for the empty reply.
+    const blank = Array.from(shadow.querySelectorAll('.vm-msg')).filter(
+      (m) => (m.textContent ?? '').trim() === 'Luciel:',
+    );
+    expect(blank).toHaveLength(0);
+    expect((shadow.querySelector('.vm-input') as HTMLInputElement).disabled).toBe(true);
+    expect((shadow.querySelector('.vm-send') as HTMLButtonElement).disabled).toBe(true);
+    // The disclosure is still in the header of the open panel.
+    expect((shadow.querySelector('.vm-ai-label') as HTMLElement).textContent).toBe('AI assistant');
   });
 });

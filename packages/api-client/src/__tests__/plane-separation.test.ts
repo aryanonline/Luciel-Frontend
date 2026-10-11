@@ -33,4 +33,16 @@ describe('widget entrypoint contains no admin surface', () => {
     expect(res.renderState).toBe('at_cap');
     expect(res.reply.text.toLowerCase()).toContain('capacity');
   });
+
+  it('a switched-off channel (D9) and a pause answer with an EMPTY reply, as the server does', async () => {
+    // The server holds the message and runs no LLM; the widget says the message
+    // was not sent. The mock must not invent a bot line the server never gives.
+    for (const renderState of ['channel_off', 'paused'] as const) {
+      const client = createWidgetClient({ adapter: 'mock', mock: { renderState } });
+      expect((await client.bootstrap('vm_live_demo')).renderState).toBe(renderState);
+      const res = await client.send('vm_live_demo', { text: 'hello' });
+      expect(res.renderState).toBe(renderState);
+      expect(res.reply.text).toBe('');
+    }
+  });
 });
