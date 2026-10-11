@@ -28,7 +28,11 @@ the owner dashboard's auth and admin API surface.
 - Keep an AI-assistant disclosure visible while the panel is open and preserve
   the active session id for conversation continuity.
 - Render paused state as no visible widget chrome, not a misleading offline or
-  error panel.
+  error panel. A switched-off Website chat channel (`renderState: 'channel_off'`,
+  round 7 D9) renders the same nothing, but keeps re-checking the bootstrap on
+  the closed-panel poll cadence so the launcher appears without a reload once
+  the owner switches the channel back on. A session already in flight is served
+  as `active` by the server; the widget never decides that itself.
 - Use the data-plane-only `@luciel/api-client/widget` entrypoint. The built
   bundle must have zero admin client, admin endpoint, or admin helper surface;
   `check-bundle.mjs` enforces this.

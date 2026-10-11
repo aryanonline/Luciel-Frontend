@@ -67,6 +67,19 @@ describe('transport cookie mode per plane', () => {
     expect(bodies[1]).toEqual({ embedKey: 'vm_live_demo' });
   });
 
+  it("the widget bootstrap accepts 'channel_off' — the Website chat channel switched off (round 7 D9)", async () => {
+    // An honest empty render, not a schema failure: the widget mounts nothing and
+    // keeps polling the bootstrap until the owner switches the channel back on.
+    stubFetch({ ...VALID_BOOTSTRAP, renderState: 'channel_off', openingMessage: '' });
+    const boot = await createWidgetClient({ adapter: 'http', baseUrl: BASE_URL }).bootstrap(
+      'vm_live_demo',
+    );
+    expect(boot.renderState).toBe('channel_off');
+    // The platform literals still travel with it (Arch §3.4.16 / §3.4.17).
+    expect(boot.aiAssistantLabel).toBe('AI assistant');
+    expect(boot.poweredByVantageMind).toBe(true);
+  });
+
   it('the widget bootstrap fails closed on a response the schema does not recognize', async () => {
     // A 200 whose body carries an unknown renderState (or is missing the
     // AI-disclosure chrome) must REJECT — the widget then renders nothing on

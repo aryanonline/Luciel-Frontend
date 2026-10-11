@@ -39,11 +39,15 @@ export function createMockWidgetClient(options: MockWidgetOptions = {}): WidgetA
     async send(_embedKey, _req) {
       await delay();
       const renderState = options.renderState ?? 'active';
-      // Model the at-cap graceful, no-LLM reply (Arch §3.4.1b).
+      // Model the at-cap graceful, no-LLM reply (Arch §3.4.1b). A paused Luciel
+      // or a switched-off channel (D9) answers with an EMPTY reply exactly as the
+      // server does — the message was held, no LLM ran, and the widget says so.
       const text =
         renderState === 'at_cap'
           ? "I'm at capacity right now, but I've passed your message along and someone will be in touch."
-          : 'Thanks — yes, there are openings this month. Would you like to book an intro call?';
+          : renderState === 'paused' || renderState === 'channel_off'
+            ? ''
+            : 'Thanks — yes, there are openings this month. Would you like to book an intro call?';
       return {
         sessionId: '00000000-0000-4000-8000-000000000001',
         reply: { messageId: 'r1', role: 'assistant', text, at: new Date().toISOString() },

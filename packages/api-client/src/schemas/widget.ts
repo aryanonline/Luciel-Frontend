@@ -22,6 +22,13 @@ export const widgetRenderState = z.enum([
   'active', // normal chat
   'paused', // render an empty <div> — no error, no "offline" (Arch §3.6.2)
   'at_cap', // server returns the graceful at-cap reply (Arch §3.4.1b)
+  // Round 7 D9: the owner switched the Website chat channel OFF and this visitor
+  // has no conversation in flight. Same empty render as paused — no chrome, no
+  // error, no "offline" — but the widget keeps polling the bootstrap so switching
+  // the channel back on shows the launcher without a page reload. A session
+  // already underway when the channel went off keeps being served as 'active'
+  // (Arch §3.8.7 rule E.1: a config change never cuts a visitor off mid-sentence).
+  'channel_off',
 ]);
 export type WidgetRenderState = z.infer<typeof widgetRenderState>;
 
