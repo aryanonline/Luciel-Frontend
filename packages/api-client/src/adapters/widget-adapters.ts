@@ -58,6 +58,11 @@ export function createMockWidgetClient(options: MockWidgetOptions = {}): WidgetA
       await delay();
       return [];
     },
+    async endSession() {
+      // The server's end is a 204 no-content ack, idempotent; the mock has no
+      // session state to close.
+      await delay();
+    },
   };
 }
 
@@ -84,5 +89,14 @@ export function createHttpWidgetClient(baseUrl: string): WidgetApiClient {
       widgetSendResult.parse(await t.post('/api/v1/chat-widget/messages', { embedKey, ...req })),
     history: (embedKey, sessionId) =>
       t.get(`/api/v1/chat-widget/sessions/${sessionId}?embedKey=${encodeURIComponent(embedKey)}`),
+    // POST /api/v1/chat-widget/sessions/{session_id}/end?embedKey=… → 204. The
+    // embed key travels as a query parameter (the server's declared contract for
+    // this route), no body. A plain fetch, never navigator.sendBeacon: this is
+    // sent from an explicit visitor action, not a page leave (audit F049).
+    endSession: async (embedKey, sessionId) => {
+      await t.post<void>(
+        `/api/v1/chat-widget/sessions/${encodeURIComponent(sessionId)}/end?embedKey=${encodeURIComponent(embedKey)}`,
+      );
+    },
   };
 }

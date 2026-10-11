@@ -47,6 +47,11 @@ export const WIDGET_PAUSED_NOTE =
 export const WIDGET_TEXT_MAX_CHARS = 4000;
 /** The server refused this page's origin (round 6 WP-I): honest, final, no retry. */
 export const WIDGET_OFFSITE_NOTE = "This chat isn't available on this website.";
+/** The visitor ended the chat from the panel's End chat control (Arch §3.4.8b):
+ *  the server closed and summarized it. The next message opens a new one. */
+export const WIDGET_ENDED_NOTE = 'This chat has ended. Send a message to start a new one.';
+/** The explicit end did not reach the server; the conversation is still open. */
+export const WIDGET_END_FAILED_NOTE = "Couldn't end the chat just now — please try again.";
 
 /**
  * The server ends a widget session after this much silence (app/runtime/sessions.py
@@ -212,10 +217,12 @@ export async function mountWidget(options: MountOptions): Promise<void> {
     // used to end the session on every tab-hide and navigation, and each new page
     // started a fresh billed conversation with no memory of the last one).
     //
-    // Nothing ends the session from here any more: a page leave is indistinguishable
+    // No page leave ends the session from here: a page leave is indistinguishable
     // from a navigation, and the server closes the session deterministically by
     // inactivity (30 minutes) and summarizes it then. A stored session older than
-    // that window is not resumed.
+    // that window is not resumed. The ONE end signal this panel sends is the
+    // visitor's own, explicit, confirmed "End chat" (Arch §3.4.8b, doEnd below) —
+    // never pagehide, visibilitychange, beforeunload, or the close button.
     let sessionId: string | undefined = stored?.sessionId;
     let renderState: WidgetBootstrap['renderState'] = boot.renderState;
     // Every transcript row the panel has rendered (or deliberately skipped), so a
@@ -276,6 +283,21 @@ export async function mountWidget(options: MountOptions): Promise<void> {
     };
     const greeting = appendMessage('assistant', boot.openingMessage);
 
+    // Live region so incoming messages are announced to screen readers. It carries
+    // markdown-stripped PROSE — the formatting is visual only.
+    const live = a11yLiveRegion(markdownToPlainText(boot.openingMessage));
+    body.appendChild(live);
+
+    /** An in-transcript notice (italic, not a bubble), announced to screen readers. */
+    const appendNote = (text: string) => {
+      const note = document.createElement('div');
+      note.className = 'vm-msg vm-note';
+      note.textContent = text;
+      body.appendChild(note);
+      body.scrollTop = body.scrollHeight;
+      live.textContent = text;
+    };
+
     // §3.4.12: an EMPTY reply means a person holds this conversation — their answer
     // arrives through the poll. Say so once, in the transcript; never render a blank
     // bubble and never invent a bot line for them (2026-09-05 audit F145).
@@ -283,17 +305,8 @@ export async function mountWidget(options: MountOptions): Promise<void> {
     const noteHumanHasConversation = () => {
       if (humanNoteShown) return;
       humanNoteShown = true;
-      const note = document.createElement('div');
-      note.className = 'vm-msg vm-note';
-      note.textContent = WIDGET_HUMAN_TAKEOVER_NOTE;
-      body.appendChild(note);
-      body.scrollTop = body.scrollHeight;
+      appendNote(WIDGET_HUMAN_TAKEOVER_NOTE);
     };
-
-    // Live region so incoming messages are announced to screen readers. It carries
-    // markdown-stripped PROSE — the formatting is visual only.
-    const live = a11yLiveRegion(markdownToPlainText(boot.openingMessage));
-    body.appendChild(live);
 
     // The server persists the opening greeting as the session's first row. The
     // panel already shows it (the static opener has no id), so the first poll of a
@@ -425,17 +438,13 @@ export async function mountWidget(options: MountOptions): Promise<void> {
         renderState = res.renderState;
         writeStoredSession(options.embedKey, sessionId);
         seenIds.add(res.reply.messageId);
+        syncEndControl(); // there is now a conversation the visitor can end
         if (renderState === 'paused' || renderState === 'channel_off') {
           // The business paused its Luciel — or switched Website chat off (D9) —
           // and this conversation had already ended (§3.6.2 holds NEW
           // conversations): the server held the message. Say so — never the
           // takeover note, which claimed a person had it (E2E-8).
-          const note = document.createElement('div');
-          note.className = 'vm-msg vm-note';
-          note.textContent = WIDGET_PAUSED_NOTE;
-          body.appendChild(note);
-          body.scrollTop = body.scrollHeight;
-          live.textContent = WIDGET_PAUSED_NOTE;
+          appendNote(WIDGET_PAUSED_NOTE);
         } else if (res.reply.text.trim()) {
           appendMessage('assistant', res.reply.text);
           live.textContent = markdownToPlainText(res.reply.text); // announce incoming (Arch §5.16)
@@ -484,10 +493,116 @@ export async function mountWidget(options: MountOptions): Promise<void> {
       if ((e as KeyboardEvent).key === 'Enter') void doSend();
     });
 
-    // "Powered by VantageMind" chrome — present on all accounts (Arch §3.4.17).
+    // "Powered by VantageMind" chrome — present on all accounts (Arch §3.4.17) —
+    // beside the one control that ends a conversation on purpose.
     const footer = document.createElement('div');
     footer.className = 'vm-footer';
-    footer.textContent = boot.poweredByVantageMind ? 'Powered by VantageMind' : '';
+    const poweredBy = document.createElement('span');
+    poweredBy.className = 'vm-powered';
+    poweredBy.textContent = boot.poweredByVantageMind ? 'Powered by VantageMind' : '';
+    const endButton = document.createElement('button');
+    endButton.className = 'vm-end';
+    endButton.type = 'button';
+    endButton.textContent = 'End chat';
+    footer.append(poweredBy, endButton);
+
+    // The explicit end signal (Arch §3.4.8b). Owner-settled: the widget relies on
+    // inactivity, and the server accepts an explicit end — so the ONLY thing that
+    // sends it is the visitor pressing "End chat" and then confirming. Nothing in
+    // this file listens to pagehide / visibilitychange / beforeunload for it
+    // (2026-09-05 audit F049: that split one visit into several billed
+    // conversations). The confirm step is a strip above the composer, not a
+    // modal: it keeps the transcript, the disclosure and the panel exactly where
+    // they are.
+    const confirm = document.createElement('div');
+    confirm.className = 'vm-confirm';
+    confirm.setAttribute('role', 'group');
+    confirm.setAttribute('aria-label', 'End this chat?');
+    confirm.hidden = true;
+    const confirmText = document.createElement('span');
+    confirmText.className = 'vm-confirm-text';
+    confirmText.textContent = 'End this chat?';
+    const confirmEnd = document.createElement('button');
+    confirmEnd.className = 'vm-confirm-end';
+    confirmEnd.type = 'button';
+    confirmEnd.textContent = 'End chat';
+    const confirmKeep = document.createElement('button');
+    confirmKeep.className = 'vm-confirm-keep';
+    confirmKeep.type = 'button';
+    confirmKeep.textContent = 'Keep chatting';
+    confirm.append(confirmText, confirmEnd, confirmKeep);
+
+    // The End chat control exists only while there is a conversation to end, and
+    // steps aside while its own confirm strip is up.
+    const syncEndControl = () => {
+      endButton.hidden = !confirm.hidden || !sessionId;
+    };
+    const showConfirm = (show: boolean) => {
+      confirm.hidden = !show;
+      syncEndControl();
+    };
+    syncEndControl();
+
+    endButton.addEventListener('click', () => {
+      showConfirm(true);
+      // The safe answer takes focus; ending is one deliberate Tab + Enter away.
+      confirmKeep.focus();
+    });
+    confirmKeep.addEventListener('click', () => {
+      showConfirm(false);
+      endButton.focus();
+    });
+
+    let ending = false;
+    const doEnd = async () => {
+      const ended = sessionId;
+      // The in-flight guard: a double-click sends exactly one end signal.
+      if (ending || !ended) return;
+      ending = true;
+      confirmEnd.disabled = true;
+      confirmKeep.disabled = true;
+      confirmEnd.textContent = 'Ending…';
+      let failed = false;
+      try {
+        await client.endSession(options.embedKey, ended);
+      } catch {
+        failed = true;
+      } finally {
+        ending = false;
+        confirmEnd.disabled = false;
+        confirmKeep.disabled = false;
+        confirmEnd.textContent = 'End chat';
+      }
+      if (failed) {
+        // The conversation is still open on the server: keep everything — the
+        // session, the poll, the control — and say so where the visitor is looking.
+        showConfirm(false);
+        appendNote(WIDGET_END_FAILED_NOTE);
+        endButton.focus();
+        return;
+      }
+      // Ended on the server (closed + summarized, §3.4.7). This tab forgets the
+      // session so the next message opens a NEW conversation — the one case where
+      // a second billed session is exactly what the visitor asked for.
+      if (pollTimer !== undefined) clearTimeout(pollTimer);
+      pollTimer = undefined;
+      pollFailures = 0;
+      clearStoredSession(options.embedKey);
+      sessionId = undefined;
+      seenIds.clear();
+      serverGreetingSeen = false;
+      humanNoteShown = false;
+      showConfirm(false); // and the End chat control goes with the session
+      appendNote(WIDGET_ENDED_NOTE);
+      // The panel stays open, the disclosure stays in its header; the composer
+      // reopens unless the server had closed it (at-cap / paused / channel off).
+      const closed = renderState !== 'active';
+      input.disabled = closed;
+      send.disabled = closed;
+      if (!closed) input.focus();
+      else closeButton.focus();
+    };
+    confirmEnd.addEventListener('click', () => void doEnd());
 
     // Circular launcher — closed by default, so the embed never rearranges the
     // customer's page (P0-1).
@@ -518,15 +633,24 @@ export async function mountWidget(options: MountOptions): Promise<void> {
     launcher.addEventListener('click', () => {
       setOpen(root.getAttribute('data-open') !== 'true');
     });
+    // Closing the panel ends nothing (F049): the conversation stays open for the
+    // visitor to come back to, and the server closes it by inactivity.
     closeButton.addEventListener('click', () => setOpen(false));
-    // Escape closes the panel, but must not fight the host page when closed.
+    // Escape closes the panel, but must not fight the host page when closed. With
+    // the end-chat confirm up, Escape answers THAT first ("keep chatting").
     root.addEventListener('keydown', (e) => {
-      if ((e as KeyboardEvent).key === 'Escape' && root.getAttribute('data-open') === 'true') {
-        setOpen(false);
+      if ((e as KeyboardEvent).key !== 'Escape' || root.getAttribute('data-open') !== 'true') {
+        return;
       }
+      if (!confirm.hidden && !ending) {
+        showConfirm(false);
+        endButton.focus();
+        return;
+      }
+      setOpen(false);
     });
 
-    panel.append(header, body, inputRow, footer);
+    panel.append(header, body, confirm, inputRow, footer);
     root.append(panel, launcher);
     shadow.appendChild(root);
   };

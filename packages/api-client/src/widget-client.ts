@@ -24,4 +24,16 @@ export interface WidgetApiClient {
   send(embedKey: string, req: WidgetSendRequest): Promise<WidgetSendResult>;
   /** Fetch history for an existing session (e.g. reopened widget). */
   history(embedKey: string, sessionId: string): Promise<WidgetMessage[]>;
+  /**
+   * The explicit end-of-conversation signal (Arch §3.4.8b): the server closes
+   * and summarizes THIS session now instead of waiting for the inactivity
+   * sweep. Idempotent on the server (an ended or unknown session acks 204).
+   *
+   * Call it ONLY from an explicit visitor action — the widget's "End chat"
+   * control after its confirm step — never from pagehide / visibilitychange /
+   * a close button: the 2026-09-05 audit (F049) found that a per-navigation end
+   * signal split one visit into several billed conversations. The widget relies
+   * on inactivity for everything that is not an explicit end.
+   */
+  endSession(embedKey: string, sessionId: string): Promise<void>;
 }

@@ -17,6 +17,9 @@ import { color, radius, space, fontFamily, motion } from '@luciel/design-tokens'
 export const widgetStyles = `
   :host { all: initial; }
   * { box-sizing: border-box; font-family: ${fontFamily}; }
+  /* The hidden attribute must win over the display rules below (the UA's own
+     [hidden] rule loses to any author display:flex). */
+  [hidden] { display: none !important; }
   .vm-root {
     color: ${color.text};
     font-size: 14px;
@@ -126,10 +129,61 @@ export const widgetStyles = `
   .vm-msg a { color: ${color.accent}; text-decoration: underline; }
   .vm-msg a:focus-visible { outline: 2px solid ${color.focusRing}; outline-offset: 2px; }
   .vm-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: ${space[2]};
     padding: ${space[2]} ${space[4]};
     border-top: 1px solid ${color.border};
     font-size: 11px;
     color: ${color.textMuted};
+    flex: none;
+  }
+  /* The one control that ends a conversation on purpose (Arch §3.4.8b): quiet,
+     beside the powered-by line, present only while there is a chat to end. */
+  .vm-end {
+    flex: none;
+    min-height: 32px;
+    padding: 0 ${space[3]};
+    background: transparent;
+    border: 1px solid ${color.border};
+    border-radius: ${radius.control};
+    color: ${color.textMuted};
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .vm-end:hover { background: ${color.surface}; color: ${color.text}; }
+  .vm-end:focus-visible { outline: 2px solid ${color.focusRing}; outline-offset: 2px; }
+  /* The end-chat confirm step: a strip above the composer, never a modal, so the
+     transcript and the AI disclosure stay exactly where they are. */
+  .vm-confirm {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: ${space[2]};
+    padding: ${space[2]} ${space[4]};
+    border-top: 1px solid ${color.border};
+    background: ${color.surface};
+    font-size: 13px;
+    flex: none;
+  }
+  .vm-confirm-text { flex: 1 1 auto; }
+  .vm-confirm-end, .vm-confirm-keep {
+    min-height: 36px;
+    padding: 0 ${space[3]};
+    border-radius: ${radius.control};
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .vm-confirm-end { background: ${color.accent}; color: #fff; border: none; }
+  .vm-confirm-end:hover { background: ${color.accentHover}; }
+  .vm-confirm-keep { background: transparent; color: ${color.text}; border: 1px solid ${color.border}; }
+  .vm-confirm-keep:hover { background: ${color.bg}; }
+  .vm-confirm-end:disabled, .vm-confirm-keep:disabled { opacity: .5; cursor: not-allowed; }
+  .vm-confirm-end:focus-visible, .vm-confirm-keep:focus-visible {
+    outline: 2px solid ${color.focusRing};
+    outline-offset: 2px;
   }
   /* Typing indicator — the visitor sees the reply being worked on instead of
      dead air, so they don't press Enter again (P1-20). */
