@@ -11,6 +11,9 @@ an expired entry is a failing build, not a silent pass. `scripts/allowlist-expir
 | Advisory | Package | Why it is waived | Expires | Exit |
 |---|---|---|---|---|
 | GHSA-vfj7-8cjw-p6xm | braces <=3.0.3 | Stack-exhaustion DoS on nested brace patterns; no patched release exists. Build/lint-time only (tailwindcss 3 and eslint-config-next tooling), patterns are this repo's own globs, not in any production path (`pnpm why braces --prod` is empty) or shipped bundle. | 2026-11-03 | A patched `braces`, or the Tailwind 4 migration (Dependabot #30, `major-update`), which drops the chokidar/micromatch path. |
+| GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr | tinypool <2.1.2 (1.1.1 installed) | Prototype-pollution gadgets in the worker/run() options. tinypool is vitest's worker pool: a dev dependency only (`pnpm why tinypool --prod` is empty), not in the web image or the widget bundle, and its options come from this repo's vitest config, never from input. | 2026-11-03 | vitest 4 (ships tinypool 2.1.2+), a major for the steward's triage. |
+
+Round 7 (2026-10-11): the nightly audit went red on 2026-10-06 for four advisories. Three had in-range fixes and were taken, not waived: `next` 15.5.25 → 15.5.27 (two moderates), `sharp` 0.35.5 (GHSA-wq5f-xc86-pv6w) and `source-map-js` 1.2.2 (GHSA-68fv-2mgg-jv7q) by refreshing the lockfile. The two `tinypool` criticals have no fix inside vitest 3 and are waived above.
 
 Round 7 (2026-10-04): the nightly audit went red on 2026-09-30 for two `brace-expansion` advisories (GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p). Those had fixes and were closed by raising the `pnpm.overrides` (1.x → ^1.1.20, 5.x → ^5.0.11), not waived.
 
