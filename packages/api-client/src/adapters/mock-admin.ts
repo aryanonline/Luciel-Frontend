@@ -1735,7 +1735,32 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async startCheckout() {
         guardVerified();
+        if (state.billing.paymentsAvailable === false) {
+          throw new LucielApiError({
+            code: 'service_unavailable',
+            message: 'Card payments are not live in this deployment yet.',
+          });
+        }
         return ok({ url: 'https://checkout.stripe.com/mock-session' });
+      },
+      async startPortal() {
+        guardVerified();
+        // Mirrors the backend (round 7 WP-1 #5): 503 while payments are not live,
+        // 409 when there is no Stripe customer / card to update — Checkout adds
+        // a first card; the portal only replaces one.
+        if (state.billing.paymentsAvailable === false) {
+          throw new LucielApiError({
+            code: 'service_unavailable',
+            message: 'Card payments are not live in this deployment yet.',
+          });
+        }
+        if (!state.billing.paymentMethod) {
+          throw new LucielApiError({
+            code: 'conflict',
+            message: 'No card on file to update — add a card first.',
+          });
+        }
+        return ok({ url: 'https://billing.stripe.com/mock-portal-session' });
       },
       async removePaymentMethod() {
         guardVerified();

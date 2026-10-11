@@ -29,6 +29,7 @@ import type {
   ScopeSelection,
   BillingInfo,
   CheckoutSession,
+  PortalSession,
   Connection,
   ConnectionProviders,
   ConnectionType,
@@ -438,6 +439,14 @@ export interface LucielApiClient {
     get(): Promise<BillingInfo>;
     /** Adding a card = Stripe Checkout, no charge at save (Customer Journey §6). */
     startCheckout(): Promise<CheckoutSession>;
+    /**
+     * Replace the card on file via the hosted Stripe Billing Portal (round 7 WP-1
+     * #5). `service_unavailable` (503) while payments are not live in this
+     * deployment — the same truth `paymentsAvailable: false` carries on the read;
+     * `conflict` (409) when there is no card to update, in which case Checkout
+     * (`startCheckout`) is the honest offer instead.
+     */
+    startPortal(): Promise<PortalSession>;
     removePaymentMethod(): Promise<BillingInfo>;
   };
 
