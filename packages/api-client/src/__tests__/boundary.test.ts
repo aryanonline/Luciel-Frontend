@@ -81,6 +81,24 @@ describe('mock models the required states', () => {
     expect(restored.graceWindowStartedAt).toBeUndefined();
   });
 
+  it('serves a dormant channel as a Billing need with the server wording (round 7 WP-3a)', async () => {
+    const client = createLucielClient({ adapter: 'mock' });
+    const luciel = await client.luciel.get();
+    await client.luciel.updateChannels(
+      (luciel?.channels ?? []).map((c) =>
+        c.id === 'sms' ? { ...c, enabled: true, connectionStatus: 'dormant' as const } : c,
+      ),
+    );
+    const status = await client.luciel.status();
+    const need = status?.needs.find((n) => n.code === 'channel_dormant:sms');
+    expect(need).toMatchObject({
+      severity: 'attention',
+      title: 'Text messages: paused until a card is on file',
+      detail: 'Add a card on the Billing page and it resumes.',
+      href: '/dashboard/billing',
+    });
+  });
+
   it('exposes healthy AND expired connections (states the UI must render)', async () => {
     const client = createLucielClient({ adapter: 'mock' });
     const conns = await client.connections.list();
