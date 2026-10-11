@@ -208,6 +208,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     billing: {
       get: () => t.get('/api/v1/billing'),
       startCheckout: () => t.post('/api/v1/billing/checkout'),
+      startPortal: () => t.post('/api/v1/billing/portal'),
       removePaymentMethod: () => t.del<BillingInfo>('/api/v1/billing/payment-method'),
     },
     analytics: {
