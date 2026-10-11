@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   mountWidget,
+  WIDGET_END_FAILED_NOTE,
+  WIDGET_ENDED_NOTE,
   WIDGET_HUMAN_TAKEOVER_NOTE,
   WIDGET_OFFSITE_NOTE,
   WIDGET_PAUSED_NOTE,
@@ -36,6 +38,7 @@ const clientReplying = (replyText: string): WidgetApiClient => ({
     renderState: 'active',
   }),
   history: async () => [],
+  endSession: async () => {},
 });
 
 /** A client whose reply the test resolves by hand, to observe the in-flight UI. */
@@ -65,6 +68,7 @@ const clientDeferred = () => {
           });
       }),
     history: async () => [],
+    endSession: async () => {},
   };
   return { client, release: (text: string) => release(text) };
 };
@@ -349,6 +353,7 @@ describe('widget mount', () => {
       renderState: 'active',
     }),
     history: async () => [],
+    endSession: async () => {},
   });
 
   /** Installs a sendBeacon spy for the duration of `run`, then restores. */
@@ -710,6 +715,7 @@ describe('widget mount', () => {
       throw error;
     },
     history: async () => [],
+    endSession: async () => {},
   });
 
   /** Mounts against a failing client, sends once, and returns the transcript text. */
@@ -965,5 +971,207 @@ describe('widget mount', () => {
     expect((shadow.querySelector('.vm-send') as HTMLButtonElement).disabled).toBe(true);
     // The disclosure is still in the header of the open panel.
     expect((shadow.querySelector('.vm-ai-label') as HTMLElement).textContent).toBe('AI assistant');
+  });
+
+  // --- Arch §3.4.8b: the explicit end is the visitor's End chat, never a page leave --
+
+  /** A session-issuing client that records every end signal (and can refuse them). */
+  const clientEnding = (sessionId: string, opts: { fail?: boolean } = {}) => {
+    const ends: Array<[string, string]> = [];
+    const sends: Array<{ sessionId?: string }> = [];
+    const base = clientWithSession(sessionId);
+    const client: WidgetApiClient = {
+      ...base,
+      send: async (key, req) => {
+        sends.push(req);
+        return base.send(key, req);
+      },
+      endSession: async (key, id) => {
+        ends.push([key, id]);
+        if (opts.fail) throw new LucielApiError({ code: 'network_error', message: 'offline' });
+      },
+    };
+    return { client, ends, sends };
+  };
+
+  const sendOnce = async (shadow: ShadowRoot, text: string) => {
+    (shadow.querySelector('.vm-input') as HTMLInputElement).value = text;
+    (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+    await flush();
+  };
+
+  it('a page leave, a tab hide, or closing the panel sends NO end signal — not a beacon, not a call (F049)', async () => {
+    const SESSION = '00000000-0000-4000-8000-0000000000f1';
+    sessionStorage.clear();
+    const { client, ends } = clientEnding(SESSION);
+    await withBeaconSpy(async (sent) => {
+      const shadow = await mountOpen(client);
+      await sendOnce(shadow, 'hi');
+
+      window.dispatchEvent(new Event('pagehide'));
+      window.dispatchEvent(new Event('beforeunload'));
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      });
+      try {
+        document.dispatchEvent(new Event('visibilitychange'));
+      } finally {
+        Reflect.deleteProperty(document, 'visibilityState');
+      }
+      // Closing the panel — by its button and by Escape — is not an end either.
+      (shadow.querySelector('.vm-close') as HTMLButtonElement).click();
+      (shadow.querySelector('.vm-launcher') as HTMLButtonElement).click();
+      (shadow.querySelector('.vm-root') as HTMLElement).dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+      await flush();
+
+      expect(ends).toHaveLength(0);
+      expect(sent.filter((url) => url.includes(SESSION))).toHaveLength(0);
+    });
+    // The conversation is still this tab's to come back to.
+    const remembered = JSON.parse(sessionStorage.getItem('luciel:session:vm_live_demo') ?? '{}');
+    expect(remembered.sessionId).toBe(SESSION);
+  });
+
+  it('End chat asks first; only the confirmed action sends exactly one end signal, and never a beacon', async () => {
+    const SESSION = '00000000-0000-4000-8000-0000000000f2';
+    sessionStorage.clear();
+    const { client, ends, sends } = clientEnding(SESSION);
+    await withBeaconSpy(async (sent) => {
+      const shadow = await mountOpen(client);
+      const endButton = shadow.querySelector('.vm-end') as HTMLButtonElement;
+      const confirm = shadow.querySelector('.vm-confirm') as HTMLElement;
+      // Nothing to end yet: the control is not offered.
+      expect(endButton.hidden).toBe(true);
+      await sendOnce(shadow, 'hi');
+      expect(endButton.hidden).toBe(false);
+      expect(confirm.hidden).toBe(true);
+
+      // Pressing End chat only ASKS.
+      endButton.click();
+      expect(confirm.hidden).toBe(false);
+      expect(confirm.textContent).toContain('End this chat?');
+      expect(ends).toHaveLength(0);
+
+      // Keep chatting: nothing sent, control back.
+      (shadow.querySelector('.vm-confirm-keep') as HTMLButtonElement).click();
+      expect(confirm.hidden).toBe(true);
+      expect(endButton.hidden).toBe(false);
+      expect(ends).toHaveLength(0);
+
+      // Escape with the strip up answers it, not the panel.
+      endButton.click();
+      (shadow.querySelector('.vm-root') as HTMLElement).dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+      expect(confirm.hidden).toBe(true);
+      expect((shadow.querySelector('.vm-root') as HTMLElement).getAttribute('data-open')).toBe(
+        'true',
+      );
+      expect(ends).toHaveLength(0);
+
+      // Confirm — twice, impatiently. Exactly ONE end signal, for THIS session.
+      endButton.click();
+      const confirmEnd = shadow.querySelector('.vm-confirm-end') as HTMLButtonElement;
+      confirmEnd.click();
+      expect(confirmEnd.disabled).toBe(true); // pending state while it settles
+      expect(confirmEnd.textContent).toBe('Ending…');
+      confirmEnd.click();
+      await flush();
+      expect(ends).toEqual([['vm_live_demo', SESSION]]);
+      expect(sent).toHaveLength(0);
+
+      // Afterwards: the panel is still open, the disclosure still in its header,
+      // the visitor told plainly, the control gone with the session.
+      const root = shadow.querySelector('.vm-root') as HTMLElement;
+      expect(root.getAttribute('data-open')).toBe('true');
+      expect((shadow.querySelector('.vm-ai-label') as HTMLElement).textContent).toBe(
+        'AI assistant',
+      );
+      expect(shadow.querySelector('.vm-body')?.textContent).toContain(WIDGET_ENDED_NOTE);
+      expect(confirm.hidden).toBe(true);
+      expect(endButton.hidden).toBe(true);
+      expect(sessionStorage.getItem('luciel:session:vm_live_demo')).toBeNull();
+      expect((shadow.querySelector('.vm-input') as HTMLInputElement).disabled).toBe(false);
+
+      // The next message opens a NEW conversation: no session id travels with it.
+      await sendOnce(shadow, 'one more thing');
+      expect(sends.map((s) => s.sessionId)).toEqual([undefined, undefined]);
+      expect(endButton.hidden).toBe(false); // and that one can be ended in turn
+      expect(ends).toHaveLength(1);
+    });
+  });
+
+  it('a restored session offers End chat straight away', async () => {
+    const SESSION = '00000000-0000-4000-8000-0000000000f3';
+    sessionStorage.clear();
+    sessionStorage.setItem(
+      'luciel:session:vm_live_demo',
+      JSON.stringify({ sessionId: SESSION, lastActivity: Date.now() }),
+    );
+    const { client } = clientEnding(SESSION);
+    const shadow = await mountOpen(client);
+    expect((shadow.querySelector('.vm-end') as HTMLButtonElement).hidden).toBe(false);
+  });
+
+  it('a failed end keeps the conversation, says so, and lets the visitor try again', async () => {
+    const SESSION = '00000000-0000-4000-8000-0000000000f4';
+    sessionStorage.clear();
+    const { client, ends, sends } = clientEnding(SESSION, { fail: true });
+    const shadow = await mountOpen(client);
+    await sendOnce(shadow, 'hi');
+    (shadow.querySelector('.vm-end') as HTMLButtonElement).click();
+    (shadow.querySelector('.vm-confirm-end') as HTMLButtonElement).click();
+    await flush();
+
+    expect(ends).toHaveLength(1);
+    const transcript = shadow.querySelector('.vm-body')?.textContent ?? '';
+    expect(transcript).toContain(WIDGET_END_FAILED_NOTE);
+    expect(transcript).not.toContain(WIDGET_ENDED_NOTE);
+    // Session kept, control back, confirm strip down and re-enabled.
+    const remembered = JSON.parse(sessionStorage.getItem('luciel:session:vm_live_demo') ?? '{}');
+    expect(remembered.sessionId).toBe(SESSION);
+    expect((shadow.querySelector('.vm-end') as HTMLButtonElement).hidden).toBe(false);
+    expect((shadow.querySelector('.vm-confirm') as HTMLElement).hidden).toBe(true);
+    expect((shadow.querySelector('.vm-confirm-end') as HTMLButtonElement).disabled).toBe(false);
+    expect((shadow.querySelector('.vm-confirm-end') as HTMLButtonElement).textContent).toBe(
+      'End chat',
+    );
+    // The SAME conversation continues.
+    await sendOnce(shadow, 'still here?');
+    expect(sends[1]?.sessionId).toBe(SESSION);
+  });
+
+  it('a confirmed end stops the history poll', async () => {
+    vi.useFakeTimers();
+    try {
+      const SESSION = '00000000-0000-4000-8000-0000000000f5';
+      sessionStorage.clear();
+      let historyCalls = 0;
+      const { client } = clientEnding(SESSION);
+      const polling: WidgetApiClient = {
+        ...client,
+        history: async () => {
+          historyCalls += 1;
+          return [];
+        },
+      };
+      const shadow = await mountOpen(polling);
+      (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'hi';
+      (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_OPEN_MS + 50);
+      expect(historyCalls).toBe(1);
+
+      (shadow.querySelector('.vm-end') as HTMLButtonElement).click();
+      (shadow.querySelector('.vm-confirm-end') as HTMLButtonElement).click();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_OPEN_MS * 3);
+      expect(historyCalls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

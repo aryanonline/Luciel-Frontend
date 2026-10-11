@@ -27,6 +27,12 @@ the owner dashboard's auth and admin API surface.
   below `480px`.
 - Keep an AI-assistant disclosure visible while the panel is open and preserve
   the active session id for conversation continuity.
+- The only end-of-session signal the widget sends is the visitor's explicit,
+  confirmed "End chat" (the `.vm-end` control and its `.vm-confirm` strip,
+  Arch §3.4.8b, `endSession` on the widget client). Never send it from
+  pagehide, visibilitychange, beforeunload, or the close button: a per-leave
+  signal split one visit into several billed conversations (audit F049). The
+  server ends everything else by inactivity.
 - Render paused state as no visible widget chrome, not a misleading offline or
   error panel. A switched-off Website chat channel (`renderState: 'channel_off'`,
   round 7 D9) renders the same nothing, but keeps re-checking the bootstrap on
