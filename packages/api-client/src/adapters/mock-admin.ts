@@ -74,6 +74,18 @@ const PER_FILE_MAX_BYTES = 50_000_000;
 const CRM_BACKFILL_BATCH = 100;
 
 /**
+ * The backend's typed refusal for a take-over / reply on an ENDED session (round 7
+ * WP-3b item 4; dashboard.py `_session_ended`): 409 → `conflict`, with the wire
+ * word `session_ended` in the message so the page can name the state.
+ */
+const sessionEnded = () =>
+  new LucielApiError({
+    code: 'conflict',
+    message:
+      'This conversation has ended, so there is nothing to take over or reply into (session_ended).',
+  });
+
+/**
  * Stand-in consent host for OAuth starts. The UI only hands the browser to a
  * known provider host, and accepts this one only while running on the mock.
  */
@@ -1679,8 +1691,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async takeOver(sessionId) {
         guardVerified();
         const c = state.conversations.find((x) => x.sessionId === sessionId);
-        if (c) c.mode = 'human_controlled';
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Session not found.' });
+        // Round 7 WP-3b item 4: an ended session is refused before anything changes.
+        if (c.endedAt) throw sessionEnded();
+        c.mode = 'human_controlled';
         return ok(c);
       },
       async handBack(sessionId) {
@@ -1694,27 +1708,43 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         const c = state.conversations.find((x) => x.sessionId === sessionId);
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Session not found.' });
+        if (c.endedAt) throw sessionEnded();
         if (c.mode !== 'human_controlled') {
           throw new LucielApiError({
             code: 'validation_error',
             message: 'Take over the conversation before replying.',
           });
         }
+        // The outcome the backend persists on the row (round 7 WP-3b item 5), so
+        // the transcript replays it on reopen: the widget has no push transport
+        // (queued — the visitor picks it up on their next history fetch); a
+        // session with no lead this channel can deliver to fails honestly
+        // (item 1, no_recipient_for_channel); everything else is accepted by the
+        // provider (delivered).
+        const now = new Date().toISOString();
+        const outcome: Pick<Message, 'deliveryStatus' | 'deliveryDetail' | 'deliveredAt'> =
+          c.channel === 'widget'
+            ? { deliveryStatus: 'queued', deliveryDetail: 'widget_poll_only', deliveredAt: null }
+            : !c.leadId
+              ? {
+                  deliveryStatus: 'failed',
+                  deliveryDetail: 'no_recipient_for_channel',
+                  deliveredAt: null,
+                }
+              : { deliveryStatus: 'delivered', deliveryDetail: null, deliveredAt: now };
         const message: Message = {
           messageId: nextId(),
           role: 'human_agent',
           text,
-          at: new Date().toISOString(),
+          at: now,
+          ...outcome,
         };
         (state.humanReplies[sessionId] ??= []).push(message);
         c.lastMessageAt = message.at;
-        // The widget has no push transport: the reply is persisted and the
-        // visitor picks it up on their next history fetch (contract §1).
-        const delivered = c.channel !== 'widget';
         return ok({
           message,
-          delivered,
-          deliveryDetail: delivered ? null : ('widget_poll_only' as const),
+          delivered: outcome.deliveryStatus === 'delivered',
+          deliveryDetail: outcome.deliveryDetail ?? null,
         });
       },
       async getAnswerEvidence(_sessionId, messageId) {
