@@ -1174,4 +1174,106 @@ describe('widget mount', () => {
       vi.useRealTimers();
     }
   });
+
+  // --- Human takeover copy: "Team:", the note, and never a blank bubble ----------
+
+  /** The rows a history poll might serve for a session a person has taken over.
+   *  The server persists a takeover reply BEFORE it tries to deliver it and the
+   *  widget poll reads persisted rows only (chat_widget.get_history); on the widget
+   *  channel the row is 'queued' for the next poll. The one way a reply could
+   *  still reach the visitor as nothing is an empty text — this guards that. */
+  const takeoverRows = (visitorText: string) => [
+    {
+      messageId: '00000000-0000-4000-8000-0000000000b1',
+      role: 'visitor' as const,
+      text: visitorText,
+      at: '2026-07-30T00:00:00.000Z',
+    },
+    {
+      // A reply with nothing in it must never render as "Team:" and a blank.
+      messageId: '00000000-0000-4000-8000-0000000000b2',
+      role: 'human' as const,
+      text: '   ',
+      at: '2026-07-30T00:00:05.000Z',
+    },
+    {
+      messageId: '00000000-0000-4000-8000-0000000000b3',
+      role: 'human' as const,
+      text: 'Hi, this is Sam — happy to help.',
+      at: '2026-07-30T00:00:06.000Z',
+    },
+  ];
+
+  const teamBubbles = (shadow: ShadowRoot) =>
+    Array.from(shadow.querySelectorAll('.vm-msg')).filter((m) =>
+      (m.textContent ?? '').startsWith('Team:'),
+    );
+
+  it('a human turn renders as "Team:" and an empty-text human row never reaches the visitor as a blank bubble (poll)', async () => {
+    vi.useFakeTimers();
+    try {
+      sessionStorage.clear();
+      const SESSION = '00000000-0000-4000-8000-0000000000f6';
+      let served: ReturnType<typeof takeoverRows> = [];
+      const base = clientWithSession(SESSION);
+      const client: WidgetApiClient = {
+        ...base,
+        // The takeover: the send comes back EMPTY (a person holds it).
+        send: async (key, req) => {
+          const res = await base.send(key, req);
+          return { ...res, reply: { ...res.reply, text: '' } };
+        },
+        history: async () => served,
+      };
+      const shadow = await mountOpen(client);
+      (shadow.querySelector('.vm-input') as HTMLInputElement).value = 'can I talk to a person?';
+      (shadow.querySelector('.vm-send') as HTMLButtonElement).click();
+      await vi.advanceTimersByTimeAsync(0);
+      // The empty reply is explained once, never shown as a blank line.
+      const notes = Array.from(shadow.querySelectorAll('.vm-note')).map((n) => n.textContent);
+      expect(notes).toEqual([WIDGET_HUMAN_TAKEOVER_NOTE]);
+
+      served = takeoverRows('can I talk to a person?');
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_OPEN_MS + 50);
+
+      const team = teamBubbles(shadow);
+      expect(team).toHaveLength(1);
+      expect(team[0]?.textContent).toBe('Team: Hi, this is Sam — happy to help.');
+      // No bubble anywhere whose whole content is a label and nothing else.
+      const blank = Array.from(shadow.querySelectorAll('.vm-msg')).filter((m) =>
+        /^(Team|You|Luciel):\s*$/.test((m.textContent ?? '').trim()),
+      );
+      expect(blank).toHaveLength(0);
+      // A person's words are never put under the AI assistant's name.
+      expect(team[0]?.textContent).not.toContain('Luciel:');
+      // The next poll does not render the skipped empty row either.
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_OPEN_MS + 50);
+      expect(teamBubbles(shadow)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the same holds on a page-to-page restore of a taken-over conversation', async () => {
+    sessionStorage.clear();
+    const SESSION = '00000000-0000-4000-8000-0000000000f7';
+    sessionStorage.setItem(
+      'luciel:session:vm_live_demo',
+      JSON.stringify({ sessionId: SESSION, lastActivity: Date.now() }),
+    );
+    const client: WidgetApiClient = {
+      ...clientWithSession(SESSION),
+      history: async () => takeoverRows('can I talk to a person?'),
+    };
+    const shadow = await mountOpen(client);
+    const transcript = (shadow.querySelector('.vm-body') as HTMLElement).textContent ?? '';
+    expect(transcript).toContain('You: can I talk to a person?');
+    const team = teamBubbles(shadow);
+    expect(team).toHaveLength(1);
+    expect(team[0]?.textContent).toBe('Team: Hi, this is Sam — happy to help.');
+    const blank = Array.from(shadow.querySelectorAll('.vm-msg')).filter((m) =>
+      /^(Team|You|Luciel):\s*$/.test((m.textContent ?? '').trim()),
+    );
+    expect(blank).toHaveLength(0);
+  });
 });

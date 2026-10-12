@@ -43,7 +43,12 @@ the owner dashboard's auth and admin API surface.
   bundle must have zero admin client, admin endpoint, or admin helper surface;
   `check-bundle.mjs` enforces this.
 - Human takeover replies are delivered by polling persisted replies. Never make
-  a real-time or instant-delivery promise in widget copy or behavior.
+  a real-time or instant-delivery promise in widget copy or behavior. The history
+  poll serves persisted transcript rows only: the server writes a takeover reply
+  before any delivery attempt and marks the widget channel `queued` (poll-only,
+  never pushed, never `failed`), so the reply's text always arrives. A human row
+  renders as "Team:" followed by its words; a row with empty text is skipped, so
+  no human turn ever reaches the visitor as a blank bubble.
 - Render assistant markdown through the safe renderer and visitor input as text;
   retain keyboard, focus, live-region, and reduced-motion behavior.
 
