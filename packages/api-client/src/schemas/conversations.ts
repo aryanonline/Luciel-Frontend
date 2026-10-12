@@ -147,23 +147,13 @@ export type ConversationSummary = z.infer<typeof conversationSummary>;
 export const messageDeliveryStatus = z.enum(['delivered', 'queued', 'failed']);
 export type MessageDeliveryStatus = z.infer<typeof messageDeliveryStatus>;
 
-export const message = z.object({
-  messageId: uuid,
-  role: z.enum(['lead', 'luciel', 'human_agent']),
-  text: z.string(),
-  at: isoTimestamp,
-  deliveryStatus: messageDeliveryStatus.nullable().optional(),
-  deliveryDetail: z.string().nullable().optional(),
-  deliveredAt: isoTimestamp.nullable().optional(),
-});
-export type Message = z.infer<typeof message>;
-
 /**
  * Why an admin reply was not pushed. `null` when `delivered` is true.
  * `widget_poll_only` is the ONLY outcome for the widget channel — the reply is
  * persisted and the visitor picks it up on their next history fetch, so it is a
  * normal outcome, not a failure. `no_recipient` / `channel_not_provisioned` are
- * actionable: the admin needs contact details or a sender connection.
+ * actionable: the admin needs contact details or a sender connection. The
+ * backend collapses any token outside this vocabulary to `send_failed`.
  */
 export const messageDeliveryDetail = z.enum([
   'widget_poll_only',
@@ -188,6 +178,18 @@ export const messageDeliveryDetail = z.enum([
   'meta_reconnect_needed',
 ]);
 export type MessageDeliveryDetail = z.infer<typeof messageDeliveryDetail>;
+
+export const message = z.object({
+  messageId: uuid,
+  role: z.enum(['lead', 'luciel', 'human_agent']),
+  text: z.string(),
+  at: isoTimestamp,
+  /** Round 7 WP-3b item 5 — `human_agent` rows only; null elsewhere (MessageOut). */
+  deliveryStatus: messageDeliveryStatus.nullable().optional(),
+  deliveryDetail: messageDeliveryDetail.nullable().optional(),
+  deliveredAt: isoTimestamp.nullable().optional(),
+});
+export type Message = z.infer<typeof message>;
 
 /** Result of an admin takeover reply (Arch §3.4.12, §11.5–11.7). */
 export const sendMessageResult = z.object({

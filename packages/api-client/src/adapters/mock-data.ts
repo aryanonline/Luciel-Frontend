@@ -522,6 +522,32 @@ export const seedConversations: ConversationSummary[] = [
     startedAt: '2026-06-13T23:42:00Z',
     lastMessageAt: '2026-06-13T23:47:00Z',
     summary: 'New-client inquiry; requested 9 AM callback. High-value lead.',
+    countedForBilling: true,
+  },
+  // Round 7 WP-3b item 4: an ENDED session (§3.4.8). Take-over and a reply are
+  // refused with 409 session_ended; the page must disable both and say why.
+  {
+    sessionId: '77777777-7777-4777-8777-777777777777',
+    leadId: '99999999-9999-4999-8999-999999999999',
+    channel: 'sms',
+    mode: 'ai',
+    startedAt: '2026-06-12T15:00:00Z',
+    lastMessageAt: '2026-06-12T15:06:00Z',
+    endedAt: '2026-06-12T15:06:00Z',
+    summary: 'Asked for opening hours; answered.',
+    countedForBilling: true,
+  },
+  // Round 7 WP-3b item 6: a session that never reached the fire-once billing
+  // trigger (refused at cap / outage before the first model call) — listed, but
+  // NOT billed. It also has no resolved lead, so an email reply to it has no
+  // recipient on this channel (item 1: no_recipient_for_channel).
+  {
+    sessionId: '66666666-6666-4666-8666-666666666666',
+    channel: 'email',
+    mode: 'ai',
+    startedAt: '2026-06-11T09:30:00Z',
+    lastMessageAt: '2026-06-11T09:30:00Z',
+    countedForBilling: false,
   },
 ];
 
