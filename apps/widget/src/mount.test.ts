@@ -1276,4 +1276,78 @@ describe('widget mount', () => {
     );
     expect(blank).toHaveLength(0);
   });
+
+  // --- Arch §3.4.16: the AI disclosure is visible whenever the panel is open ------
+
+  /** The header label is the invariant: present, "AI assistant", and placed before
+   *  the close button so it can never be the element squeezed out. */
+  const expectDisclosure = (shadow: ShadowRoot) => {
+    const root = shadow.querySelector('.vm-root') as HTMLElement;
+    expect(root.getAttribute('data-open')).toBe('true');
+    const header = shadow.querySelector('.vm-header') as HTMLElement;
+    const label = header.querySelector('.vm-ai-label') as HTMLElement;
+    expect(label).not.toBeNull();
+    expect(label.textContent).toBe('AI assistant');
+    expect(label.compareDocumentPosition(shadow.querySelector('.vm-close')!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  };
+
+  it('the disclosure survives the whole end-chat flow: ask, keep chatting, end, and the next conversation', async () => {
+    const SESSION = '00000000-0000-4000-8000-0000000000f8';
+    sessionStorage.clear();
+    const { client } = clientEnding(SESSION);
+    const shadow = await mountOpen(client);
+    expectDisclosure(shadow);
+    await sendOnce(shadow, 'hi');
+    expectDisclosure(shadow);
+
+    // Confirm strip up: the header is untouched (it is a strip, not a modal).
+    (shadow.querySelector('.vm-end') as HTMLButtonElement).click();
+    expectDisclosure(shadow);
+    (shadow.querySelector('.vm-confirm-keep') as HTMLButtonElement).click();
+    expectDisclosure(shadow);
+
+    // Ended: panel still open, disclosure still there, opening disclosure bubble
+    // still in the transcript the visitor can read back.
+    (shadow.querySelector('.vm-end') as HTMLButtonElement).click();
+    (shadow.querySelector('.vm-confirm-end') as HTMLButtonElement).click();
+    await flush();
+    expect(shadow.querySelector('.vm-body')?.textContent).toContain(WIDGET_ENDED_NOTE);
+    expectDisclosure(shadow);
+    expect(shadow.querySelector('.vm-body')?.textContent).toContain(
+      'Hi — I am an AI assistant for Northside Auto.',
+    );
+
+    // The next conversation in the same panel carries it too.
+    await sendOnce(shadow, 'a new question');
+    expectDisclosure(shadow);
+  });
+
+  it('the disclosure is there the moment the channel-off → on transition mounts the panel (D9)', async () => {
+    vi.useFakeTimers();
+    try {
+      sessionStorage.clear();
+      const { client } = clientSwitching(['channel_off', 'active']);
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      await mountWidget({ embedKey: 'vm_live_demo', host, client });
+      const shadow = (host.querySelector('[data-luciel-widget]') as HTMLElement).shadowRoot!;
+      // Off: no disclosure because there is NO chrome at all — nothing to disclose
+      // for, and nothing a visitor could mistake for a chat.
+      expect(shadow.querySelector('.vm-ai-label')).toBeNull();
+      expect((shadow.textContent ?? '').trim()).toBe('');
+
+      await vi.advanceTimersByTimeAsync(WIDGET_POLL_HIDDEN_MS + 50);
+      (shadow.querySelector('.vm-launcher') as HTMLButtonElement).click();
+      expectDisclosure(shadow);
+      // And the opening message states the fact of AI (Arch §3.4.16).
+      expect((shadow.querySelector('.vm-body')?.textContent ?? '').toLowerCase()).toContain(
+        'ai assistant',
+      );
+      expect(shadow.textContent).toContain('Powered by VantageMind');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
