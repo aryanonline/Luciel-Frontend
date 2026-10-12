@@ -18,9 +18,11 @@ import type { Lead, LeadExportFormat, LeadOutcome } from '@luciel/api-client';
 import { useLeads, useLuciel, useLucielMutations, qk } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { saveBlob } from '@/lib/download';
-import { describeCrmDetail } from '@/lib/crm-detail';
+import { describeCrmDetail, describeNeverAttempted } from '@/lib/crm-detail';
 import { usePagedTail } from '@/lib/paging';
 import { LoadOlder } from '@/components/load-older';
+import { LeadEditDialog } from '@/components/lead-edit-dialog';
+import { CrmBackfillOffer } from '@/components/crm-backfill-offer';
 import { useQueryClient } from '@tanstack/react-query';
 
 /**
@@ -39,6 +41,13 @@ import { useQueryClient } from '@tanstack/react-query';
  *   - the stale window is the tenant's own auto-prune window when one is set,
  *     otherwise a year — the "stale" label and the auto-prune rule can no longer
  *     disagree with each other.
+ *
+ * Round 7 WP-3c (items 5 and 6):
+ *   - a lead nothing ever pushed is an explicit "Never sent to your CRM — <why>"
+ *     with the served reason and a "Send to CRM" action (the same retry route);
+ *   - the one-time backfill offer once a CRM connects (`CrmBackfillOffer`);
+ *   - the owner can correct a lead's name / email / phone (`LeadEditDialog`) and
+ *     un-archive an archived row.
  */
 const DEFAULT_STALE_AFTER_DAYS = 365;
 
@@ -79,6 +88,10 @@ export default function LeadsPage() {
   const [retrying, setRetrying] = React.useState<string | null>(null);
   const [retryError, setRetryError] = React.useState<string | null>(null);
   const [retryNotice, setRetryNotice] = React.useState<string | null>(null);
+  const [editing, setEditing] = React.useState<Lead | null>(null);
+  const [editNotice, setEditNotice] = React.useState<string | null>(null);
+  const [unarchiving, setUnarchiving] = React.useState<string | null>(null);
+  const [unarchiveError, setUnarchiveError] = React.useState<string | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: qk.leads });
 
@@ -129,8 +142,31 @@ export default function LeadsPage() {
     }
   };
 
+  /** Round 7 WP-3c item 6: archived → active. Idempotent server-side; a failed
+   *  write leaves the row archived and says so. */
+  const unarchive = async (leadId: string) => {
+    setUnarchiveError(null);
+    setUnarchiving(leadId);
+    try {
+      await api.leads.unarchive(leadId);
+      refresh();
+    } catch {
+      setUnarchiveError('We could not un-archive that lead. It is still archived — please try again.');
+    } finally {
+      setUnarchiving(null);
+    }
+  };
+
+  /** The served row after an edit lands: the list re-reads, and the notice names
+   *  what the server now holds — never what the form had. */
+  const edited = (updated: Lead) => {
+    setEditNotice(`${updated.name ?? 'The lead'} was updated.`);
+    refresh();
+  };
+
   /** F134: push the lead's current facts again. A 409 carries the reason nothing
-   *  was attempted (tool off, connection not ready) and is shown verbatim. */
+   *  was attempted (tool off, connection not ready) and is shown verbatim. Also
+   *  the "Send to CRM" action of a never-sent lead (round 7 WP-3c item 5). */
   const retryCrm = async (lead: Lead) => {
     setRetryError(null);
     setRetryNotice(null);
@@ -263,6 +299,8 @@ export default function LeadsPage() {
         </Banner>
       )}
 
+      <CrmBackfillOffer />
+
       <Card>
         <CardTitle>All leads</CardTitle>
         <CardDescription>Captured automatically by cognition — no tool to enable.</CardDescription>
@@ -334,6 +372,16 @@ export default function LeadsPage() {
             {retryNotice}
           </Banner>
         )}
+        {unarchiveError && (
+          <Banner tone="danger" className="mt-vm-3">
+            {unarchiveError}
+          </Banner>
+        )}
+        {editNotice && (
+          <Banner tone="info" className="mt-vm-3" onDismiss={() => setEditNotice(null)}>
+            {editNotice}
+          </Banner>
+        )}
 
         {visible.length > 0 && (
           <label className="mt-vm-3 flex items-center gap-vm-2 text-vm-0 text-vm-text-muted">
@@ -380,6 +428,14 @@ export default function LeadsPage() {
                       Not in your CRM — {describeCrmDetail(l.crmDetail)}.
                     </div>
                   )}
+                  {/* Round 7 WP-3c item 5: the honest never-sent state with the
+                      served reason — never a bare "not in CRM" that reads like
+                      a failure, and never silence that reads like success. */}
+                  {l.crmStatus === 'never_attempted' && (
+                    <div className="text-vm-0 text-vm-text-muted">
+                      Never sent to your CRM — {describeNeverAttempted(l.crmDetail)}.
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-vm-2">
@@ -399,6 +455,15 @@ export default function LeadsPage() {
                     </Button>
                   </>
                 )}
+                {l.crmStatus === 'never_attempted' && l.state === 'active' && (
+                  <Button
+                    variant="ghost"
+                    disabled={retrying === l.leadId}
+                    onClick={() => void retryCrm(l)}
+                  >
+                    {retrying === l.leadId ? 'Sending…' : 'Send to CRM'}
+                  </Button>
+                )}
                 {/* Business outcome (Vision §7; C14): what Conversion-by-source
                     reads. Reversible on purpose — deals change. */}
                 <Select
@@ -412,6 +477,13 @@ export default function LeadsPage() {
                   <option value="lost">Lost</option>
                 </Select>
                 {l.state === 'archived' && <StatusChip kind="connected" detail="archived (kept)" />}
+                <Button
+                  variant="ghost"
+                  aria-label={`Edit ${l.name ?? 'lead'}`}
+                  onClick={() => setEditing(l)}
+                >
+                  Edit
+                </Button>
                 {l.state === 'active' && (
                   <Button
                     variant="ghost"
@@ -419,6 +491,16 @@ export default function LeadsPage() {
                     onClick={() => void archive(l.leadId)}
                   >
                     {archiving === l.leadId ? 'Archiving…' : 'Archive'}
+                  </Button>
+                )}
+                {l.state === 'archived' && (
+                  <Button
+                    variant="ghost"
+                    aria-label={`Un-archive ${l.name ?? 'lead'}`}
+                    disabled={unarchiving === l.leadId}
+                    onClick={() => void unarchive(l.leadId)}
+                  >
+                    {unarchiving === l.leadId ? 'Un-archiving…' : 'Un-archive'}
                   </Button>
                 )}
                 <Button
@@ -515,6 +597,13 @@ export default function LeadsPage() {
         confirmVariant="danger"
         confirmPendingLabel={modalPending}
         onConfirm={prune}
+      />
+
+      <LeadEditDialog
+        lead={editing}
+        open={editing !== null}
+        onOpenChange={(o) => !o && setEditing(null)}
+        onSaved={edited}
       />
     </div>
   );

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Banner, Button, PageHeader } from '@luciel/ui';
 import { useLuciel } from '@/lib/hooks';
 import { ConsentLanding } from '@/components/config/consent-landing';
+import { CrmBackfillOffer } from '@/components/crm-backfill-offer';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
 import { ToolsPillar } from '@/components/config/tools-pillar';
 import { KnowledgePillar } from '@/components/config/knowledge-pillar';
@@ -25,6 +26,9 @@ export default function ConfigurePage() {
           screen sends the owner back to, and they are owed that outcome even
           when the read behind it is still loading — or failed. */}
       <ConsentLanding />
+      {/* Round 7 WP-3c item 5: the moment a CRM lands connected (consent landing,
+          tools pillar), the leads captured before it can be sent — once. */}
+      <CrmBackfillOffer />
       <ConfigureBody />
     </div>
   );

@@ -51,6 +51,8 @@ import type {
   LeadOutcome,
   LeadExportFormat,
   LeadExportFile,
+  LeadPatchRequest,
+  CrmBackfillResult,
   AnalyticsOverview,
   AuditEvent,
   ContactRequest,
@@ -418,6 +420,25 @@ export interface LucielApiClient {
     prune(leadIds: string[]): Promise<void>;
     /** Archive = kept in cold storage, NOT deleted (Arch §3.4.10a). */
     archive(leadId: string): Promise<Lead>;
+    /**
+     * Archived → active by the owner (round 7 WP-3c item 6; the reverse of
+     * archive). Idempotent: an active lead comes back as-is.
+     */
+    unarchive(leadId: string): Promise<Lead>;
+    /**
+     * Owner correction of a lead's own facts — name / email / phone (round 7
+     * WP-3c item 6). `validation_error` for a malformed email or a phone that is
+     * not E.164; `conflict` when another lead already owns the value. A changed
+     * email/phone is forwarded to the CRM as an update.
+     */
+    update(leadId: string, patch: LeadPatchRequest): Promise<Lead>;
+    /**
+     * Push every never-attempted, non-archived lead to the CRM, one bounded batch
+     * at a time (round 7 WP-3c item 5) — the one-time offer when a CRM connects.
+     * `conflict` when the CRM cannot be pushed to at all (not connected, dormant,
+     * tool off), with the reason in the message.
+     */
+    backfillCrm(): Promise<CrmBackfillResult>;
     /**
      * Mark the lead's business outcome (Vision §7; C14) — what conversion
      * analytics group by. Reversible; audited server-side without lead PII.

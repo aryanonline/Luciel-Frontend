@@ -18,6 +18,8 @@ import type {
   ScopeCandidate,
   Message,
   EmployeeStatus,
+  Lead,
+  NeverAttemptedReason,
 } from '../schemas';
 import * as seed from './mock-data';
 
@@ -67,6 +69,9 @@ function toCsv(rows: Record<string, string>[]): string {
 
 /** 50 MB per file (Vision §3.3) — the same limit the backend enforces. */
 const PER_FILE_MAX_BYTES = 50_000_000;
+
+/** Leads per CRM backfill call (the backend's CRM_BACKFILL_BATCH). */
+const CRM_BACKFILL_BATCH = 100;
 
 /**
  * Stand-in consent host for OAuth starts. The UI only hands the browser to a
@@ -293,6 +298,48 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     state.syncConnections.push(connection);
     return connection;
   };
+
+  /**
+   * The tenant's CURRENT ability to push a lead (round 7 WP-3c item 5), read the
+   * way the backend's _CrmPosture reads it: the CRM row's status and whether the
+   * Push to CRM tool is on. The reason a never-pushed lead shows is exactly the
+   * reason the next push would be refused for.
+   */
+  const crmPosture = () => {
+    const row = state.connections.find(
+      (c) => c.connectionType === 'crm' && c.status !== 'revoked',
+    );
+    const toolOn = state.luciel?.tools.some((t) => t.id === 'push_to_crm' && t.enabled) ?? false;
+    const status = row?.status ?? null;
+    return {
+      provider: row?.provider ?? null,
+      status,
+      toolOn,
+      canPush: toolOn && status === 'connected',
+    };
+  };
+  /** The identifier the CRM accepts: an email, or a phone for a custom webhook. */
+  const crmKeyFor = (l: Lead, provider: string | null): string | null => {
+    const email =
+      l.email ?? (l.contactIdentifier && l.contactIdentifier.includes('@') ? l.contactIdentifier : null);
+    if (email) return email;
+    if (provider === 'custom_webhook' && l.phone) return l.phone;
+    return null;
+  };
+  const neverAttemptedReason = (l: Lead): NeverAttemptedReason => {
+    const posture = crmPosture();
+    if (posture.status !== 'connected') {
+      return posture.status === 'dormant' ? 'dormant' : 'crm_not_connected';
+    }
+    if (!posture.toolOn) return 'tool_off';
+    if (crmKeyFor(l, posture.provider) === null) return 'no_crm_key';
+    return 'not_yet_pushed';
+  };
+  /** The ONE lead wire builder: every lead response carries the derived state. */
+  const withCrmPosture = (l: Lead): Lead =>
+    l.crmStatus === 'synced' || l.crmStatus === 'failed'
+      ? l
+      : { ...l, crmStatus: 'never_attempted', crmDetail: neverAttemptedReason(l) };
 
   /** A knowledge sync connection is either one created here or a seeded row. */
   const syncProviderOf = (connectionId: string): KnowledgeSyncProvider => {
@@ -1712,7 +1759,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     leads: {
       async list(page) {
         guardVerified();
-        return ok(pageOf(state.leads, page));
+        // Round 7 WP-3c item 5: a never-pushed lead's reason is derived from the
+        // CURRENT posture at read time, exactly as the backend's _lead_out does.
+        return ok(pageOf(state.leads.map(withCrmPosture), page));
       },
       async erase(leadId) {
         guardVerified();
@@ -1729,7 +1778,126 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const l = state.leads.find((x) => x.leadId === leadId);
         if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
         l.state = 'archived';
-        return ok(l);
+        l.lastActivityAt = new Date().toISOString();
+        return ok(withCrmPosture(l));
+      },
+      async unarchive(leadId) {
+        guardVerified();
+        const l = state.leads.find((x) => x.leadId === leadId);
+        if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
+        // Idempotent (round 7 WP-3c item 6): an active lead comes back untouched.
+        if (l.state === 'archived') {
+          l.state = 'active';
+          l.lastActivityAt = new Date().toISOString();
+        }
+        return ok(withCrmPosture(l));
+      },
+      async update(leadId, patch) {
+        guardVerified();
+        const l = state.leads.find((x) => x.leadId === leadId);
+        if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
+        // The backend's rules (round 7 WP-3c item 6), modelled: an omitted field
+        // is left alone, an explicit null clears it; email is case-folded and
+        // must look like one; phone must read as E.164; a value another lead
+        // already owns is a conflict, never a silent merge.
+        const owned = (field: 'email' | 'phone', value: string) =>
+          state.leads.some((o) => o.leadId !== leadId && o[field] === value);
+        let changed = false;
+        if (patch.name !== undefined) {
+          const name = (patch.name ?? '').trim() || undefined;
+          if (name !== l.name) {
+            l.name = name;
+            changed = true;
+          }
+        }
+        if (patch.email !== undefined) {
+          const raw = (patch.email ?? '').trim().toLowerCase();
+          if (raw && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: 'That is not a valid email address.',
+            });
+          }
+          const email = raw || null;
+          if (email !== (l.email ?? null)) {
+            if (email && owned('email', email)) {
+              throw new LucielApiError({
+                code: 'conflict',
+                message: 'That email address already belongs to another lead.',
+              });
+            }
+            l.email = email;
+            changed = true;
+          }
+        }
+        if (patch.phone !== undefined) {
+          const raw = (patch.phone ?? '').trim();
+          const cleaned = raw.replace(/[\s\-.()]/g, '');
+          if (raw && !/^\+[1-9]\d{7,14}$/.test(cleaned)) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: 'That phone number could not be read as an international (E.164) number.',
+            });
+          }
+          const phone = raw ? cleaned : null;
+          if (phone !== (l.phone ?? null)) {
+            if (phone && owned('phone', phone)) {
+              throw new LucielApiError({
+                code: 'conflict',
+                message: 'That phone number already belongs to another lead.',
+              });
+            }
+            l.phone = phone;
+            changed = true;
+          }
+        }
+        if (changed) l.lastActivityAt = new Date().toISOString();
+        return ok(withCrmPosture(l));
+      },
+      async backfillCrm() {
+        guardVerified();
+        // Round 7 WP-3c item 5, as the backend does it: refuse (409) when the CRM
+        // cannot be pushed to at all; otherwise push every never-attempted active
+        // lead with a key the CRM accepts, one bounded batch per call.
+        const posture = crmPosture();
+        if (!posture.canPush) {
+          if (posture.status === 'dormant') {
+            throw new LucielApiError({
+              code: 'conflict',
+              message: 'Your CRM connection is dormant; add a payment method first.',
+            });
+          }
+          if (posture.status !== 'connected') {
+            throw new LucielApiError({
+              code: 'conflict',
+              message: 'No CRM is connected, so there is nothing to backfill into.',
+            });
+          }
+          throw new LucielApiError({
+            code: 'conflict',
+            message: 'The Push to CRM tool is switched off.',
+          });
+        }
+        const candidates = state.leads.filter(
+          (l) => l.state === 'active' && l.crmStatus !== 'synced' && l.crmStatus !== 'failed',
+        );
+        const keyed = candidates.filter((l) => crmKeyFor(l, posture.provider) !== null);
+        const skippedNoKey = candidates.length - keyed.length;
+        const batch = keyed.slice(0, CRM_BACKFILL_BATCH);
+        for (const l of batch) {
+          l.crmStatus = 'synced';
+          l.crmDetail = null;
+          l.crmPushedAt = new Date().toISOString();
+        }
+        await delay();
+        return {
+          attempted: batch.length,
+          synced: batch.length,
+          failed: 0,
+          skippedNoKey,
+          remaining: keyed.length - batch.length,
+          refusedReason: null,
+        };
       },
       async markOutcome(leadId, outcome) {
         guardVerified();
@@ -1742,13 +1910,30 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         const l = state.leads.find((x) => x.leadId === leadId);
         if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
-        // The mock CRM always accepts; the live adapter surfaces a 409 with the
-        // reason when nothing could be attempted.
+        // Same broker gates as a capture push: a 409 says why nothing was attempted.
+        const posture = crmPosture();
+        if (!posture.canPush) {
+          throw new LucielApiError({
+            code: 'conflict',
+            message:
+              posture.status === 'dormant'
+                ? 'The push was not attempted: your CRM connection is dormant until a card is on file.'
+                : posture.status !== 'connected'
+                  ? 'The push was not attempted: no CRM is connected.'
+                  : 'The push was not attempted: the Push to CRM tool is switched off.',
+          });
+        }
+        if (crmKeyFor(l, posture.provider) === null) {
+          throw new LucielApiError({
+            code: 'conflict',
+            message: 'The push was not attempted: this lead has no email address your CRM accepts.',
+          });
+        }
         l.crmStatus = 'synced';
         l.crmDetail = null;
         l.crmPushedAt = new Date().toISOString();
         await delay();
-        return ok(l);
+        return ok(withCrmPosture(l));
       },
       async export(format) {
         guardVerified();

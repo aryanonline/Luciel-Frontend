@@ -43,15 +43,61 @@ export const lead = z.object({
   /** 2026-09-05 audit F111: the volunteered phone (E.164) beside a non-phone key. */
   phone: z.string().nullable().optional(),
   /**
-   * F134: the honest CRM state of this record. Absent/null = never attempted
-   * (no CRM, tool off, or no key the CRM accepts); 'synced' / 'failed' with the
-   * non-secret reason and the time of the last successful push.
+   * F134: the honest CRM state of this record — 'synced' / 'failed' with the
+   * non-secret reason and the time of the last successful push. Round 7 WP-3c
+   * item 5: a lead nothing ever pushed is an EXPLICIT `never_attempted` whose
+   * `crmDetail` is a `NeverAttemptedReason` derived from the tenant's CURRENT
+   * posture, so the dashboard can offer the one-time backfill the moment a CRM
+   * connects. Null only from a server that predates the state.
    */
-  crmStatus: z.enum(['synced', 'failed']).nullable().optional(),
+  crmStatus: z.enum(['synced', 'failed', 'never_attempted']).nullable().optional(),
   crmDetail: z.string().nullable().optional(),
   crmPushedAt: isoTimestamp.nullable().optional(),
 });
 export type Lead = z.infer<typeof lead>;
+
+/**
+ * Why a lead was never pushed (`crmDetail` when `crmStatus === 'never_attempted'`;
+ * backend `schemas_api.leads.NeverAttemptedReason`). `not_yet_pushed` is the
+ * backfill candidate: captured before the CRM was connected.
+ */
+export const neverAttemptedReason = z.enum([
+  'crm_not_connected',
+  'dormant',
+  'tool_off',
+  'no_crm_key',
+  'not_yet_pushed',
+]);
+export type NeverAttemptedReason = z.infer<typeof neverAttemptedReason>;
+
+/**
+ * PATCH /dashboard/leads/{id} (round 7 WP-3c item 6): the owner's correction of a
+ * lead's own facts. An omitted field is left alone; an explicit `null` clears it.
+ * The server normalises email (case-folded) and phone (E.164), refuses a phone it
+ * cannot read as E.164 and a malformed email with `validation_error`, and answers
+ * `conflict` when another lead already owns the value — never a silent merge.
+ */
+export const leadPatchRequest = z.object({
+  name: z.string().max(255).nullable().optional(),
+  email: z.string().max(320).nullable().optional(),
+  phone: z.string().max(32).nullable().optional(),
+});
+export type LeadPatchRequest = z.infer<typeof leadPatchRequest>;
+
+/**
+ * POST /dashboard/leads/crm-backfill (round 7 WP-3c item 5): what one bounded pass
+ * did, in LEADS. `remaining > 0` means another call is needed; `refusedReason` is
+ * set when the broker refused before reaching the CRM (nothing was attempted).
+ */
+export const crmBackfillResult = z.object({
+  attempted: z.number().int().nonnegative(),
+  synced: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  skippedNoKey: z.number().int().nonnegative(),
+  remaining: z.number().int().nonnegative(),
+  refusedReason: z.string().nullable().optional(),
+});
+export type CrmBackfillResult = z.infer<typeof crmBackfillResult>;
 
 /** Open formats only — the backend accepts no others (Legal §A7 portability). */
 export const leadExportFormat = z.enum(['csv', 'json']);
@@ -73,14 +119,42 @@ export const conversationSummary = z.object({
   lastMessageAt: isoTimestamp,
   /** One-line cognition summary (Arch §3.4.7). */
   summary: z.string().optional(),
+  /**
+   * When the session ENDED (§3.4.8; round 7 WP-3b item 4). Non-null means take-over
+   * and a human reply are refused with 409 `session_ended`: nothing on the
+   * customer's transport is waiting on it. Optional for an older server.
+   */
+  endedAt: isoTimestamp.nullable().optional(),
+  /**
+   * Whether this session was counted against the plan's allowance (round 7 WP-3b
+   * item 6). False for a session that never reached the fire-once trigger — refused
+   * at cap, or lost to an outage before the first model call — so the page can
+   * label an unbilled conversation instead of listing it as if it were one.
+   * Optional for an older server that does not say.
+   */
+  countedForBilling: z.boolean().optional(),
 });
 export type ConversationSummary = z.infer<typeof conversationSummary>;
+
+/**
+ * What happened to a `human_agent` reply on the customer's transport, PERSISTED
+ * on the row (round 7 WP-3b item 5): `delivered` = the provider accepted it;
+ * `queued` = the widget serves it on its next history fetch; `failed` = nothing
+ * reached the customer (`deliveryDetail` says why). Null on every other role and
+ * on human replies from before the column existed — unknown is reported as
+ * unknown, never as delivered.
+ */
+export const messageDeliveryStatus = z.enum(['delivered', 'queued', 'failed']);
+export type MessageDeliveryStatus = z.infer<typeof messageDeliveryStatus>;
 
 export const message = z.object({
   messageId: uuid,
   role: z.enum(['lead', 'luciel', 'human_agent']),
   text: z.string(),
   at: isoTimestamp,
+  deliveryStatus: messageDeliveryStatus.nullable().optional(),
+  deliveryDetail: z.string().nullable().optional(),
+  deliveredAt: isoTimestamp.nullable().optional(),
 });
 export type Message = z.infer<typeof message>;
 
@@ -105,6 +179,13 @@ export const messageDeliveryDetail = z.enum([
   'sms_sender_not_operable',
   'email_sender_not_connected',
   'mailbox_reconnect_needed',
+  // Round 7 WP-3b item 1: the lead is not known by any identifier THIS session's
+  // channel can deliver to (an email-keyed record on an SMS conversation after a
+  // unification). The reply is persisted, never re-routed to another channel.
+  'no_recipient_for_channel',
+  // Round 7 WP-3b item 7: the Meta grant that owns the surface the conversation
+  // happened on is expired / errored / unbound — the owner must reconnect Meta.
+  'meta_reconnect_needed',
 ]);
 export type MessageDeliveryDetail = z.infer<typeof messageDeliveryDetail>;
 
