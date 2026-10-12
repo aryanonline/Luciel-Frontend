@@ -197,6 +197,11 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       erase: (leadId) => t.del(`/api/v1/dashboard/leads/${leadId}`),
       prune: (leadIds) => t.post('/api/v1/dashboard/leads/prune', { leadIds }),
       archive: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/archive`),
+      unarchive: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/unarchive`),
+      // Only the keys the caller set ride the body: an omitted field is left alone
+      // server-side, an explicit null clears it (LeadPatchRequest.model_fields_set).
+      update: (leadId, patch) => t.patch(`/api/v1/dashboard/leads/${leadId}`, patch),
+      backfillCrm: () => t.post('/api/v1/dashboard/leads/crm-backfill'),
       markOutcome: (leadId, outcome) =>
         t.post(`/api/v1/dashboard/leads/${leadId}/outcome`, { outcome }),
       retryCrmPush: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/crm-retry`),
