@@ -1,4 +1,5 @@
 import type { LucielApiClient, PageOptions } from '../client';
+import { personalityForWrite } from '../schemas';
 import type { BillingInfo, KnowledgeChunk, KnowledgeChunkPage } from '../schemas';
 import { createTransport, type TransportOptions } from './transport';
 
@@ -69,7 +70,10 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         t.post('/api/v1/admin/luciel/escalation/test-sms', { which }),
       confirmSmsContact: (number, code) =>
         t.post('/api/v1/admin/luciel/escalation/contacts/confirm-sms', { number, code }),
-      updatePersonality: (config) => t.put('/api/v1/admin/luciel/personality', config),
+      // The served voiceDisclosurePreview is read-only and the PUT is strict
+      // (extra='forbid'): it never rides back.
+      updatePersonality: (config) =>
+        t.put('/api/v1/admin/luciel/personality', personalityForWrite(config)),
       updateLeadRetention: (days) =>
         t.put('/api/v1/admin/luciel/lead-retention', { leadRetentionDays: days }),
       updateAllowedOrigins: (origins) => t.put('/api/v1/admin/luciel/allowed-origins', { origins }),
