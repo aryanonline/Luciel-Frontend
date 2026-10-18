@@ -6,6 +6,7 @@ import { Card, CardTitle, CardDescription, Button, Modal, Banner, PageHeader } f
 import type { AccountExportResult } from '@luciel/api-client';
 import { useLuciel, useLucielMutations } from '@/lib/hooks';
 import { api } from '@/lib/api';
+import { ExportReady } from '@/components/export-ready';
 
 /**
  * Manage account — the lifecycle (Vision §6; Arch §3.6). THREE distinct, nested
@@ -158,8 +159,8 @@ export default function AccountPage() {
         </div>
         {liveLuciel && (
           <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
-            Your Luciel is still running. You can delete it first (the step above) or let closing
-            do it — the confirmation says so and offers your export before anything ends.
+            Your Luciel is still running. You can delete it first (the step above) or let closing do
+            it — the confirmation says so and offers your export before anything ends.
           </p>
         )}
       </Card>
@@ -231,7 +232,7 @@ export default function AccountPage() {
         description={
           liveLuciel
             ? `This ends your login, email, and billing. ${luciel?.name ?? 'Your Luciel'} is still running, so closing deletes it first. Everything — conversations, leads, knowledge, connections, and your audit log — is permanently deleted 30 days after closure; the export is how you keep anything. This can't be undone.`
-            : 'This ends your login, email, and billing. Everything — conversations, leads, knowledge, connections, and your audit log — is permanently deleted 30 days after closure; the export is how you keep anything. This can\'t be undone.'
+            : "This ends your login, email, and billing. Everything — conversations, leads, knowledge, connections, and your audit log — is permanently deleted 30 days after closure; the export is how you keep anything. This can't be undone."
         }
         confirmLabel={liveLuciel ? 'Delete my Luciel and close account' : 'Close account'}
         confirmPendingLabel="Closing…"
@@ -245,7 +246,8 @@ export default function AccountPage() {
         }}
       >
         <Banner tone="warning">
-          Take your data with you first — once the account closes you cannot request an export.
+          Take your data with you first. For 30 days after closing you can still sign in to download
+          it again or reopen the account; after that everything is permanently deleted.
           <div className="mt-vm-2">
             <Button variant="secondary" onClick={() => setDialog('export')}>
               Download all my data
@@ -253,40 +255,6 @@ export default function AccountPage() {
           </div>
         </Banner>
       </Modal>
-    </div>
-  );
-}
-
-/**
- * The export outcome, from the served result (round 7 WP-10, item 12): the link
- * itself when the server returned one, how long it lives, and that it was also
- * emailed — so a lost email is never the only way to the owner's own data. An
- * older server's bare `{ ok: true }` degrades to the email sentence alone.
- */
-function ExportReady({ result }: { result: AccountExportResult }) {
-  const days = result.ttlDays;
-  const life = days === undefined ? '' : ` It works for ${days} day${days === 1 ? '' : 's'}.`;
-  return (
-    <div className="space-y-vm-2 text-vm-1" role="status">
-      <p className="font-label">Your export is ready.</p>
-      {result.downloadUrl ? (
-        <p>
-          <a
-            href={result.downloadUrl}
-            className="underline underline-offset-2"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Download your export
-          </a>
-          {life}
-        </p>
-      ) : null}
-      <p className="text-vm-text-muted">
-        {result.downloadUrl
-          ? 'We also emailed this link to you.'
-          : `We emailed the download link to you.${life}`}
-      </p>
     </div>
   );
 }

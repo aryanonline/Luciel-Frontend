@@ -1,5 +1,10 @@
 import type { LucielApiClient, PageOptions } from '../client';
-import { LucielApiError } from '../schemas';
+import {
+  LucielApiError,
+  ACCOUNT_CLOSED,
+  VOICE_DISCLOSURE_INTRO_MAX,
+  personalityForWrite,
+} from '../schemas';
 import type {
   Account,
   AddonToolId,
@@ -18,6 +23,9 @@ import type {
   ScopeCandidate,
   Message,
   EmployeeStatus,
+  EscalationContactHealth,
+  Lead,
+  NeverAttemptedReason,
 } from '../schemas';
 import * as seed from './mock-data';
 
@@ -32,6 +40,19 @@ import * as seed from './mock-data';
  *   - 'payg'            → payment method on file
  *   - 'paused'          → Luciel paused
  *   - 'grace'           → Luciel in 30-day grace window
+ *   - 'closed'          → account closed 3 days ago, inside its 30-day reopen
+ *                         window (D5): every admin route refuses with the typed
+ *                         403 `account_closed`; status/reopen/export still answer
+ *   - 'closed_window_passed' → closed 31 days ago: even the reduced surface refuses
+ *   - 'knowledge_states' → knowledge in every round-7 state: the Drive grant is
+ *                         revoked at the provider while its row still says
+ *                         connected (a re-sync flips it to error and pauses its
+ *                         sources), a Notion source paused 3 days ago (still
+ *                         answering), a HubSpot KB source paused 9 days ago (no
+ *                         longer answering), a crawled page removed at its origin
+ *   - 'escalation_sms'  → SMS escalation contacts in every confirmation state (round
+ *                         7 WP-4b): primary has a live code (enter 123456), backup's
+ *                         code expired, the after-hours number is confirmed
  *
  * No network. Returned objects are clones so callers can't mutate seed state.
  */
@@ -43,7 +64,60 @@ export type MockScenario =
   | 'at_cap'
   | 'payg'
   | 'paused'
-  | 'grace';
+  | 'grace'
+  | 'closed'
+  | 'closed_window_passed'
+  | 'escalation_sms'
+  | 'knowledge_states';
+
+/**
+ * channels/voice_adapter.py `build_disclosure`: the owner's intro (if any) then the
+ * mandatory facts, which no setting removes. The mock composes the served preview
+ * the same way.
+ */
+const VOICE_AI_IDENTITY_FACT =
+  "You're speaking with an AI assistant, not a human, and this call is handled by an automated system.";
+const VOICE_RECORDING_FACT = 'This call may be recorded and transcribed.';
+const VOICE_CONSENT_TAIL = "If you'd prefer a person, just say so at any time.";
+const buildVoiceDisclosure = (intro: string | null | undefined) =>
+  [(intro ?? '').trim(), VOICE_AI_IDENTITY_FACT, VOICE_RECORDING_FACT, VOICE_CONSENT_TAIL]
+    .filter(Boolean)
+    .join(' ');
+
+/** The backend's chunk preview page (knowledge/service.py CHUNK_PREVIEW_PAGE). */
+const CHUNK_PREVIEW_PAGE = 20;
+/** connections/health `_DEAD_CREDENTIAL_DETAIL` (round 7 WP-4c #7). */
+const DEAD_CREDENTIAL_DETAIL = 'knowledge sync could not use the stored credential — reconnect';
+
+/**
+ * The mock's SMS confirmation code (round 7 WP-4b). The backend mints a random one
+ * and texts it; the mock has no phone, so every code it "sends" is this one.
+ */
+export const MOCK_SMS_CODE = '123456';
+/** contact_confirmation: CODE_TTL, RESEND_COOLDOWN, MAX_CODE_ATTEMPTS. */
+const SMS_CODE_TTL_MS = 15 * 60 * 1000;
+const SMS_RESEND_COOLDOWN_MS = 5 * 60 * 1000;
+const SMS_MAX_ATTEMPTS = 5;
+/** rate_limit `escalation_test_sms`: burst 3 per 600 s for code entries. */
+const SMS_CONFIRM_BURST = 3;
+const SMS_CONFIRM_WINDOW_MS = 600 * 1000;
+const normalizeNumber = (value: string) => value.replace(/[\s\-.()]/g, '');
+const looksLikeNumber = (value: string) => {
+  const raw = value.trim();
+  return raw.startsWith('+') || /^\d+$/.test(raw.replace(/ /g, ''));
+};
+
+interface SmsConfirmationRow {
+  code: string | null;
+  expiresAt: number | null;
+  attempts: number;
+  confirmedAt: string | null;
+  lastSentAt: number | null;
+}
+
+/** The D5 reopen window: 30 days from closure (close_purge.reopen_deadline). */
+const REOPEN_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface MockAdminOptions {
   scenario?: MockScenario;
@@ -67,6 +141,21 @@ function toCsv(rows: Record<string, string>[]): string {
 
 /** 50 MB per file (Vision §3.3) — the same limit the backend enforces. */
 const PER_FILE_MAX_BYTES = 50_000_000;
+
+/** Leads per CRM backfill call (the backend's CRM_BACKFILL_BATCH). */
+const CRM_BACKFILL_BATCH = 100;
+
+/**
+ * The backend's typed refusal for a take-over / reply on an ENDED session (round 7
+ * WP-3b item 4; dashboard.py `_session_ended`): 409 → `conflict`, with the wire
+ * word `session_ended` in the message so the page can name the state.
+ */
+const sessionEnded = () =>
+  new LucielApiError({
+    code: 'conflict',
+    message:
+      'This conversation has ended, so there is nothing to take over or reply into (session_ended).',
+  });
 
 /**
  * Stand-in consent host for OAuth starts. The UI only hands the browser to a
@@ -124,6 +213,24 @@ const CHANNELS_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, ChannelId[]>> 
 const ACTION_ADD_NUMBER =
   'Action needed: add your number. Your Twilio account is connected; tell us which of its numbers Luciel uses.';
 
+/**
+ * The Today card's dormant need, word for word as the server composes it
+ * (app/employee/status.py, round 7 WP-3a): a dormant channel or tool is a billing
+ * state, so the need links to Billing — never to a Connect that would refuse.
+ */
+const DORMANT_STATUS_DETAIL = 'paused until a card is on file';
+const DORMANT_NEED_DETAIL = 'Add a card on the Billing page and it resumes.';
+const BILLING_HREF = '/dashboard/billing';
+const CHANNEL_NEED_LABEL: Record<ChannelId, string> = {
+  widget: 'Website chat',
+  email: 'Email',
+  sms: 'Text messages',
+  voice: 'Phone calls',
+  whatsapp: 'WhatsApp',
+  messenger: 'Messenger',
+  instagram: 'Instagram',
+};
+
 /** Which UI channel each per-channel destination belongs to (contract §2). */
 const CHANNEL_BY_META_CHANNEL: Record<MetaChannel, ChannelId> = {
   whatsapp: 'whatsapp',
@@ -176,7 +283,31 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     escalations: clone(seed.seedEscalations),
     analytics: clone(seed.seedAnalytics),
     audit: clone(seed.seedAudit),
+    /**
+     * The closure on record (D5): when it happened and the Luciel as it was before
+     * the closure deleted it (null when there was none, or it was already deleted —
+     * that deletion stays the owner's and reopening does not undo it).
+     */
+    closure: null as null | { closedAt: string; lucielBefore: Luciel | null },
+    /** SMS escalation-contact confirmations by normalized number (round 7 WP-4b). */
+    smsConfirmations: {} as Record<string, SmsConfirmationRow>,
+    /** Recent code entries — the per-tenant rate limit on the confirm route. */
+    smsConfirmEntries: [] as number[],
+    /** Who tombstoned each deleted source (knowledge_sources.deleted_by). */
+    tombstoneBy: {} as Record<string, 'owner' | 'origin'>,
+    /** Knowledge grants the provider has revoked while the row still says connected. */
+    revokedGrants: [] as string[],
+    /** Synced sources whose item is gone at the origin (the next sync tombstones them). */
+    removedAtOrigin: [] as string[],
   };
+
+  // The served, read-only voice disclosure preview (settled contract, round 7).
+  if (state.luciel) {
+    state.luciel.personality = {
+      ...state.luciel.personality,
+      voiceDisclosurePreview: buildVoiceDisclosure(state.luciel.personality.voiceDisclosureIntro),
+    };
+  }
 
   // Apply scenario-derived state up front.
   if (state.scenario === 'unverified') {
@@ -208,6 +339,144 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     state.luciel.state = 'luciel_grace_window';
     state.luciel.graceWindowStartedAt = '2026-06-10T12:00:00Z';
   }
+  if (state.scenario === 'escalation_sms' && state.luciel) {
+    const now = Date.now();
+    state.luciel.channels = state.luciel.channels.map((c) =>
+      c.id === 'sms' ? { ...c, enabled: true, connectionStatus: 'connected' } : c,
+    );
+    state.luciel.escalation = {
+      ...state.luciel.escalation,
+      primarySms: '+16045550101',
+      secondarySms: '+16045550102',
+    };
+    state.luciel.teamAvailability = {
+      enabled: true,
+      weekly: [{ day: 0, start: '09:00', end: '17:00' }],
+      closures: [],
+      afterHours: { escalation: { channel: 'sms', contactSms: '+16045550103' } },
+    };
+    state.luciel.timezone = 'America/Vancouver';
+    state.smsConfirmations = {
+      // A live code, sent six minutes ago (outside the resend cooldown).
+      '+16045550101': {
+        code: MOCK_SMS_CODE,
+        expiresAt: now + 9 * 60 * 1000,
+        attempts: 0,
+        confirmedAt: null,
+        lastSentAt: now - 6 * 60 * 1000,
+      },
+      // The code went out twenty minutes ago and has expired.
+      '+16045550102': {
+        code: MOCK_SMS_CODE,
+        expiresAt: now - 5 * 60 * 1000,
+        attempts: 0,
+        confirmedAt: null,
+        lastSentAt: now - 20 * 60 * 1000,
+      },
+      '+16045550103': {
+        code: null,
+        expiresAt: null,
+        attempts: 0,
+        confirmedAt: '2026-10-01T15:00:00Z',
+        lastSentAt: null,
+      },
+    };
+  }
+  if (state.scenario === 'knowledge_states') {
+    const now = Date.now();
+    const drive = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const notion = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const hubspotKb = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const crawl = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    state.revokedGrants = [drive];
+    state.knowledge = state.knowledge.map((k) =>
+      k.origin === 'google_drive' ? { ...k, connectionId: drive } : k,
+    );
+    state.connections.push(
+      {
+        connectionId: notion,
+        connectionType: 'knowledge_source',
+        provider: 'notion',
+        displayName: 'Notion',
+        providerAvailable: true,
+        status: 'error',
+        statusDetail: DEAD_CREDENTIAL_DETAIL,
+        createdAt: '2026-02-01T10:12:00Z',
+      },
+      {
+        connectionId: hubspotKb,
+        connectionType: 'knowledge_source',
+        provider: 'hubspot',
+        displayName: 'HubSpot knowledge base',
+        providerAvailable: true,
+        status: 'expired',
+        statusDetail: DEAD_CREDENTIAL_DETAIL,
+        createdAt: '2026-02-01T10:14:00Z',
+      },
+      {
+        connectionId: crawl,
+        connectionType: 'knowledge_source',
+        provider: 'website_crawl',
+        displayName: 'Website crawl',
+        providerAvailable: true,
+        status: 'connected',
+        nonSecretConfig: { crawl_urls: ['https://sarahchen.com'] },
+        createdAt: '2026-02-01T10:16:00Z',
+      },
+    );
+    state.knowledge.push(
+      {
+        sourceId: 'abababab-0000-4000-8000-000000000001',
+        name: 'Notion — Client onboarding',
+        origin: 'notion',
+        ingestionStatus: 'ready',
+        sizeBytes: 800_000,
+        lastUpdatedAt: '2026-09-30T08:00:00Z',
+        lastSyncedAt: '2026-10-10T06:00:00Z',
+        syncStatus: 'paused_reconnect_needed',
+        connectionId: notion,
+        usedByQuestions7d: 4,
+        pausedSince: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        sourceId: 'abababab-0000-4000-8000-000000000002',
+        name: 'HubSpot KB — Returns policy',
+        origin: 'crm_kb',
+        ingestionStatus: 'ready',
+        sizeBytes: 300_000,
+        lastUpdatedAt: '2026-09-20T08:00:00Z',
+        lastSyncedAt: '2026-10-01T06:00:00Z',
+        syncStatus: 'paused_reconnect_needed',
+        connectionId: hubspotKb,
+        usedByQuestions7d: 0,
+        pausedSince: new Date(now - 9 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        sourceId: 'abababab-0000-4000-8000-000000000003',
+        name: 'sarahchen.com/old-pricing',
+        origin: 'website_crawl',
+        ingestionStatus: 'ready',
+        sizeBytes: 40_000,
+        lastUpdatedAt: '2026-10-01T08:00:00Z',
+        lastSyncedAt: '2026-10-12T06:00:00Z',
+        syncStatus: 'synced',
+        connectionId: crawl,
+        usedByQuestions7d: 1,
+      },
+    );
+    state.removedAtOrigin = ['abababab-0000-4000-8000-000000000003'];
+  }
+  if (state.scenario === 'closed' || state.scenario === 'closed_window_passed') {
+    // Relative to now, never a hard-coded date: the window is a wall-clock fact.
+    const ago = state.scenario === 'closed' ? 3 : 31;
+    const closedAt = new Date(Date.now() - ago * DAY_MS).toISOString();
+    state.closure = { closedAt, lucielBefore: state.luciel ? clone(state.luciel) : null };
+    state.account.state = 'closed';
+    if (state.luciel) {
+      state.luciel.state = 'luciel_grace_window';
+      state.luciel.graceWindowStartedAt = closedAt;
+    }
+  }
 
   const delay = () => (latency ? new Promise((r) => setTimeout(r, latency)) : Promise.resolve());
 
@@ -217,6 +486,27 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       throw new LucielApiError({ code: 'unauthorized', message: 'Session expired.' });
     }
   };
+  /** The closure's reopen deadline (null when no closure instant is on record). */
+  const reopenUntil = (): string | null =>
+    state.closure
+      ? new Date(new Date(state.closure.closedAt).getTime() + REOPEN_WINDOW_MS).toISOString()
+      : null;
+  const insideReopenWindow = () => {
+    const until = reopenUntil();
+    return until !== null && Date.now() < new Date(until).getTime();
+  };
+  /**
+   * The backend's typed 403 for a closed account (errors.py `account_closed`): a
+   * 403 maps to `unauthorized`, and the `reason` word + `detail` instants are what
+   * tell it apart from an expired session.
+   */
+  const accountClosed = () =>
+    new LucielApiError({
+      code: 'unauthorized',
+      message: 'Account closed.',
+      reason: ACCOUNT_CLOSED,
+      detail: { closedAt: state.closure?.closedAt ?? null, reopenUntil: reopenUntil() },
+    });
   const guardVerified = () => {
     guardSession();
     if (state.account.state === 'unverified') {
@@ -225,6 +515,22 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         message: 'Please verify your email to continue.',
       });
     }
+    // deps.current_admin: every admin route refuses a closed account (D5).
+    if (state.account.state === 'closed') throw accountClosed();
+  };
+  /**
+   * deps.current_account_owner: the D5 reduced surface — open, or closed and still
+   * inside the 30-day window. Past it, the same typed refusal.
+   */
+  const guardAccountOwner = () => {
+    guardSession();
+    if (state.account.state === 'unverified') {
+      throw new LucielApiError({
+        code: 'verification_required',
+        message: 'Please verify your email to continue.',
+      });
+    }
+    if (state.account.state === 'closed' && !insideReopenWindow()) throw accountClosed();
   };
 
   const ok = async <T>(value: T): Promise<T> => {
@@ -275,6 +581,189 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     state.syncConnections.push(connection);
     return connection;
   };
+
+  // --- Knowledge sync truth (round 7 WP-4c) ---------------------------------------
+  /**
+   * knowledge.py `_flag_dead_credential`: the provider refused the stored grant. The
+   * connection's sources pause (the D10 clock starts once per incident) and a row
+   * that said connected is marked broken — so the chip follows the SERVED status.
+   */
+  const flagDeadCredential = (connectionId: string) => {
+    const now = new Date().toISOString();
+    for (const k of state.knowledge) {
+      if (k.connectionId === connectionId) {
+        k.syncStatus = 'paused_reconnect_needed';
+        k.pausedSince ??= now;
+      }
+    }
+    const conn = state.connections.find((c) => c.connectionId === connectionId);
+    if (conn && conn.status === 'connected') {
+      conn.status = 'error';
+      conn.statusDetail = DEAD_CREDENTIAL_DETAIL;
+    }
+  };
+  const syncUnavailable = () =>
+    new LucielApiError({
+      code: 'conflict',
+      message: 'Sync unavailable: the provider refused the stored credential — reconnect it.',
+    });
+  /** sync.py: an item gone at its origin becomes an ORIGIN tombstone (never restorable). */
+  const tombstoneAtOrigin = (sourceId: string) => {
+    const gone = state.knowledge.find((k) => k.sourceId === sourceId);
+    if (!gone) return;
+    state.knowledge = state.knowledge.filter((k) => k.sourceId !== sourceId);
+    state.deletedKnowledge.push(gone);
+    state.tombstoneBy[sourceId] = 'origin';
+    state.removedAtOrigin = state.removedAtOrigin.filter((id) => id !== sourceId);
+  };
+
+  // --- SMS escalation-contact confirmation (round 7 WP-4b) ----------------------
+  /** Whether a number is connected to send a code from (resolve_sms_number). */
+  const smsSenderConnected = () => {
+    const sms = state.luciel?.channels.find((c) => c.id === 'sms');
+    return Boolean(
+      sms?.connectionStatus &&
+      !['unconfigured', 'not_connected', 'revoked'].includes(sms.connectionStatus),
+    );
+  };
+  /** luciel._configured_contacts: the pillar slots plus the after-hours contact. */
+  const configuredContacts = (): { channel: 'email' | 'sms'; role: string; value: string }[] => {
+    if (!state.luciel) return [];
+    const esc = state.luciel.escalation;
+    const out: { channel: 'email' | 'sms'; role: string; value: string }[] = [];
+    if (esc.primaryEmail) out.push({ channel: 'email', role: 'primary', value: esc.primaryEmail });
+    if (esc.secondaryEmail)
+      out.push({ channel: 'email', role: 'secondary', value: esc.secondaryEmail });
+    if (esc.primarySms) out.push({ channel: 'sms', role: 'primary', value: esc.primarySms });
+    if (esc.secondarySms) out.push({ channel: 'sms', role: 'secondary', value: esc.secondarySms });
+    const after = state.luciel.teamAvailability?.afterHours?.escalation;
+    if (after?.channel === 'sms' && after.contactSms) {
+      out.push({ channel: 'sms', role: 'after_hours', value: after.contactSms });
+    } else if (after?.channel === 'email' && after.contactEmail) {
+      out.push({ channel: 'email', role: 'after_hours', value: after.contactEmail });
+    }
+    return out;
+  };
+  /** contact_confirmation.begin_sms_confirmation, with the mock's fixed code. */
+  const beginSmsConfirmation = (number: string, force: boolean): string => {
+    const key = normalizeNumber(number);
+    const now = Date.now();
+    const row = (state.smsConfirmations[key] ??= {
+      code: null,
+      expiresAt: null,
+      attempts: 0,
+      confirmedAt: null,
+      lastSentAt: null,
+    });
+    if (row.confirmedAt) return 'already_confirmed';
+    if (row.lastSentAt !== null && now - row.lastSentAt < SMS_RESEND_COOLDOWN_MS) return 'cooldown';
+    const live =
+      row.code !== null &&
+      row.expiresAt !== null &&
+      row.expiresAt > now &&
+      row.attempts < SMS_MAX_ATTEMPTS;
+    if (!force && live) return 'pending';
+    if (!smsSenderConnected()) return 'sms_channel_not_provisioned';
+    row.code = MOCK_SMS_CODE;
+    row.expiresAt = now + SMS_CODE_TTL_MS;
+    row.lastSentAt = now;
+    row.attempts = 0;
+    return 'sent';
+  };
+  /**
+   * luciel._contact_health: every configured contact with its deliverability truth.
+   * Email states are kept as they were (the link loop owns them); a newly saved email
+   * starts pending. SMS states derive from the confirmation rows and the clock.
+   */
+  const refreshContactHealth = () => {
+    if (!state.luciel) return;
+    const previous = state.luciel.escalationContactHealth;
+    const now = Date.now();
+    const sender = smsSenderConnected();
+    state.luciel.escalationContactHealth = configuredContacts().map(
+      ({ channel, role, value }): EscalationContactHealth => {
+        if (channel === 'email') {
+          const before = previous.find(
+            (h) =>
+              (h.channel ?? 'email') === 'email' && h.address.toLowerCase() === value.toLowerCase(),
+          );
+          return {
+            address: value,
+            state: before?.state ?? 'pending_confirmation',
+            verifiedAt: before?.verifiedAt ?? null,
+            lastBouncedAt: before?.lastBouncedAt ?? null,
+            channel,
+            role: role as EscalationContactHealth['role'],
+            detail: before?.state === 'bouncing' ? (before.detail ?? null) : null,
+          };
+        }
+        const row = state.smsConfirmations[normalizeNumber(value)];
+        const smsState: EscalationContactHealth['state'] = row?.confirmedAt
+          ? 'verified'
+          : row?.code && row.expiresAt !== null && row.expiresAt > now
+            ? 'pending_confirmation'
+            : 'unverified';
+        return {
+          address: value,
+          state: smsState,
+          verifiedAt: row?.confirmedAt ?? null,
+          lastBouncedAt: null,
+          channel,
+          role: role as EscalationContactHealth['role'],
+          detail: smsState !== 'verified' && !sender ? 'sms_channel_not_provisioned' : null,
+        };
+      },
+    );
+  };
+  /** A save kicks the code to every configured, unproven number (_kick_sms_confirmation). */
+  const kickSmsConfirmations = () => {
+    for (const c of configuredContacts()) {
+      if (c.channel === 'sms') beginSmsConfirmation(c.value, false);
+    }
+  };
+  // The seeded SMS scenario's health is derived like any other (after the helpers exist).
+  if (state.scenario === 'escalation_sms') refreshContactHealth();
+
+  /**
+   * The tenant's CURRENT ability to push a lead (round 7 WP-3c item 5), read the
+   * way the backend's _CrmPosture reads it: the CRM row's status and whether the
+   * Push to CRM tool is on. The reason a never-pushed lead shows is exactly the
+   * reason the next push would be refused for.
+   */
+  const crmPosture = () => {
+    const row = state.connections.find((c) => c.connectionType === 'crm' && c.status !== 'revoked');
+    const toolOn = state.luciel?.tools.some((t) => t.id === 'push_to_crm' && t.enabled) ?? false;
+    const status = row?.status ?? null;
+    return {
+      provider: row?.provider ?? null,
+      status,
+      toolOn,
+      canPush: toolOn && status === 'connected',
+    };
+  };
+  /** The identifier the CRM accepts: an email, or a phone for a custom webhook. */
+  const crmKeyFor = (l: Lead, provider: string | null): string | null => {
+    const email =
+      l.email ??
+      (l.contactIdentifier && l.contactIdentifier.includes('@') ? l.contactIdentifier : null);
+    if (email) return email;
+    if (provider === 'custom_webhook' && l.phone) return l.phone;
+    return null;
+  };
+  const neverAttemptedReason = (l: Lead): NeverAttemptedReason => {
+    const posture = crmPosture();
+    if (posture.status !== 'connected') {
+      return posture.status === 'dormant' ? 'dormant' : 'crm_not_connected';
+    }
+    if (!posture.toolOn) return 'tool_off';
+    if (crmKeyFor(l, posture.provider) === null) return 'no_crm_key';
+    return 'not_yet_pushed';
+  };
+  /** The ONE lead wire builder: every lead response carries the derived state. */
+  const withCrmPosture = (l: Lead): Lead =>
+    l.crmStatus === 'synced' || l.crmStatus === 'failed'
+      ? l
+      : { ...l, crmStatus: 'never_attempted', crmDetail: neverAttemptedReason(l) };
 
   /** A knowledge sync connection is either one created here or a seeded row. */
   const syncProviderOf = (connectionId: string): KnowledgeSyncProvider => {
@@ -352,6 +841,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     luciel: {
       async get() {
         guardVerified();
+        // SMS confirmation states move with the clock (a code expires).
+        if (state.luciel?.escalationContactHealth.some((h) => h.channel === 'sms')) {
+          refreshContactHealth();
+        }
         return ok(state.luciel);
       },
       async create(req) {
@@ -361,6 +854,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           ...clone(seed.seedLuciel),
           name: req.name,
           websiteUrl: req.websiteUrl,
+        };
+        state.luciel.personality = {
+          ...state.luciel.personality,
+          voiceDisclosurePreview: buildVoiceDisclosure(null),
         };
         state.account.hasLuciel = true;
         state.account.hasCompletedFirstRun = true;
@@ -428,20 +925,67 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // Round 5B item 13, mirroring the backend's save hook: a newly saved
         // email contact enters the confirmation loop; an already-verified one
         // keeps its state. Health is server-owned and never rides in the PUT.
-        const emails = [contact.primaryEmail, contact.secondaryEmail].filter((a): a is string =>
-          Boolean(a),
+        // A newly saved email restarts its loop; a verified one keeps its state. Round
+        // 7 WP-4b: a saved number is texted its 6-digit code the same way.
+        const kept = state.luciel.escalationContactHealth.filter(
+          (h) => (h.channel ?? 'email') !== 'email' || h.state === 'verified',
         );
-        const previous = state.luciel.escalationContactHealth;
-        state.luciel.escalationContactHealth = emails.map(
-          (address) =>
-            previous.find((h) => h.address === address && h.state === 'verified') ?? {
-              address,
-              state: 'pending_confirmation' as const,
-              verifiedAt: null,
-              lastBouncedAt: null,
-            },
-        );
+        state.luciel.escalationContactHealth = kept;
+        kickSmsConfirmations();
+        refreshContactHealth();
         return ok(state.luciel);
+      },
+      async confirmSmsContact(number, code) {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        // The StrictWireModel's pattern answers first (422, the converted body).
+        if (!/^[0-9]{6}$/.test(code)) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: "code: String should match pattern '^[0-9]{6}$'",
+          });
+        }
+        const now = Date.now();
+        state.smsConfirmEntries = state.smsConfirmEntries.filter(
+          (t) => now - t < SMS_CONFIRM_WINDOW_MS,
+        );
+        if (state.smsConfirmEntries.length >= SMS_CONFIRM_BURST) {
+          throw new LucielApiError({
+            code: 'rate_limited',
+            message: 'Too many code entries. Please wait a few minutes.',
+            retryAfterSeconds: 60,
+          });
+        }
+        state.smsConfirmEntries.push(now);
+        const key = normalizeNumber(number);
+        const configured = configuredContacts()
+          .filter((c) => c.channel === 'sms')
+          .map((c) => normalizeNumber(c.value));
+        if (!key || !configured.includes(key)) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'That number is not currently configured as an escalation contact.',
+          });
+        }
+        // contact_confirmation.confirm_sms_code, outcome for outcome.
+        const row = state.smsConfirmations[key];
+        let outcome: string;
+        if (!row) outcome = 'no_pending';
+        else if (row.confirmedAt) outcome = 'already_confirmed';
+        else if (row.code === null || row.expiresAt === null) outcome = 'no_pending';
+        else if (row.expiresAt <= now) outcome = 'expired';
+        else if (row.attempts >= SMS_MAX_ATTEMPTS) outcome = 'locked';
+        else if (code !== row.code) {
+          row.attempts += 1;
+          outcome = row.attempts >= SMS_MAX_ATTEMPTS ? 'locked' : 'wrong_code';
+        } else {
+          row.confirmedAt = new Date(now).toISOString();
+          row.code = null;
+          row.expiresAt = null;
+          outcome = 'confirmed';
+        }
+        refreshContactHealth();
+        return ok({ outcome, luciel: state.luciel });
       },
       async sendTestEscalationSms(which) {
         guardVerified();
@@ -464,6 +1008,33 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async resendContactConfirmation(address) {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        if (looksLikeNumber(address)) {
+          // Round 7 WP-4b: a number gets a fresh code (the backend's SMS branch).
+          const configured = configuredContacts()
+            .filter((c) => c.channel === 'sms')
+            .map((c) => normalizeNumber(c.value));
+          if (!configured.includes(normalizeNumber(address))) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: 'That number is not currently configured as an escalation contact.',
+            });
+          }
+          const outcome = beginSmsConfirmation(address, true);
+          const refusal: Record<string, string> = {
+            cooldown: 'A code was sent moments ago — give it a few minutes, then retry.',
+            already_confirmed: 'That number is already confirmed.',
+            sms_channel_not_provisioned:
+              'Connect an SMS number under Configure → Channels first — the confirmation code is sent from your own number.',
+          };
+          if (outcome !== 'sent') {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: refusal[outcome] ?? `The code could not be sent (${outcome}).`,
+            });
+          }
+          refreshContactHealth();
+          return ok(state.luciel);
+        }
         const entry = state.luciel.escalationContactHealth.find((h) => h.address === address);
         if (!entry) {
           throw new LucielApiError({
@@ -479,7 +1050,22 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async updatePersonality(config) {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
-        state.luciel.personality = clone(config);
+        // What reaches the server after the HTTP adapter's transform: the read-only
+        // preview never rides in the strict PUT.
+        const written = personalityForWrite(config);
+        const intro = written.voiceDisclosureIntro;
+        if (typeof intro === 'string' && intro.length > VOICE_DISCLOSURE_INTRO_MAX) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: `voiceDisclosureIntro: String should have at most ${VOICE_DISCLOSURE_INTRO_MAX} characters`,
+          });
+        }
+        const cleaned = typeof intro === 'string' ? intro.trim() : intro;
+        state.luciel.personality = {
+          ...clone(written),
+          ...(cleaned !== undefined ? { voiceDisclosureIntro: cleaned || null } : {}),
+          voiceDisclosurePreview: buildVoiceDisclosure(cleaned),
+        };
         return ok(state.luciel);
       },
       async updateLeadRetention(days) {
@@ -579,6 +1165,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           closures: req.closures ?? [],
           afterHours: req.afterHours ?? null,
         });
+        // Round 7 WP-4b: the after-hours contact is confirmed like any other — a
+        // saved number is texted its code, and the health list names it.
+        kickSmsConfirmations();
+        refreshContactHealth();
         return ok(state.luciel);
       },
       async status() {
@@ -618,6 +1208,31 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             detail: 'Right now any page that copies your embed key can use it.',
             href: '/dashboard/embed',
           });
+        }
+        // Round 7 WP-3a: dormant is a BILLING state — the credential is intact and
+        // Connect would refuse — so the need sends the owner to Billing, with the
+        // server's own words (app/employee/status.py DORMANT_NEED_DETAIL/BILLING_HREF).
+        for (const c of state.luciel.channels) {
+          if (c.enabled && c.connectionStatus === 'dormant') {
+            needs.push({
+              code: `channel_dormant:${c.id}`,
+              severity: 'attention',
+              title: `${CHANNEL_NEED_LABEL[c.id]}: ${DORMANT_STATUS_DETAIL}`,
+              detail: DORMANT_NEED_DETAIL,
+              href: BILLING_HREF,
+            });
+          }
+        }
+        for (const t of state.luciel.tools) {
+          if (t.enabled && t.connectionStatus === 'dormant') {
+            needs.push({
+              code: `tool_dormant:${t.id}`,
+              severity: 'attention',
+              title: `${t.id.replace(/_/g, ' ')}: ${DORMANT_STATUS_DETAIL}`,
+              detail: DORMANT_NEED_DETAIL,
+              href: BILLING_HREF,
+            });
+          }
         }
         const capabilities: EmployeeStatus['capabilities'] = state.luciel.channels.map((c) => ({
           id: c.id,
@@ -738,9 +1353,19 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async getChunks(sourceId) {
         guardVerified();
-        return ok([
-          { chunkId: 'chunk-1', sourceId, ordinal: 0, text: 'Sample chunk preview text.' },
-        ]);
+        // KnowledgeChunkPageOut (round 7 WP-4c #6): the first page WITH the real
+        // count. The mock sizes a source at ~60 KB per piece so a larger file has
+        // more pieces than one page holds.
+        const source = state.knowledge.find((k) => k.sourceId === sourceId);
+        if (!source) throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
+        const total = Math.max(1, Math.round(source.sizeBytes / 60_000));
+        const chunks = Array.from({ length: Math.min(total, CHUNK_PREVIEW_PAGE) }, (_, i) => ({
+          chunkId: `c0c0c0c0-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+          sourceId,
+          ordinal: i,
+          text: `Piece ${i + 1} of “${source.name}”: sample chunk preview text.`,
+        }));
+        return ok({ chunks, totalChunks: total, pageSize: CHUNK_PREVIEW_PAGE });
       },
       async quota() {
         guardVerified();
@@ -755,7 +1380,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const gone = state.knowledge.find((s) => s.sourceId === sourceId);
         state.knowledge = state.knowledge.filter((s) => s.sourceId !== sourceId);
         // Tombstoned, not destroyed: the 30-day undo window (Arch §3.2.2).
-        if (gone) state.deletedKnowledge.push(gone);
+        if (gone) {
+          state.deletedKnowledge.push(gone);
+          state.tombstoneBy[sourceId] = 'owner';
+        }
         await delay();
       },
       async restoreSource(sourceId) {
@@ -771,6 +1399,15 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (!back) {
           throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
         }
+        // Round 7 WP-4c #9: gone at its origin — nothing here can bring it back.
+        if (state.tombstoneBy[sourceId] === 'origin') {
+          const origin = back.origin === 'crm_kb' ? 'crm_kb' : back.origin;
+          throw new LucielApiError({
+            code: 'conflict',
+            message: `${back.name} was removed at its sync source (${origin}) and cannot be restored here. Re-add it at the source and sync again.`,
+          });
+        }
+        delete state.tombstoneBy[sourceId];
         state.deletedKnowledge.splice(idx, 1);
         state.knowledge.push(back);
         return ok(back);
@@ -779,6 +1416,20 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         const s = state.knowledge.find((k) => k.sourceId === sourceId);
         if (!s) throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
+        // knowledge.py resync_source, round 7: a revoked grant pauses the sources and
+        // marks the connection broken BEFORE the 409; an item gone at its origin is
+        // tombstoned by the sync and the route answers an honest 404.
+        if (s.connectionId && state.revokedGrants.includes(s.connectionId)) {
+          flagDeadCredential(s.connectionId);
+          throw syncUnavailable();
+        }
+        if (state.removedAtOrigin.includes(sourceId)) {
+          tombstoneAtOrigin(sourceId);
+          throw new LucielApiError({
+            code: 'not_found',
+            message: 'Source no longer exists at the sync origin.',
+          });
+        }
         s.lastSyncedAt = new Date().toISOString();
         s.syncStatus = 'synced';
         return ok(s);
@@ -873,7 +1524,38 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
               'The source now reports 1 item(s) where 4 are synced, so nothing was removed. If you did remove them at the source, sync again and confirm the shrink.',
           });
         }
-        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        if (!c) {
+          // A knowledge connection listed under /connections (the seeded Drive, or
+          // a row the scenario adds) syncs too — with the same round-7 truths.
+          const row = state.connections.find(
+            (x) => x.connectionId === connectionId && x.connectionType === 'knowledge_source',
+          );
+          if (!row) {
+            throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+          }
+          if (state.revokedGrants.includes(connectionId) || row.status !== 'connected') {
+            flagDeadCredential(connectionId);
+            throw syncUnavailable();
+          }
+          const removed = state.knowledge
+            .filter(
+              (k) => k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId),
+            )
+            .map((k) => k.name);
+          for (const k of [...state.knowledge]) {
+            if (k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId)) {
+              tombstoneAtOrigin(k.sourceId);
+            }
+          }
+          const now = new Date().toISOString();
+          for (const k of state.knowledge) {
+            if (k.connectionId === connectionId) {
+              k.lastSyncedAt = now;
+              k.syncStatus = 'synced';
+            }
+          }
+          return ok({ added: [], updated: [], removed });
+        }
         if (c.status !== 'connected') {
           throw new LucielApiError({
             code: 'conflict',
@@ -1589,8 +2271,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async takeOver(sessionId) {
         guardVerified();
         const c = state.conversations.find((x) => x.sessionId === sessionId);
-        if (c) c.mode = 'human_controlled';
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Session not found.' });
+        // Round 7 WP-3b item 4: an ended session is refused before anything changes.
+        if (c.endedAt) throw sessionEnded();
+        c.mode = 'human_controlled';
         return ok(c);
       },
       async handBack(sessionId) {
@@ -1604,27 +2288,43 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         const c = state.conversations.find((x) => x.sessionId === sessionId);
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Session not found.' });
+        if (c.endedAt) throw sessionEnded();
         if (c.mode !== 'human_controlled') {
           throw new LucielApiError({
             code: 'validation_error',
             message: 'Take over the conversation before replying.',
           });
         }
+        // The outcome the backend persists on the row (round 7 WP-3b item 5), so
+        // the transcript replays it on reopen: the widget has no push transport
+        // (queued — the visitor picks it up on their next history fetch); a
+        // session with no lead this channel can deliver to fails honestly
+        // (item 1, no_recipient_for_channel); everything else is accepted by the
+        // provider (delivered).
+        const now = new Date().toISOString();
+        const outcome: Pick<Message, 'deliveryStatus' | 'deliveryDetail' | 'deliveredAt'> =
+          c.channel === 'widget'
+            ? { deliveryStatus: 'queued', deliveryDetail: 'widget_poll_only', deliveredAt: null }
+            : !c.leadId
+              ? {
+                  deliveryStatus: 'failed',
+                  deliveryDetail: 'no_recipient_for_channel',
+                  deliveredAt: null,
+                }
+              : { deliveryStatus: 'delivered', deliveryDetail: null, deliveredAt: now };
         const message: Message = {
           messageId: nextId(),
           role: 'human_agent',
           text,
-          at: new Date().toISOString(),
+          at: now,
+          ...outcome,
         };
         (state.humanReplies[sessionId] ??= []).push(message);
         c.lastMessageAt = message.at;
-        // The widget has no push transport: the reply is persisted and the
-        // visitor picks it up on their next history fetch (contract §1).
-        const delivered = c.channel !== 'widget';
         return ok({
           message,
-          delivered,
-          deliveryDetail: delivered ? null : ('widget_poll_only' as const),
+          delivered: outcome.deliveryStatus === 'delivered',
+          deliveryDetail: outcome.deliveryDetail ?? null,
         });
       },
       async getAnswerEvidence(_sessionId, messageId) {
@@ -1669,7 +2369,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     leads: {
       async list(page) {
         guardVerified();
-        return ok(pageOf(state.leads, page));
+        // Round 7 WP-3c item 5: a never-pushed lead's reason is derived from the
+        // CURRENT posture at read time, exactly as the backend's _lead_out does.
+        return ok(pageOf(state.leads.map(withCrmPosture), page));
       },
       async erase(leadId) {
         guardVerified();
@@ -1686,7 +2388,126 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const l = state.leads.find((x) => x.leadId === leadId);
         if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
         l.state = 'archived';
-        return ok(l);
+        l.lastActivityAt = new Date().toISOString();
+        return ok(withCrmPosture(l));
+      },
+      async unarchive(leadId) {
+        guardVerified();
+        const l = state.leads.find((x) => x.leadId === leadId);
+        if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
+        // Idempotent (round 7 WP-3c item 6): an active lead comes back untouched.
+        if (l.state === 'archived') {
+          l.state = 'active';
+          l.lastActivityAt = new Date().toISOString();
+        }
+        return ok(withCrmPosture(l));
+      },
+      async update(leadId, patch) {
+        guardVerified();
+        const l = state.leads.find((x) => x.leadId === leadId);
+        if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
+        // The backend's rules (round 7 WP-3c item 6), modelled: an omitted field
+        // is left alone, an explicit null clears it; email is case-folded and
+        // must look like one; phone must read as E.164; a value another lead
+        // already owns is a conflict, never a silent merge.
+        const owned = (field: 'email' | 'phone', value: string) =>
+          state.leads.some((o) => o.leadId !== leadId && o[field] === value);
+        let changed = false;
+        if (patch.name !== undefined) {
+          const name = (patch.name ?? '').trim() || undefined;
+          if (name !== l.name) {
+            l.name = name;
+            changed = true;
+          }
+        }
+        if (patch.email !== undefined) {
+          const raw = (patch.email ?? '').trim().toLowerCase();
+          if (raw && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: 'That is not a valid email address.',
+            });
+          }
+          const email = raw || null;
+          if (email !== (l.email ?? null)) {
+            if (email && owned('email', email)) {
+              throw new LucielApiError({
+                code: 'conflict',
+                message: 'That email address already belongs to another lead.',
+              });
+            }
+            l.email = email;
+            changed = true;
+          }
+        }
+        if (patch.phone !== undefined) {
+          const raw = (patch.phone ?? '').trim();
+          const cleaned = raw.replace(/[\s\-.()]/g, '');
+          if (raw && !/^\+[1-9]\d{7,14}$/.test(cleaned)) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: 'That phone number could not be read as an international (E.164) number.',
+            });
+          }
+          const phone = raw ? cleaned : null;
+          if (phone !== (l.phone ?? null)) {
+            if (phone && owned('phone', phone)) {
+              throw new LucielApiError({
+                code: 'conflict',
+                message: 'That phone number already belongs to another lead.',
+              });
+            }
+            l.phone = phone;
+            changed = true;
+          }
+        }
+        if (changed) l.lastActivityAt = new Date().toISOString();
+        return ok(withCrmPosture(l));
+      },
+      async backfillCrm() {
+        guardVerified();
+        // Round 7 WP-3c item 5, as the backend does it: refuse (409) when the CRM
+        // cannot be pushed to at all; otherwise push every never-attempted active
+        // lead with a key the CRM accepts, one bounded batch per call.
+        const posture = crmPosture();
+        if (!posture.canPush) {
+          if (posture.status === 'dormant') {
+            throw new LucielApiError({
+              code: 'conflict',
+              message: 'Your CRM connection is dormant; add a payment method first.',
+            });
+          }
+          if (posture.status !== 'connected') {
+            throw new LucielApiError({
+              code: 'conflict',
+              message: 'No CRM is connected, so there is nothing to backfill into.',
+            });
+          }
+          throw new LucielApiError({
+            code: 'conflict',
+            message: 'The Push to CRM tool is switched off.',
+          });
+        }
+        const candidates = state.leads.filter(
+          (l) => l.state === 'active' && l.crmStatus !== 'synced' && l.crmStatus !== 'failed',
+        );
+        const keyed = candidates.filter((l) => crmKeyFor(l, posture.provider) !== null);
+        const skippedNoKey = candidates.length - keyed.length;
+        const batch = keyed.slice(0, CRM_BACKFILL_BATCH);
+        for (const l of batch) {
+          l.crmStatus = 'synced';
+          l.crmDetail = null;
+          l.crmPushedAt = new Date().toISOString();
+        }
+        await delay();
+        return {
+          attempted: batch.length,
+          synced: batch.length,
+          failed: 0,
+          skippedNoKey,
+          remaining: keyed.length - batch.length,
+          refusedReason: null,
+        };
       },
       async markOutcome(leadId, outcome) {
         guardVerified();
@@ -1699,13 +2520,30 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         const l = state.leads.find((x) => x.leadId === leadId);
         if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
-        // The mock CRM always accepts; the live adapter surfaces a 409 with the
-        // reason when nothing could be attempted.
+        // Same broker gates as a capture push: a 409 says why nothing was attempted.
+        const posture = crmPosture();
+        if (!posture.canPush) {
+          throw new LucielApiError({
+            code: 'conflict',
+            message:
+              posture.status === 'dormant'
+                ? 'The push was not attempted: your CRM connection is dormant until a card is on file.'
+                : posture.status !== 'connected'
+                  ? 'The push was not attempted: no CRM is connected.'
+                  : 'The push was not attempted: the Push to CRM tool is switched off.',
+          });
+        }
+        if (crmKeyFor(l, posture.provider) === null) {
+          throw new LucielApiError({
+            code: 'conflict',
+            message: 'The push was not attempted: this lead has no email address your CRM accepts.',
+          });
+        }
         l.crmStatus = 'synced';
         l.crmDetail = null;
         l.crmPushedAt = new Date().toISOString();
         await delay();
-        return ok(l);
+        return ok(withCrmPosture(l));
       },
       async export(format) {
         guardVerified();
@@ -1735,7 +2573,32 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async startCheckout() {
         guardVerified();
+        if (state.billing.paymentsAvailable === false) {
+          throw new LucielApiError({
+            code: 'service_unavailable',
+            message: 'Card payments are not live in this deployment yet.',
+          });
+        }
         return ok({ url: 'https://checkout.stripe.com/mock-session' });
+      },
+      async startPortal() {
+        guardVerified();
+        // Mirrors the backend (round 7 WP-1 #5): 503 while payments are not live,
+        // 409 when there is no Stripe customer / card to update — Checkout adds
+        // a first card; the portal only replaces one.
+        if (state.billing.paymentsAvailable === false) {
+          throw new LucielApiError({
+            code: 'service_unavailable',
+            message: 'Card payments are not live in this deployment yet.',
+          });
+        }
+        if (!state.billing.paymentMethod) {
+          throw new LucielApiError({
+            code: 'conflict',
+            message: 'No card on file to update — add a card first.',
+          });
+        }
+        return ok({ url: 'https://billing.stripe.com/mock-portal-session' });
       },
       async removePaymentMethod() {
         guardVerified();
@@ -1757,15 +2620,60 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     },
 
     account: {
+      async status() {
+        guardAccountOwner();
+        if (state.account.state !== 'closed') {
+          return ok({
+            state: state.account.state,
+            closedAt: null,
+            reopenUntil: null,
+            canReopen: false,
+            lucielRestoredOnReopen: false,
+          });
+        }
+        return ok({
+          state: state.account.state,
+          closedAt: state.closure?.closedAt ?? null,
+          reopenUntil: reopenUntil(),
+          canReopen: insideReopenWindow(),
+          lucielRestoredOnReopen:
+            state.closure?.lucielBefore != null && state.luciel?.state === 'luciel_grace_window',
+        });
+      },
+      async reopen() {
+        guardAccountOwner();
+        await delay();
+        if (state.account.state !== 'closed') {
+          throw new LucielApiError({ code: 'conflict', message: 'This account is not closed.' });
+        }
+        const before = state.closure?.lucielBefore ?? null;
+        const restored = before !== null && state.luciel?.state === 'luciel_grace_window';
+        if (restored && state.luciel) {
+          // Back to the state it had before the closure: active, or paused if paused.
+          state.luciel.state = before.state === 'paused' ? 'paused' : 'active';
+          delete state.luciel.graceWindowStartedAt;
+        }
+        state.account.state = 'verified';
+        state.closure = null;
+        return clone({
+          state: 'verified' as const,
+          lucielRestored: restored,
+          lucielState: restored ? (state.luciel?.state ?? null) : null,
+          billingState: state.billing.budget.billingState,
+        });
+      },
       async requestExport() {
-        guardVerified();
+        // Also the D5 re-request: a closed account inside its window may ask again.
+        guardAccountOwner();
         // The bundle's time-limited link comes back in the body as well as by email
         // (round 7 WP-10, item 12) — the mock hands back the same shape the backend
-        // does, so the UI can show the link and the link's life.
+        // does, so the UI can show the link, the link's life and whether the email
+        // carrying it actually left (round 7 WP-5).
         return ok({
           ok: true,
           downloadUrl: `${MOCK_AUTHORIZE_ORIGIN}/api/v1/admin/account/export/${nextId()}`,
           ttlDays: 7,
+          emailOutcome: 'sent',
         });
       },
       async close(opts) {
@@ -1781,8 +2689,17 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
               'Your Luciel is still active. Delete it first, or confirm that closing the account deletes it.',
           });
         }
+        // The closure deletes a Luciel still serving: it enters its grace window,
+        // which is what a reopen inside the 30 days brings it back from (D5).
+        const serving =
+          state.luciel && (state.luciel.state === 'active' || state.luciel.state === 'paused');
+        const closedAt = new Date().toISOString();
+        state.closure = { closedAt, lucielBefore: serving ? clone(state.luciel) : null };
+        if (serving && state.luciel) {
+          state.luciel.state = 'luciel_grace_window';
+          state.luciel.graceWindowStartedAt = closedAt;
+        }
         state.account.state = 'closed';
-        state.luciel = null;
         await delay();
       },
     },

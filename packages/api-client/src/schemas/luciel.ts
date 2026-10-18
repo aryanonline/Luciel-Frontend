@@ -154,8 +154,29 @@ export const knowledgeSource = z.object({
    * source no answer has used.
    */
   usedByQuestions7d: z.number().int().nonnegative().default(0),
+  /**
+   * Round 7 WP-4c #5 (owner decision D10): when a revoked/expired grant paused this
+   * source. It keeps answering for `KNOWLEDGE_PAUSED_SERVING_DAYS` from this
+   * instant, then stops until the connection is reconnected
+   * (knowledge/service.py `stops_serving_at`). NOT SERVED by KnowledgeSourceOut at
+   * backend 5de5cf6 — the column is `knowledge_sources.paused_since` and this is its
+   * WireModel camelization; optional so today's wire parses and the UI falls back
+   * to "paused — reconnect needed" without a date.
+   */
+  pausedSince: isoTimestamp.nullable().optional(),
+  /**
+   * Who tombstoned the source (round 7 WP-4c #9; `knowledge_sources.deleted_by`):
+   * `owner` (undo-able for 30 days), `origin` (gone at Drive/Notion/the site — never
+   * restorable here), `lifecycle` (comes back with the Luciel). NOT SERVED at
+   * 5de5cf6 (the list omits tombstones); the served truth today is the restore
+   * route's 409 and the re-sync's 404, which the UI renders verbatim.
+   */
+  deletedBy: z.enum(['owner', 'origin', 'lifecycle']).nullable().optional(),
 });
 export type KnowledgeSource = z.infer<typeof knowledgeSource>;
+
+/** D10: a source paused for reconnect keeps answering this many days (PAUSED_SERVING_DAYS). */
+export const KNOWLEDGE_PAUSED_SERVING_DAYS = 7;
 
 export const knowledgeChunk = z.object({
   chunkId: uuid,
@@ -164,6 +185,20 @@ export const knowledgeChunk = z.object({
   text: z.string(),
 });
 export type KnowledgeChunk = z.infer<typeof knowledgeChunk>;
+
+/**
+ * GET /admin/knowledge/sources/{id}/chunks (round 7 WP-4c #6; KnowledgeChunkPageOut):
+ * the first page of a source's chunks WITH the real count. The bare list it used to
+ * return made the preview say "first 20 of 20" for a source with 300 pieces.
+ * `totalChunks`/`pageSize` are null only for an older server's bare list — the
+ * count is then unknown, never the page length.
+ */
+export const knowledgeChunkPage = z.object({
+  chunks: z.array(knowledgeChunk),
+  totalChunks: z.number().int().nonnegative().nullable(),
+  pageSize: z.number().int().positive().nullable(),
+});
+export type KnowledgeChunkPage = z.infer<typeof knowledgeChunkPage>;
 
 /** 5 GB total, 50 MB per file — single quota (Vision §3.3). */
 export const knowledgeQuota = z.object({
@@ -308,6 +343,9 @@ export const personalityPreset = z.enum([
 ]);
 export type PersonalityPreset = z.infer<typeof personalityPreset>;
 
+/** The owner's Voice opening line is at most this many characters (settled contract). */
+export const VOICE_DISCLOSURE_INTRO_MAX = 200;
+
 export const personalityConfig = z.object({
   preset: personalityPreset,
   /** Custom exposes the four axes (Vision §3.5). */
@@ -326,9 +364,35 @@ export const personalityConfig = z.object({
    * admin input to the fixed high-value-lead signal. At most 20, each ≤ 60 chars.
    */
   highValueSignals: z.array(z.string().max(60)).max(20).optional(),
+  /**
+   * The owner's optional opening line for Voice calls (round 7 settled contract;
+   * the runtime already reads `personality.voiceDisclosureIntro` —
+   * runtime/voice_pipeline.py). Plain text, at most 200 characters; empty = none.
+   * It is PREPENDED to the mandatory notice, never substituted for it.
+   * Optional so a server that does not carry it still parses.
+   */
+  voiceDisclosureIntro: z.string().max(VOICE_DISCLOSURE_INTRO_MAX).nullable().optional(),
+  /**
+   * READ-ONLY, served: the exact sentence callers hear — the intro (if any) followed
+   * by the AI-identity and recording facts the owner cannot remove
+   * (channels/voice_adapter.py `build_disclosure`). Never sent back: the personality
+   * PUT is a strict model and the HTTP adapter strips it (`personalityForWrite`).
+   */
+  voiceDisclosurePreview: z.string().nullable().optional(),
   // NOTE: no model selection field anywhere — never exposed (Arch §3.4.3).
 });
 export type PersonalityConfig = z.infer<typeof personalityConfig>;
+
+/**
+ * The personality as the PUT accepts it: the served read-only preview stripped, and
+ * an intro key the server never served left out (an older server's strict model
+ * would refuse the unknown key with a 422).
+ */
+export function personalityForWrite(config: PersonalityConfig): PersonalityConfig {
+  const { voiceDisclosurePreview: _readOnly, ...rest } = config;
+  if (rest.voiceDisclosureIntro === undefined) delete rest.voiceDisclosureIntro;
+  return rest;
+}
 
 /**
  * Per-address deliverability truth for the configured escalation email
@@ -338,12 +402,55 @@ export type PersonalityConfig = z.infer<typeof personalityConfig>;
  */
 export const escalationContactHealth = z.object({
   address: z.string(),
-  /** `bouncing` means mail to this address is failing and escalations skip it. */
+  /**
+   * `bouncing` means mail to this address is failing and escalations skip it. For an
+   * SMS contact (round 7 WP-4b): `pending_confirmation` = a live 6-digit code is out,
+   * `unverified` = no live code (never sent, or it expired), `verified` = answered.
+   * Until an SMS contact is confirmed, the OWNER is copied on every page to it
+   * (escalation_dispatch `_proven`).
+   */
   state: z.enum(['unverified', 'pending_confirmation', 'verified', 'bouncing']),
   verifiedAt: isoTimestamp.nullable(),
   lastBouncedAt: isoTimestamp.nullable(),
+  /**
+   * Round 7 WP-4b: the list covers SMS contacts and the after-hours contact too.
+   * `channel` email | sms (absent from an older server = email); `role` primary |
+   * secondary | after_hours.
+   */
+  channel: z.enum(['email', 'sms']).optional(),
+  role: z.enum(['primary', 'secondary', 'after_hours']).nullable().optional(),
+  /**
+   * An honest refusal, code-shaped: `sms_channel_not_provisioned` (no number is
+   * connected to send the confirmation code from); for a bouncing email, the
+   * provider's bounce detail.
+   */
+  detail: z.string().nullable().optional(),
 });
 export type EscalationContactHealth = z.infer<typeof escalationContactHealth>;
+
+/**
+ * What a code entry did (round 7 WP-4b; contact_confirmation.confirm_sms_code). The
+ * vocabulary is the server's; an unknown word is still rendered honestly.
+ */
+export const confirmSmsOutcome = z.enum([
+  'confirmed',
+  'already_confirmed',
+  'wrong_code',
+  'locked',
+  'expired',
+  'no_pending',
+]);
+export type ConfirmSmsOutcome = z.infer<typeof confirmSmsOutcome>;
+
+/**
+ * POST /admin/luciel/escalation/contacts/confirm-sms body — mirrors the backend's
+ * StrictWireModel (`number` 3–32 chars, `code` exactly six digits).
+ */
+export const confirmSmsContactRequest = z.object({
+  number: z.string().min(3).max(32),
+  code: z.string().regex(/^[0-9]{6}$/, 'Enter the 6-digit code.'),
+});
+export type ConfirmSmsContactRequest = z.infer<typeof confirmSmsContactRequest>;
 
 // --- Team availability (round 6 WP-E, audit F054) -------------------------------
 /**
@@ -434,6 +541,13 @@ export const luciel = z.object({
   dailyBriefEnabled: z.boolean().optional(),
 });
 export type Luciel = z.infer<typeof luciel>;
+
+/** The confirm-sms answer: the outcome word and the Luciel with its fresh contact health. */
+export const confirmSmsContactResult = z.object({
+  outcome: z.string(),
+  luciel,
+});
+export type ConfirmSmsContactResult = z.infer<typeof confirmSmsContactResult>;
 
 export const createLucielRequest = z.object({
   name: z.string().min(1),

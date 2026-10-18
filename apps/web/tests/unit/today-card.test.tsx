@@ -195,6 +195,40 @@ describe('Today card', () => {
     ).toBeVisible();
   });
 
+  it('renders a dormant need exactly as served — the Billing link and the card detail, no local mapping (round 7 WP-3a)', async () => {
+    served.status = {
+      ...base,
+      needs: [
+        {
+          code: 'channel_dormant:sms',
+          severity: 'attention',
+          title: 'Text messages: paused until a card is on file',
+          detail: 'Add a card on the Billing page and it resumes.',
+          href: '/dashboard/billing',
+        },
+        {
+          code: 'tool_dormant:push_to_crm',
+          severity: 'attention',
+          title: 'Push to CRM: paused until a card is on file',
+          detail: 'Add a card on the Billing page and it resumes.',
+          href: '/dashboard/billing',
+        },
+      ],
+    };
+    renderWithQuery(<TodayCard />);
+    const needs = await screen.findByRole('list', { name: 'What I need from you' });
+    expect(
+      screen.getByRole('link', { name: 'Text messages: paused until a card is on file' }),
+    ).toHaveAttribute('href', '/dashboard/billing');
+    expect(
+      screen.getByRole('link', { name: 'Push to CRM: paused until a card is on file' }),
+    ).toHaveAttribute('href', '/dashboard/billing');
+    expect(needs).toHaveTextContent('Add a card on the Billing page and it resumes.');
+    // The retired local wording never comes back: a dormant row is billing, not a reconnect.
+    expect(needs).not.toHaveTextContent(/reconnect/i);
+    expect(screen.queryByRole('link', { name: /configure/i })).not.toBeInTheDocument();
+  });
+
   it('shows an honest empty and error state', async () => {
     served.status = null;
     renderWithQuery(<TodayCard />);

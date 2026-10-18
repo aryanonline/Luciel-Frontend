@@ -52,8 +52,90 @@ export const accountExportResult = z.object({
   ok: z.boolean().default(true),
   downloadUrl: z.string().url().optional(),
   ttlDays: z.number().int().positive().optional(),
+  /**
+   * What happened to the email carrying the same link (round 7 WP-5, item 4 —
+   * account.py `ExportResult.email_outcome`, served as `emailOutcome`):
+   * `sent` | `recorded` (mock/CI: nothing left the platform) | `no_sender` (no
+   * platform sender identity bound — the link went nowhere) | `failed:<reason>`.
+   * Optional so an older server's response still parses; the UI then says no
+   * more than it knows. Read it with `exportEmailOutcome`.
+   */
+  emailOutcome: z.string().optional(),
 });
 export type AccountExportResult = z.infer<typeof accountExportResult>;
+
+/** The export email's outcome, parsed from the served word (see `accountExportResult`). */
+export type ExportEmailOutcome =
+  | { kind: 'sent' }
+  | { kind: 'recorded' }
+  | { kind: 'no_sender' }
+  | { kind: 'failed'; reason: string | null }
+  | { kind: 'unknown' };
+
+export function exportEmailOutcome(raw: string | undefined | null): ExportEmailOutcome {
+  if (raw === 'sent' || raw === 'recorded' || raw === 'no_sender') return { kind: raw };
+  if (typeof raw === 'string' && raw.startsWith('failed')) {
+    const reason = raw.slice('failed'.length).replace(/^:/, '').trim();
+    return { kind: 'failed', reason: reason && reason !== 'unknown' ? reason : null };
+  }
+  return { kind: 'unknown' };
+}
+
+/**
+ * GET /api/v1/admin/account (round 7 WP-5 / owner decision D5; schemas_api/account.py
+ * `AccountStatusOut`) — the one read a CLOSED account may make. For an open account
+ * both instants are null and `canReopen` is false.
+ */
+export const accountStatus = z.object({
+  state: accountState,
+  /** When the owner closed the account. */
+  closedAt: isoTimestamp.nullable().optional(),
+  /** The last moment to reopen or re-request the export (closure + 30 days). */
+  reopenUntil: isoTimestamp.nullable().optional(),
+  /** True only while the account is closed AND inside that window. */
+  canReopen: z.boolean().default(false),
+  /** Whether reopening brings the Luciel back from its grace window. */
+  lucielRestoredOnReopen: z.boolean().default(false),
+});
+export type AccountStatus = z.infer<typeof accountStatus>;
+
+/** POST /api/v1/admin/account/reopen (schemas_api/account.py `ReopenResult`). */
+export const reopenResult = z.object({
+  state: accountState,
+  /** The Luciel came back from its grace window (active, or paused if it was paused). */
+  lucielRestored: z.boolean().default(false),
+  lucielState: z.string().nullable().optional(),
+  /** `payg_enabled` | `free_cap` — the billing arrangement the account resumes on. */
+  billingState: z.string(),
+});
+export type ReopenResult = z.infer<typeof reopenResult>;
+
+/** The typed-refusal word every admin route answers a closed account with (D5). */
+export const ACCOUNT_CLOSED = 'account_closed';
+
+/** What an `account_closed` refusal carries (errors.py `account_closed`). */
+export interface AccountClosedDetail {
+  closedAt: string | null;
+  reopenUntil: string | null;
+}
+
+/**
+ * The closure an error reports, or null when the error is anything else. A 403
+ * that names `account_closed` is NOT an expired session: the owner signed in fine
+ * and must see the reduced closed-account page, never be bounced to /login.
+ */
+export function accountClosedDetail(error: unknown): AccountClosedDetail | null {
+  if (
+    !error ||
+    typeof error !== 'object' ||
+    (error as { reason?: unknown }).reason !== ACCOUNT_CLOSED
+  ) {
+    return null;
+  }
+  const detail = (error as { detail?: Record<string, unknown> }).detail ?? {};
+  const instant = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  return { closedAt: instant(detail.closedAt), reopenUntil: instant(detail.reopenUntil) };
+}
 
 /**
  * An account-level notice the dashboard must surface on next login (Legal §A5,
