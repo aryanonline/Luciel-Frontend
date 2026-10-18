@@ -91,7 +91,11 @@ describe('transcript polling during a human takeover', () => {
 
     getMessages.mockResolvedValue([first, second]);
     vi.advanceTimersByTime(5000);
-    expect(await screen.findByText('still there? my number is on file')).toBeInTheDocument();
+    // The poll's refetch resolves on real timers after the faked interval fires; a
+    // slow CI runner took longer than findByText's default second (nightly, 2026-10-14).
+    expect(
+      await screen.findByText('still there? my number is on file', {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
     expect(getMessages).toHaveBeenCalledTimes(2);
   });
 
