@@ -82,6 +82,19 @@ export const apiError = z.object({
   code: apiErrorCode,
   message: z.string(),
   retryAfterSeconds: z.number().int().nonnegative().optional(),
+  /**
+   * The backend's TYPED REFUSAL word (round 7 WP-5 / owner decision D5; the wire
+   * body's optional `code` key — app/api/errors.py). It tells a refusal apart from
+   * its status-mates: a 403 `account_closed` is not an expired session, so the UI
+   * must render the reduced closed-account page instead of bouncing to login.
+   * Absent on every refusal that carries no such word.
+   */
+  reason: z.string().optional(),
+  /**
+   * Code-shaped values that ride a typed refusal (instants, counts, state names) —
+   * e.g. `{ closedAt, reopenUntil }` on `account_closed`. Never display copy.
+   */
+  detail: z.record(z.unknown()).optional(),
 });
 export type ApiError = z.infer<typeof apiError>;
 
@@ -89,10 +102,15 @@ export type ApiError = z.infer<typeof apiError>;
 export class LucielApiError extends Error {
   readonly code: ApiErrorCode;
   readonly retryAfterSeconds?: number;
+  /** The wire body's typed-refusal word, when the server sent one (see `apiError`). */
+  readonly reason?: string;
+  readonly detail?: Record<string, unknown>;
   constructor(err: ApiError) {
     super(err.message);
     this.name = 'LucielApiError';
     this.code = err.code;
     this.retryAfterSeconds = err.retryAfterSeconds;
+    if (err.reason !== undefined) this.reason = err.reason;
+    if (err.detail !== undefined) this.detail = err.detail;
   }
 }

@@ -75,18 +75,59 @@ type TranscriptError = { tone: 'info' | 'danger'; text: string };
 /** Transcript poll cadence while a person holds the conversation (F147). */
 const TAKEOVER_POLL_MS = 5000;
 
-function describeDelivery(result: SendMessageResult): Delivery {
-  if (result.delivered) {
-    // A caller has no chat to reply into: the reply reached them as a TEXT on
-    // your number (owner decision 2026-09-05, audit F150) — say so, never let the
-    // owner believe the caller heard it on the call.
-    return result.deliveryDetail === 'voice_bridged_to_sms'
-      ? {
-          tone: 'info',
-          text: 'Sent as a text message to the caller — a call has no chat to reply into, so they will see this on their phone.',
-        }
-      : { tone: 'info', text: 'Sent to the visitor.' };
+type Channel = ConversationSummary['channel'];
+
+/**
+ * The wire word in the backend's 409 for a take-over / reply on an ENDED session
+ * (round 7 WP-3b item 4; dashboard.py `_session_ended`). A 409 without it is some
+ * other conflict and keeps the generic copy.
+ */
+const SESSION_ENDED = 'session_ended';
+const isSessionEnded = (err: unknown): err is LucielApiError =>
+  err instanceof LucielApiError && err.code === 'conflict' && err.message.includes(SESSION_ENDED);
+
+/**
+ * "Delivered" on a text means the carrier ACCEPTED it — the handset receipt
+ * arrives later and is not written back to the row, so the honest word is "sent",
+ * never "delivered" (round 7 WP-3b item 5).
+ */
+const awaitsCarrierReceipt = (channel: Channel | undefined, detail: string | null | undefined) =>
+  channel === 'sms' || detail === 'voice_bridged_to_sms';
+
+/** An accepted reply, in the words its channel earns. */
+function describeAccepted(
+  channel: Channel | undefined,
+  detail: string | null | undefined,
+): Delivery {
+  // A caller has no chat to reply into: the reply reached them as a TEXT on
+  // your number (owner decision 2026-09-05, audit F150) — say so, never let the
+  // owner believe the caller heard it on the call.
+  if (detail === 'voice_bridged_to_sms') {
+    return {
+      tone: 'info',
+      text: 'Sent as a text message to the caller — a call has no chat to reply into, so they will see this on their phone. Awaiting delivery confirmation from the carrier.',
+    };
   }
+  if (awaitsCarrierReceipt(channel, detail)) {
+    return { tone: 'info', text: 'Sent — awaiting delivery confirmation from the carrier.' };
+  }
+  return { tone: 'info', text: 'Sent to the visitor.' };
+}
+
+function describeDelivery(result: SendMessageResult, channel: Channel | undefined): Delivery {
+  if (result.delivered) return describeAccepted(channel, result.deliveryDetail);
+  return describeUndelivered(result.deliveryDetail, channel);
+}
+
+/**
+ * Why nothing reached the customer, with the way back. Shared by the send-time
+ * banner and the per-message line a reopened transcript shows (item 5), so the
+ * two can never disagree about the same reply.
+ */
+function describeUndelivered(
+  detail: MessageDeliveryDetail | null | undefined,
+  channel: Channel | undefined,
+): Delivery {
   const connect = (
     <>
       {' '}
@@ -96,8 +137,40 @@ function describeDelivery(result: SendMessageResult): Delivery {
       so replies can go out.
     </>
   );
-  const detail: MessageDeliveryDetail | null | undefined = result.deliveryDetail;
+  const channelName = channel ? sessionChannelLabel(channel) : 'this channel';
+  const configureChannel = (
+    <Link href="/dashboard/configure" className="text-vm-accent underline">
+      Configure → {channelName}
+    </Link>
+  );
   switch (detail) {
+    // Round 7 WP-3b item 1: the lead is not known by any identifier THIS channel
+    // can deliver to (their details live on another channel after a
+    // unification). The reply is kept; it is never re-routed to another channel.
+    case 'no_recipient_for_channel':
+      return {
+        tone: 'warning',
+        text: (
+          <>
+            Saved, but not sent: we don&apos;t know a {channelName} address for this person — their
+            contact details are on another channel, and a reply is never re-routed to a channel they
+            didn&apos;t write on. Reach them on the channel they used, and check the {channelName}{' '}
+            setup under {configureChannel}.
+          </>
+        ),
+      };
+    // Round 7 WP-3b item 7: the Meta grant behind this surface is expired /
+    // errored / unbound — reconnecting it is the only way out (not "try again").
+    case 'meta_reconnect_needed':
+      return {
+        tone: 'warning',
+        text: (
+          <>
+            Saved, but not sent: your Meta connection needs reconnecting before replies can go out
+            on {channelName}. Reconnect it under {configureChannel}.
+          </>
+        ),
+      };
     case 'no_recipient':
       return {
         tone: 'warning',
@@ -155,6 +228,41 @@ function describeDelivery(result: SendMessageResult): Delivery {
       return {
         tone: 'info',
         text: 'Sent — the visitor will see this on their next refresh.',
+      };
+  }
+}
+
+/**
+ * What a reopened transcript says under a human reply (round 7 WP-3b item 5):
+ * the outcome PERSISTED on the row — failed with the served detail, queued as
+ * the widget's polling pickup, accepted in its channel's words — and an honest
+ * "not recorded" for a reply from before outcomes were kept. Never "delivered"
+ * for an unknown. Null for every other role.
+ */
+function describeMessageDelivery(m: Message, channel: Channel | undefined): Delivery | null {
+  if (m.role !== 'human_agent') return null;
+  switch (m.deliveryStatus) {
+    case 'failed':
+      return describeUndelivered(m.deliveryDetail, channel);
+    case 'queued':
+      return {
+        tone: 'info',
+        text: 'Sent — the visitor sees this on their next refresh (widget replies are picked up by polling, not pushed).',
+      };
+    case 'delivered': {
+      const accepted = describeAccepted(channel, m.deliveryDetail);
+      if (awaitsCarrierReceipt(channel, m.deliveryDetail)) return accepted;
+      return {
+        tone: 'info',
+        text: m.deliveredAt
+          ? `Delivered ${new Date(m.deliveredAt).toLocaleString()}.`
+          : 'Delivered.',
+      };
+    }
+    default:
+      return {
+        tone: 'info',
+        text: 'Delivery outcome not recorded — this reply was sent before outcomes were kept.',
       };
   }
 }
@@ -316,7 +424,10 @@ export default function ConversationsPage() {
   /** Which transcript the in-flight fetches belong to, so a fast switch can't cross-fill. */
   const openedSession = React.useRef<string | null>(null);
 
-  const openConversation = conversations.data?.find((c) => c.sessionId === openSession);
+  const openConversation = conversationRows.find((c) => c.sessionId === openSession);
+  // Round 7 WP-3b item 4: an ended session (§3.4.8) can be read but not held or
+  // replied into — nothing on the customer's transport is waiting on it.
+  const openEnded = Boolean(openConversation?.endedAt);
 
   // §3.4.12 / 2026-09-05 audit F147: while a person holds the conversation, the
   // visitor keeps typing — poll the transcript so the owner sees each new turn
@@ -406,10 +517,17 @@ export default function ConversationsPage() {
       const result = await api.conversations.sendMessage(openSession, text);
       // Append optimistically; a later fetch returns it in the same order.
       setMessages((prev) => [...prev, result.message]);
-      setDelivery(describeDelivery(result));
+      setDelivery(describeDelivery(result, openConversation?.channel));
       setReply('');
       qc.invalidateQueries({ queryKey: qk.conversations });
     } catch (err) {
+      if (isSessionEnded(err)) {
+        // The session ended under the owner's hands: say so in the server's own
+        // words, and re-read the list so the row shows it ended.
+        setReplyError(err.message);
+        qc.invalidateQueries({ queryKey: qk.conversations });
+        return;
+      }
       setReplyError(
         err instanceof LucielApiError && err.code === 'validation_error'
           ? err.message
@@ -433,7 +551,15 @@ export default function ConversationsPage() {
       if (next === 'take_over') await api.conversations.takeOver(sessionId);
       else await api.conversations.handBack(sessionId);
       qc.invalidateQueries({ queryKey: qk.conversations });
-    } catch {
+    } catch (err) {
+      if (isSessionEnded(err)) {
+        // Round 7 WP-3b item 4: the 409 names the state — rendered verbatim, never
+        // folded into "could not take over", and the list is re-read so the row
+        // carries its endedAt.
+        setModeError(err.message);
+        qc.invalidateQueries({ queryKey: qk.conversations });
+        return;
+      }
       setModeError(
         next === 'take_over'
           ? 'We could not take over that conversation. Luciel is still answering it.'
@@ -543,6 +669,7 @@ export default function ConversationsPage() {
                 .map((c) => {
                   const busy = modeBusy === c.sessionId;
                   const held = c.mode === 'human_controlled';
+                  const ended = Boolean(c.endedAt);
                   return (
                     <li key={c.sessionId} className="py-vm-3">
                       <div className="flex items-center justify-between gap-vm-3">
@@ -574,23 +701,47 @@ export default function ConversationsPage() {
                                 — {escalationReasons.get(c.sessionId)?.join(', ')}
                               </span>
                             )}
+                            {ended && (
+                              <span className="ml-vm-2 inline-flex items-center rounded-vm-pill border border-vm-border px-vm-2 py-vm-1 font-label text-vm-text-muted">
+                                Ended {new Date(c.endedAt as string).toLocaleString()}
+                              </span>
+                            )}
+                            {/* Round 7 WP-3b item 6: a session that never reached the
+                                fire-once billing trigger is listed but NOT billed — the
+                                row count is not the billed count. The wire carries only
+                                the flag, not which of the two causes, so neither is
+                                claimed. Only a server that says so earns the label. */}
+                            {c.countedForBilling === false && (
+                              <span
+                                className="ml-vm-2 inline-flex items-center rounded-vm-pill border border-vm-border px-vm-2 py-vm-1 font-label text-vm-text-muted"
+                                title="It never reached a first reply — refused at capacity, or lost to an outage before the first answer — so it did not count against your plan."
+                              >
+                                not billed — refused at capacity or lost to an outage
+                              </span>
+                            )}
                           </div>
                         </button>
-                        <Button
-                          variant="secondary"
-                          disabled={modeBusy !== null}
-                          onClick={() =>
-                            void setMode(c.sessionId, held ? 'hand_back' : 'take_over')
-                          }
-                        >
-                          {busy
-                            ? held
-                              ? 'Handing back…'
-                              : 'Taking over…'
-                            : held
-                              ? 'Hand back'
-                              : 'Take over'}
-                        </Button>
+                        {ended ? (
+                          <span className="shrink-0 text-vm-0 text-vm-text-muted">
+                            Ended — nothing to take over
+                          </span>
+                        ) : (
+                          <Button
+                            variant="secondary"
+                            disabled={modeBusy !== null}
+                            onClick={() =>
+                              void setMode(c.sessionId, held ? 'hand_back' : 'take_over')
+                            }
+                          >
+                            {busy
+                              ? held
+                                ? 'Handing back…'
+                                : 'Taking over…'
+                              : held
+                                ? 'Hand back'
+                                : 'Take over'}
+                          </Button>
+                        )}
                       </div>
                     </li>
                   );
@@ -620,6 +771,7 @@ export default function ConversationsPage() {
               {messages.map((m) => {
                 const answer = m.role === 'luciel' ? evidence[m.messageId] : undefined;
                 const isOpen = Boolean(expanded[m.messageId]);
+                const outcome = describeMessageDelivery(m, openConversation?.channel);
                 return (
                   <div key={m.messageId} className="text-vm-1">
                     <div>
@@ -641,6 +793,21 @@ export default function ConversationsPage() {
                         <span>{m.text}</span>
                       )}
                     </div>
+
+                    {/* Round 7 WP-3b item 5: the persisted outcome of a human reply,
+                        replayed on reopen — a rejected text no longer reads like any
+                        other message. */}
+                    {outcome && (
+                      <p
+                        className={cn(
+                          'mt-vm-1 text-vm-0',
+                          outcome.tone === 'warning' ? 'text-vm-warning' : 'text-vm-text-muted',
+                        )}
+                        data-testid="delivery-outcome"
+                      >
+                        {outcome.text}
+                      </p>
+                    )}
 
                     {/* Evidence sits under the answer it belongs to (Decision #10). */}
                     {m.role === 'luciel' && (
@@ -743,8 +910,19 @@ export default function ConversationsPage() {
                 );
               })}
 
+              {/* Round 7 WP-3b item 4: an ended session cannot be held or replied
+                  into — the compose box is withheld and the reason said. */}
+              {openEnded && openConversation && (
+                <Banner tone="info" className="mt-vm-4">
+                  This conversation ended{' '}
+                  {new Date(openConversation.endedAt as string).toLocaleString()}. Nothing on the
+                  visitor&apos;s side is waiting on it, so it can&apos;t be taken over or replied
+                  into. If they write again, that starts a new conversation.
+                </Banner>
+              )}
+
               {/* Compose — only while this admin holds the conversation (§3.4.12). */}
-              {openConversation?.mode === 'human_controlled' && (
+              {openConversation?.mode === 'human_controlled' && !openEnded && (
                 <div className="mt-vm-4 border-t border-vm-border pt-vm-3">
                   <label htmlFor="reply" className="text-vm-1 font-label">
                     You are replying as yourself — Luciel is not answering this conversation.

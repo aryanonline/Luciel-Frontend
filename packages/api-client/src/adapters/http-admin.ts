@@ -1,5 +1,6 @@
 import type { LucielApiClient, PageOptions } from '../client';
-import type { BillingInfo } from '../schemas';
+import { personalityForWrite } from '../schemas';
+import type { BillingInfo, KnowledgeChunk, KnowledgeChunkPage } from '../schemas';
 import { createTransport, type TransportOptions } from './transport';
 
 /** POST /admin/account/export as served: camelCase or the endpoint's snake_case. */
@@ -9,6 +10,9 @@ interface AccountExportWire {
   download_url?: string;
   ttlDays?: number;
   ttl_days?: number;
+  // account.py serialises this one field by its alias (`emailOutcome`).
+  emailOutcome?: string;
+  email_outcome?: string;
 }
 
 /** Ingest endpoints take `file` + `name` as multipart form fields. */
@@ -64,7 +68,12 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         t.post('/api/v1/admin/luciel/escalation/resend-confirmation', { address }),
       sendTestEscalationSms: (which) =>
         t.post('/api/v1/admin/luciel/escalation/test-sms', { which }),
-      updatePersonality: (config) => t.put('/api/v1/admin/luciel/personality', config),
+      confirmSmsContact: (number, code) =>
+        t.post('/api/v1/admin/luciel/escalation/contacts/confirm-sms', { number, code }),
+      // The served voiceDisclosurePreview is read-only and the PUT is strict
+      // (extra='forbid'): it never rides back.
+      updatePersonality: (config) =>
+        t.put('/api/v1/admin/luciel/personality', personalityForWrite(config)),
       updateLeadRetention: (days) =>
         t.put('/api/v1/admin/luciel/lead-retention', { leadRetentionDays: days }),
       updateAllowedOrigins: (origins) => t.put('/api/v1/admin/luciel/allowed-origins', { origins }),
@@ -83,7 +92,19 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     },
     knowledge: {
       listSources: () => t.get('/api/v1/admin/knowledge/sources'),
-      getChunks: (sourceId) => t.get(`/api/v1/admin/knowledge/sources/${sourceId}/chunks`),
+      // KnowledgeChunkPageOut {chunks, totalChunks, pageSize}; an older server's bare
+      // list still reads, with the count unknown rather than the page length.
+      getChunks: async (sourceId) => {
+        const raw = await t.get<KnowledgeChunkPage | KnowledgeChunk[]>(
+          `/api/v1/admin/knowledge/sources/${sourceId}/chunks`,
+        );
+        if (Array.isArray(raw)) return { chunks: raw, totalChunks: null, pageSize: null };
+        return {
+          chunks: raw.chunks ?? [],
+          totalChunks: typeof raw.totalChunks === 'number' ? raw.totalChunks : null,
+          pageSize: typeof raw.pageSize === 'number' ? raw.pageSize : null,
+        };
+      },
       quota: () => t.get('/api/v1/admin/knowledge/quota'),
       deleteSource: (sourceId) => t.del(`/api/v1/admin/knowledge/sources/${sourceId}`),
       restoreSource: (sourceId) => t.post(`/api/v1/admin/knowledge/sources/${sourceId}/restore`),
@@ -197,6 +218,11 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       erase: (leadId) => t.del(`/api/v1/dashboard/leads/${leadId}`),
       prune: (leadIds) => t.post('/api/v1/dashboard/leads/prune', { leadIds }),
       archive: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/archive`),
+      unarchive: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/unarchive`),
+      // Only the keys the caller set ride the body: an omitted field is left alone
+      // server-side, an explicit null clears it (LeadPatchRequest.model_fields_set).
+      update: (leadId, patch) => t.patch(`/api/v1/dashboard/leads/${leadId}`, patch),
+      backfillCrm: () => t.post('/api/v1/dashboard/leads/crm-backfill'),
       markOutcome: (leadId, outcome) =>
         t.post(`/api/v1/dashboard/leads/${leadId}/outcome`, { outcome }),
       retryCrmPush: (leadId) => t.post(`/api/v1/dashboard/leads/${leadId}/crm-retry`),
@@ -208,6 +234,7 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     billing: {
       get: () => t.get('/api/v1/billing'),
       startCheckout: () => t.post('/api/v1/billing/checkout'),
+      startPortal: () => t.post('/api/v1/billing/portal'),
       removePaymentMethod: () => t.del<BillingInfo>('/api/v1/billing/payment-method'),
     },
     analytics: {
@@ -222,12 +249,17 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         const raw = await t.post<AccountExportWire>('/api/v1/admin/account/export');
         const downloadUrl = raw?.downloadUrl ?? raw?.download_url;
         const ttlDays = raw?.ttlDays ?? raw?.ttl_days;
+        const emailOutcome = raw?.emailOutcome ?? raw?.email_outcome;
         return {
           ok: raw?.ok ?? true,
           ...(typeof downloadUrl === 'string' && downloadUrl ? { downloadUrl } : {}),
           ...(typeof ttlDays === 'number' ? { ttlDays } : {}),
+          ...(typeof emailOutcome === 'string' && emailOutcome ? { emailOutcome } : {}),
         };
       },
+      // The D5 reduced surface (round 7 WP-5): the status read and the reopen.
+      status: () => t.get('/api/v1/admin/account'),
+      reopen: () => t.post('/api/v1/admin/account/reopen'),
       close: (opts) =>
         t.post('/api/v1/admin/account/close', {
           confirmDeleteLuciel: opts?.confirmDeleteLuciel ?? false,

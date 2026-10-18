@@ -1,6 +1,8 @@
 import type {
   Session,
   AccountExportResult,
+  AccountStatus,
+  ReopenResult,
   SignupRequest,
   LoginRequest,
   ForgotPasswordRequest,
@@ -16,9 +18,10 @@ import type {
   EscalationContact,
   TestSmsWhich,
   TestSmsResult,
+  ConfirmSmsContactResult,
   PersonalityConfig,
   KnowledgeSource,
-  KnowledgeChunk,
+  KnowledgeChunkPage,
   KnowledgeQuota,
   PasteTextRequest,
   KnowledgeSyncProvider,
@@ -29,6 +32,7 @@ import type {
   ScopeSelection,
   BillingInfo,
   CheckoutSession,
+  PortalSession,
   Connection,
   ConnectionProviders,
   ConnectionType,
@@ -50,6 +54,8 @@ import type {
   LeadOutcome,
   LeadExportFormat,
   LeadExportFile,
+  LeadPatchRequest,
+  CrmBackfillResult,
   AnalyticsOverview,
   AuditEvent,
   ContactRequest,
@@ -123,6 +129,15 @@ export interface LucielApiClient {
      * is empty; `rate_limited` after a handful in a row.
      */
     sendTestEscalationSms(which: TestSmsWhich): Promise<TestSmsResult>;
+    /**
+     * The owner enters the 6-digit code an SMS escalation contact received (round 7
+     * WP-4b; POST /admin/luciel/escalation/contacts/confirm-sms). A wrong, expired or
+     * locked code is NOT an error — read `outcome`. `validation_error` when the number
+     * is not a configured SMS contact (or the code is not six digits); `rate_limited`
+     * (429) after a few entries in a row. A fresh code is `resendContactConfirmation`
+     * with the number as the address.
+     */
+    confirmSmsContact(number: string, code: string): Promise<ConfirmSmsContactResult>;
     updatePersonality(config: PersonalityConfig): Promise<Luciel>;
     /**
      * Set (`days` ≥ 1) or clear (`null`) the lead auto-prune rule — the Admin's
@@ -168,7 +183,11 @@ export interface LucielApiClient {
 
   knowledge: {
     listSources(): Promise<KnowledgeSource[]>;
-    getChunks(sourceId: string): Promise<KnowledgeChunk[]>;
+    /**
+     * The first page of a source's chunks plus the honest total (round 7 WP-4c #6).
+     * `totalChunks: null` = an older server that sent only the page.
+     */
+    getChunks(sourceId: string): Promise<KnowledgeChunkPage>;
     quota(): Promise<KnowledgeQuota>;
     /** Tombstones the source; undo-able for 30 days via restoreSource (Arch §3.2.2). */
     deleteSource(sourceId: string): Promise<void>;
@@ -418,6 +437,25 @@ export interface LucielApiClient {
     /** Archive = kept in cold storage, NOT deleted (Arch §3.4.10a). */
     archive(leadId: string): Promise<Lead>;
     /**
+     * Archived → active by the owner (round 7 WP-3c item 6; the reverse of
+     * archive). Idempotent: an active lead comes back as-is.
+     */
+    unarchive(leadId: string): Promise<Lead>;
+    /**
+     * Owner correction of a lead's own facts — name / email / phone (round 7
+     * WP-3c item 6). `validation_error` for a malformed email or a phone that is
+     * not E.164; `conflict` when another lead already owns the value. A changed
+     * email/phone is forwarded to the CRM as an update.
+     */
+    update(leadId: string, patch: LeadPatchRequest): Promise<Lead>;
+    /**
+     * Push every never-attempted, non-archived lead to the CRM, one bounded batch
+     * at a time (round 7 WP-3c item 5) — the one-time offer when a CRM connects.
+     * `conflict` when the CRM cannot be pushed to at all (not connected, dormant,
+     * tool off), with the reason in the message.
+     */
+    backfillCrm(): Promise<CrmBackfillResult>;
+    /**
      * Mark the lead's business outcome (Vision §7; C14) — what conversion
      * analytics group by. Reversible; audited server-side without lead PII.
      */
@@ -438,6 +476,14 @@ export interface LucielApiClient {
     get(): Promise<BillingInfo>;
     /** Adding a card = Stripe Checkout, no charge at save (Customer Journey §6). */
     startCheckout(): Promise<CheckoutSession>;
+    /**
+     * Replace the card on file via the hosted Stripe Billing Portal (round 7 WP-1
+     * #5). `service_unavailable` (503) while payments are not live in this
+     * deployment — the same truth `paymentsAvailable: false` carries on the read;
+     * `conflict` (409) when there is no card to update, in which case Checkout
+     * (`startCheckout`) is the honest offer instead.
+     */
+    startPortal(): Promise<PortalSession>;
     removePaymentMethod(): Promise<BillingInfo>;
   };
 
@@ -449,11 +495,26 @@ export interface LucielApiClient {
 
   account: {
     /**
+     * The account's lifecycle status (round 7 WP-5 / owner decision D5): GET
+     * /admin/account — the one read a CLOSED account may make inside its 30-day
+     * window. Every other admin route answers a closed account with the typed 403
+     * `account_closed` (`LucielApiError.reason`; see `accountClosedDetail`). Past the
+     * window this read refuses the same way, `reopenUntil` now in the past.
+     */
+    status(): Promise<AccountStatus>;
+    /**
+     * Reopen a closed account inside its 30-day window (D5). `conflict` when the
+     * account is not closed, or the window closed in between.
+     */
+    reopen(): Promise<ReopenResult>;
+    /**
      * Self-serve export (Arch §3.6.6 / §5.10; round 7 WP-10, item 12). The bundle
      * is built and stored, and the time-limited link comes back HERE as well as by
      * email — so an email that never arrives is not the owner's only path to their
      * own data. `downloadUrl`/`ttlDays` are optional only for an older server's bare
      * `{ ok: true }`; the UI then falls back to the email sentence alone.
+     * `emailOutcome` says whether that email actually left (round 7 WP-5). Also the
+     * RE-REQUEST on the closed-account page (D5).
      */
     requestExport(): Promise<AccountExportResult>;
     /**

@@ -22,6 +22,7 @@ import type {
 import { useLucielMutations } from '@/lib/hooks';
 import { useServerDraft } from '@/lib/use-server-draft';
 import { useActionNotice } from '@/lib/use-action-notice';
+import { ContactHealthList } from './contact-health';
 
 /**
  * Escalation pillar (Vision §3.4, Customer Journey §4.4/§7). The admin sets
@@ -62,17 +63,8 @@ const TEST_SMS_FAILURE: Record<string, string> = {
     'Your SMS number is not operable right now — check its status under Channels.',
 };
 
-/** Human copy for the server-owned per-address confirmation state (5B #13). */
-const HEALTH_COPY: Record<string, string> = {
-  verified: 'Confirmed',
-  pending_confirmation: 'Confirmation sent — waiting for the click',
-  unverified: 'Not confirmed yet',
-  bouncing: 'Bouncing — mail to this address is failing',
-};
-
 export function EscalationPillar({ luciel }: { luciel: Luciel }) {
-  const { updateEscalation, resendContactConfirmation, sendTestEscalationSms } =
-    useLucielMutations();
+  const { updateEscalation, sendTestEscalationSms } = useLucielMutations();
   const {
     draft,
     dirty,
@@ -80,7 +72,7 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
     discard,
     saved,
   } = useServerDraft<EscalationContact>(luciel.escalation);
-  const { busy, notice, run } = useActionNotice();
+  const { busy, notice, setNotice, run } = useActionNotice();
 
   // SMS notifications require the SMS channel enabled AND its number connected
   // (Arch §3.5.1, §3.8.7 rule A: enabled and connection-healthy). Offering the
@@ -101,6 +93,7 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
   // Server-owned sibling of the escalation blob (5B #13); tolerate its absence
   // so a payload from before the field existed still renders the pillar.
   const contactHealth = luciel.escalationContactHealth ?? [];
+  const pillarHealth = contactHealth.filter((h) => h.role !== 'after_hours');
 
   // Saved SMS contacts get the phone-side twin of the email confirmation loop
   // (2026-09-05 audit F084): a test text through the tenant's own number, so the
@@ -233,37 +226,18 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
         </ul>
       )}
 
-      {/* Server-owned deliverability truth per email contact (round 5B item 13).
-          A hot lead routed to a typo'd or bouncing inbox vanishes silently —
-          this is where the owner sees it and restarts the confirmation loop. */}
-      {contactHealth.length > 0 && (
-        <ul className="mt-vm-3 space-y-vm-2" aria-label="Email contact confirmation status">
-          {contactHealth.map((h) => (
-            <li
-              key={h.address}
-              className="flex flex-wrap items-center justify-between gap-vm-2 text-vm-0"
-            >
-              <span className={h.state === 'bouncing' ? 'text-vm-danger' : undefined}>
-                {h.address} — {HEALTH_COPY[h.state] ?? h.state}
-              </span>
-              {h.state !== 'verified' && (
-                <Button
-                  variant="secondary"
-                  disabled={resendContactConfirmation.isPending}
-                  onClick={() =>
-                    void run(async () => {
-                      await resendContactConfirmation.mutateAsync(h.address);
-                      return `Confirmation email sent to ${h.address}. The link stays valid for 7 days.`;
-                    }, 'We could not send the confirmation email. If one just went out, wait a few minutes and retry.')
-                  }
-                >
-                  {h.state === 'bouncing' ? 'Re-confirm address' : 'Resend confirmation'}
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* Server-owned deliverability truth per contact (round 5B item 13; round 7
+          WP-4b adds the SMS contacts). A hot lead routed to a typo'd or bouncing
+          inbox, or to a number nobody has proven, vanishes silently — this is where
+          the owner sees it and restarts the confirmation loop. The after-hours
+          contact's row lives on the Team availability card. */}
+      <ContactHealthList
+        entries={pillarHealth}
+        label="Escalation contact confirmation status"
+        busy={busy}
+        run={run}
+        onNotice={(text) => setNotice({ tone: 'info', text })}
+      />
       {savedSms.length > 0 && (
         <ul className="mt-vm-3 space-y-vm-2" aria-label="SMS contact test">
           {savedSms.map((c) => (
@@ -285,7 +259,7 @@ export function EscalationPillar({ luciel }: { luciel: Luciel }) {
           ))}
         </ul>
       )}
-      {contactHealth.some((h) => h.state === 'bouncing') && (
+      {pillarHealth.some((h) => h.state === 'bouncing') && (
         <Banner tone="warning" className="mt-vm-2">
           Escalations skip a bouncing address and fall back to your account email, so you still hear
           about hot leads — but fix or replace the address to page the right person.

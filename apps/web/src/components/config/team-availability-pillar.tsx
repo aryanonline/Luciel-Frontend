@@ -16,6 +16,7 @@ import type { Luciel, TeamWindow, TeamClosure, NotificationChannel } from '@luci
 import { useLucielMutations } from '@/lib/hooks';
 import { useServerDraft } from '@/lib/use-server-draft';
 import { useActionNotice } from '@/lib/use-action-notice';
+import { ContactHealthList } from './contact-health';
 
 /**
  * Team availability (round 6 WP-E, audit F054) — the optional sixth card, and the
@@ -125,7 +126,13 @@ export function TeamAvailabilityPillar({ luciel }: { luciel: Luciel }) {
     [luciel.teamAvailability, luciel.timezone],
   );
   const { draft, dirty, edit, discard, saved } = useServerDraft<TeamAvailabilityDraft>(server);
-  const { busy, notice, run } = useActionNotice();
+  const { busy, notice, setNotice, run } = useActionNotice();
+  // The SAVED after-hours contact's confirmation state (round 7 WP-4b): it is paged
+  // like any other contact, so it is proven like one — an unconfirmed number has
+  // every page copied to the owner until it answers its code.
+  const afterHoursHealth = (luciel.escalationContactHealth ?? []).filter(
+    (h) => h.role === 'after_hours',
+  );
   const zones = React.useMemo(() => {
     const list = supportedZones();
     return list.includes(draft.timezone) ? list : [draft.timezone, ...list];
@@ -369,6 +376,13 @@ export function TeamAvailabilityPillar({ luciel }: { luciel: Luciel }) {
                 Also email the account owner
               </label>
             )}
+            <ContactHealthList
+              entries={afterHoursHealth}
+              label="After-hours contact confirmation status"
+              busy={busy}
+              run={run}
+              onNotice={(text) => setNotice({ tone: 'info', text })}
+            />
           </fieldset>
         </>
       )}

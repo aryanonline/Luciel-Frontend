@@ -90,3 +90,16 @@ export const checkoutSession = z.object({
   url: z.string().url(),
 });
 export type CheckoutSession = z.infer<typeof checkoutSession>;
+
+/**
+ * POST /billing/portal (round 7 WP-1 #5): the hosted Stripe Billing Portal where
+ * the owner REPLACES the card Stripe already holds. Same one-field shape as
+ * Checkout so the UI treats both the same way — same-tab redirect, Stripe sends
+ * the owner back to /dashboard/billing. The server refuses with 503 while
+ * payments are not live (`paymentsAvailable: false`) and with 409 when there is
+ * no card on file to update — adding a first card is Checkout's job.
+ */
+export const portalSession = z.object({
+  url: z.string().url(),
+});
+export type PortalSession = z.infer<typeof portalSession>;

@@ -70,14 +70,34 @@ export function createTransport(opts: TransportOptions) {
     const code = STATUS_TO_CODE[res.status] ?? 'server_error';
     let message = res.statusText || 'Request failed.';
     let retryAfterSeconds: number | undefined;
+    let reason: string | undefined;
+    let detail: Record<string, unknown> | undefined;
     try {
-      const data = (await res.json()) as { message?: string; retryAfterSeconds?: number };
+      const data = (await res.json()) as {
+        message?: string;
+        retryAfterSeconds?: number;
+        code?: unknown;
+        detail?: unknown;
+      };
       if (data.message) message = data.message;
       retryAfterSeconds = data.retryAfterSeconds;
+      // A typed refusal (round 7 WP-5 / D5): the body's optional `code` word and its
+      // code-shaped `detail` object. A framework-shaped `detail` (a string or an
+      // array) is not one, so only a plain object is carried.
+      if (typeof data.code === 'string' && data.code) reason = data.code;
+      if (data.detail && typeof data.detail === 'object' && !Array.isArray(data.detail)) {
+        detail = data.detail as Record<string, unknown>;
+      }
     } catch {
       /* non-JSON error body — keep status text */
     }
-    throw new LucielApiError({ code, message, retryAfterSeconds });
+    throw new LucielApiError({
+      code,
+      message,
+      retryAfterSeconds,
+      ...(reason ? { reason } : {}),
+      ...(detail ? { detail } : {}),
+    });
   }
 
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -131,6 +151,7 @@ export function createTransport(opts: TransportOptions) {
     post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
     postForm: <T>(path: string, form: FormData) => request<T>('POST', path, form),
     put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
+    patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
     del: <T>(path: string) => request<T>('DELETE', path),
   };
 }

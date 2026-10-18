@@ -67,11 +67,26 @@ export function KnowledgeConnections() {
   const countOf = (c: Connection) =>
     (sources.data ?? []).filter((s) => s.connectionId === c.connectionId).length;
 
+  /**
+   * Round 7 WP-4c #7: a manual sync on a grant the provider revoked now pauses the
+   * sources and marks the connection broken BEFORE the 409. Success or failure, the
+   * row's chip is re-read from the server — the "Connected" it showed a moment ago
+   * may be the very claim the failure just retired. No local green.
+   */
+  const refreshServed = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: qk.knowledge }),
+      qc.invalidateQueries({ queryKey: qk.connections }),
+      qc.invalidateQueries({ queryKey: qk.employeeStatus }),
+    ]);
   const resync = (c: Connection) =>
     void run(async () => {
-      const result = await api.knowledge.syncConnection(c.connectionId);
-      await qc.invalidateQueries({ queryKey: qk.knowledge });
-      return `Synced ${nameOf(c)} — ${result.added.length} added, ${result.removed.length} removed.`;
+      try {
+        const result = await api.knowledge.syncConnection(c.connectionId);
+        return `Synced ${nameOf(c)} — ${result.added.length} added, ${result.removed.length} removed.`;
+      } finally {
+        await refreshServed();
+      }
     }, 'We could not sync that source. Nothing was changed — please try again.');
 
   const reconnectRow = (c: Connection) =>

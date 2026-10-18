@@ -11,11 +11,20 @@ import {
   ProgressBar,
   PageHeader,
 } from '@luciel/ui';
+import { LucielApiError } from '@luciel/api-client';
 import { useBilling, useLuciel, qk } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { cardExpiryWarning } from '@/lib/card-expiry';
+import { periodAnchorSentence } from '@/lib/billing-period';
+
+/**
+ * What "Update payment method" could not do, in the owner's words. The portal
+ * refuses with 503 while payments are not live (the same truth the read carries
+ * as `paymentsAvailable: false`) and with 409 when there is no card to replace.
+ */
+type PortalRefusal = 'not_live' | 'no_card' | 'failed';
 
 /**
  * Billing (Customer Journey §6; Arch §3.4.1b, §3.6.7; Legal §A3). Single plan:
@@ -67,6 +76,29 @@ export default function BillingPage() {
   const [checkoutError, setCheckoutError] = React.useState<string | null>(null);
   const [redirecting, setRedirecting] = React.useState(false);
   const [confirmRemove, setConfirmRemove] = React.useState(false);
+  const [portalOpening, setPortalOpening] = React.useState(false);
+  const [portalRefusal, setPortalRefusal] = React.useState<PortalRefusal | null>(null);
+
+  /** Replace the card on file through the hosted Stripe Billing Portal (WP-1 #5). */
+  const updateCard = async () => {
+    setPortalRefusal(null);
+    setPortalOpening(true);
+    try {
+      const session = await api.billing.startPortal();
+      // Same-tab navigation as Checkout: Stripe returns the owner to this page.
+      window.location.assign(session.url);
+    } catch (err) {
+      setPortalRefusal(
+        err instanceof LucielApiError && err.code === 'service_unavailable'
+          ? 'not_live'
+          : err instanceof LucielApiError && err.code === 'conflict'
+            ? 'no_card'
+            : 'failed',
+      );
+      setPortalOpening(false);
+    }
+    // No `finally`: on success the page is navigating away.
+  };
 
   const addCard = async () => {
     setCheckoutError(null);
@@ -164,11 +196,8 @@ export default function BillingPage() {
                   : 'still to be billed.'}
               </p>
             )}
-            <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
-              Resets {new Date(b.periodResetsAt).toLocaleDateString()}
-              {b.billingState === 'payg_enabled'
-                ? ' (your billing-cycle date).'
-                : ' (the calendar month until a card sets your billing-cycle date).'}
+            <p className="mt-vm-2 text-vm-1 text-vm-text-muted" data-testid="period-anchor">
+              {periodAnchorSentence(b.periodResetsAt, b.billingState)}
               {b.billedThisPeriod > 0 &&
                 // Spelled out, not "PAYG" — an owner shouldn't need our acronyms
                 // to read their own bill.
@@ -219,9 +248,46 @@ export default function BillingPage() {
               Pay-as-you-go is on. Conversations 1–50 each billing period stay free; above that
               bills at $39 CAD / 100, rounded up per 100-block, at the close of the cycle.
             </Banner>
-            <Button variant="secondary" className="mt-vm-3" onClick={() => setConfirmRemove(true)}>
-              Remove payment method
-            </Button>
+            {/* Replace the card in Stripe's hosted portal (round 7 WP-1 #5): an
+                expiring card no longer means remove-then-re-add. Pending while the
+                portal session is minted; every refusal is said where the button is. */}
+            <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
+              <Button
+                variant="primary"
+                disabled={portalOpening || billing.data.paymentsAvailable === false}
+                onClick={() => void updateCard()}
+              >
+                {portalOpening ? 'Opening your billing portal…' : 'Update payment method'}
+              </Button>
+              <Button variant="secondary" onClick={() => setConfirmRemove(true)}>
+                Remove payment method
+              </Button>
+            </div>
+            {/* The read's `paymentsAvailable: false` and the portal's 503 are the same
+                truth (audit F026): say payments are not live, never a dead button. */}
+            {(billing.data.paymentsAvailable === false || portalRefusal === 'not_live') && (
+              <Banner tone="info" className="mt-vm-3">
+                Payments aren&apos;t live yet in this environment, so the card on file can&apos;t be
+                updated here for now. Your Luciel keeps working; nothing else changes.
+              </Banner>
+            )}
+            {portalRefusal === 'no_card' && (
+              <Banner tone="info" className="mt-vm-3">
+                There is no card on file to update, so there is nothing to open. Add a card instead
+                — it goes through secure checkout, with no charge when you save it.
+                <div className="mt-vm-2">
+                  <Button variant="primary" disabled={redirecting} onClick={() => void addCard()}>
+                    {redirecting ? 'Opening secure checkout…' : 'Add a card'}
+                  </Button>
+                </div>
+              </Banner>
+            )}
+            {portalRefusal === 'failed' && (
+              <Banner tone="danger" className="mt-vm-3">
+                We could not open your billing portal just now. Your card is unchanged — please try
+                again.
+              </Banner>
+            )}
             <p className="mt-vm-2 text-vm-0 text-vm-text-muted">
               Removing your card bills any pay-as-you-go usage already run this period, then reverts
               to the free 50 per billing period. Your Luciel, knowledge, and connections are
