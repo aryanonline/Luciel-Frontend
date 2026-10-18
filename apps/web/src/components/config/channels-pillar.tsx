@@ -38,6 +38,7 @@ import { EmailChannelProvisioning } from './email-provisioning';
 import { channelLabel, chipKind, offRowConnectionNote, toolMeta } from './labels';
 import { MESSAGING_SURFACES, offRowSurfaceNote } from './messaging-surfaces';
 import { WIDGET_OFF_COPY } from '@/lib/widget-channel';
+import { VoiceDisclosure } from './voice-disclosure';
 
 /**
  * Channels pillar (Vision §3.1, Customer Journey §4.1). Multi-select of channels.
@@ -653,6 +654,22 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
                     {phonePanelHost === 'sms' ? 'SMS' : 'Voice'}.
                   </p>
                 )}
+              {/* What callers hear first (round 7 voice-disclosure contract): the
+                  owner's optional opening line and the served, read-only notice. It
+                  can be worded before Voice is on, behind a disclosure then. */}
+              {c.id === 'voice' &&
+                (c.enabled ? (
+                  <div className="pl-[3.5rem]">
+                    <VoiceDisclosure luciel={luciel} />
+                  </div>
+                ) : (
+                  <details className="mt-vm-3 pl-[3.5rem]">
+                    <summary className="cursor-pointer text-vm-1 text-vm-text-muted underline underline-offset-2">
+                      What callers hear first
+                    </summary>
+                    <VoiceDisclosure luciel={luciel} />
+                  </details>
+                ))}
               {/* Luciel's work address is part of the Email channel, so it is set up
                   in this row and nowhere else (Decision #4). It stays reachable while
                   the channel is off — the address can be provisioned first — but sits

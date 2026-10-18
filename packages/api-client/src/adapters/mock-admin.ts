@@ -1,5 +1,10 @@
 import type { LucielApiClient, PageOptions } from '../client';
-import { LucielApiError, ACCOUNT_CLOSED } from '../schemas';
+import {
+  LucielApiError,
+  ACCOUNT_CLOSED,
+  VOICE_DISCLOSURE_INTRO_MAX,
+  personalityForWrite,
+} from '../schemas';
 import type {
   Account,
   AddonToolId,
@@ -64,6 +69,20 @@ export type MockScenario =
   | 'closed_window_passed'
   | 'escalation_sms'
   | 'knowledge_states';
+
+/**
+ * channels/voice_adapter.py `build_disclosure`: the owner's intro (if any) then the
+ * mandatory facts, which no setting removes. The mock composes the served preview
+ * the same way.
+ */
+const VOICE_AI_IDENTITY_FACT =
+  "You're speaking with an AI assistant, not a human, and this call is handled by an automated system.";
+const VOICE_RECORDING_FACT = 'This call may be recorded and transcribed.';
+const VOICE_CONSENT_TAIL = "If you'd prefer a person, just say so at any time.";
+const buildVoiceDisclosure = (intro: string | null | undefined) =>
+  [(intro ?? '').trim(), VOICE_AI_IDENTITY_FACT, VOICE_RECORDING_FACT, VOICE_CONSENT_TAIL]
+    .filter(Boolean)
+    .join(' ');
 
 /** The backend's chunk preview page (knowledge/service.py CHUNK_PREVIEW_PAGE). */
 const CHUNK_PREVIEW_PAGE = 20;
@@ -281,6 +300,14 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     /** Synced sources whose item is gone at the origin (the next sync tombstones them). */
     removedAtOrigin: [] as string[],
   };
+
+  // The served, read-only voice disclosure preview (settled contract, round 7).
+  if (state.luciel) {
+    state.luciel.personality = {
+      ...state.luciel.personality,
+      voiceDisclosurePreview: buildVoiceDisclosure(state.luciel.personality.voiceDisclosureIntro),
+    };
+  }
 
   // Apply scenario-derived state up front.
   if (state.scenario === 'unverified') {
@@ -830,6 +857,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           name: req.name,
           websiteUrl: req.websiteUrl,
         };
+        state.luciel.personality = {
+          ...state.luciel.personality,
+          voiceDisclosurePreview: buildVoiceDisclosure(null),
+        };
         state.account.hasLuciel = true;
         state.account.hasCompletedFirstRun = true;
         return clone(state.luciel);
@@ -1021,7 +1052,22 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async updatePersonality(config) {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
-        state.luciel.personality = clone(config);
+        // What reaches the server after the HTTP adapter's transform: the read-only
+        // preview never rides in the strict PUT.
+        const written = personalityForWrite(config);
+        const intro = written.voiceDisclosureIntro;
+        if (typeof intro === 'string' && intro.length > VOICE_DISCLOSURE_INTRO_MAX) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: `voiceDisclosureIntro: String should have at most ${VOICE_DISCLOSURE_INTRO_MAX} characters`,
+          });
+        }
+        const cleaned = typeof intro === 'string' ? intro.trim() : intro;
+        state.luciel.personality = {
+          ...clone(written),
+          ...(cleaned !== undefined ? { voiceDisclosureIntro: cleaned || null } : {}),
+          voiceDisclosurePreview: buildVoiceDisclosure(cleaned),
+        };
         return ok(state.luciel);
       },
       async updateLeadRetention(days) {

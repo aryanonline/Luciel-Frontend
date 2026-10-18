@@ -343,6 +343,9 @@ export const personalityPreset = z.enum([
 ]);
 export type PersonalityPreset = z.infer<typeof personalityPreset>;
 
+/** The owner's Voice opening line is at most this many characters (settled contract). */
+export const VOICE_DISCLOSURE_INTRO_MAX = 200;
+
 export const personalityConfig = z.object({
   preset: personalityPreset,
   /** Custom exposes the four axes (Vision §3.5). */
@@ -361,9 +364,35 @@ export const personalityConfig = z.object({
    * admin input to the fixed high-value-lead signal. At most 20, each ≤ 60 chars.
    */
   highValueSignals: z.array(z.string().max(60)).max(20).optional(),
+  /**
+   * The owner's optional opening line for Voice calls (round 7 settled contract;
+   * the runtime already reads `personality.voiceDisclosureIntro` —
+   * runtime/voice_pipeline.py). Plain text, at most 200 characters; empty = none.
+   * It is PREPENDED to the mandatory notice, never substituted for it.
+   * Optional so a server that does not carry it still parses.
+   */
+  voiceDisclosureIntro: z.string().max(VOICE_DISCLOSURE_INTRO_MAX).nullable().optional(),
+  /**
+   * READ-ONLY, served: the exact sentence callers hear — the intro (if any) followed
+   * by the AI-identity and recording facts the owner cannot remove
+   * (channels/voice_adapter.py `build_disclosure`). Never sent back: the personality
+   * PUT is a strict model and the HTTP adapter strips it (`personalityForWrite`).
+   */
+  voiceDisclosurePreview: z.string().nullable().optional(),
   // NOTE: no model selection field anywhere — never exposed (Arch §3.4.3).
 });
 export type PersonalityConfig = z.infer<typeof personalityConfig>;
+
+/**
+ * The personality as the PUT accepts it: the served read-only preview stripped, and
+ * an intro key the server never served left out (an older server's strict model
+ * would refuse the unknown key with a 422).
+ */
+export function personalityForWrite(config: PersonalityConfig): PersonalityConfig {
+  const { voiceDisclosurePreview: _readOnly, ...rest } = config;
+  if (rest.voiceDisclosureIntro === undefined) delete rest.voiceDisclosureIntro;
+  return rest;
+}
 
 /**
  * Per-address deliverability truth for the configured escalation email
