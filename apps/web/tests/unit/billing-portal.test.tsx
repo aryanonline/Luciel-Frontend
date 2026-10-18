@@ -71,7 +71,9 @@ describe('Billing: update payment method via the Stripe portal', () => {
     expect(await screen.findByText(/VISA ending 4242/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Update payment method' }));
     expect(screen.getByRole('button', { name: 'Opening your billing portal…' })).toBeDisabled();
-    await waitFor(() => expect(assign).toHaveBeenCalledWith('https://billing.stripe.com/session/abc'));
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith('https://billing.stripe.com/session/abc'),
+    );
   });
 
   it('renders the not-live state on a 503, exactly as paymentsAvailable:false does', async () => {

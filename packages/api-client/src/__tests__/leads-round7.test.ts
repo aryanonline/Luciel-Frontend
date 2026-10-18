@@ -94,7 +94,13 @@ describe('mock adapter: never_attempted and its posture-derived reason', () => {
     expect(before?.crmDetail).toBe('not_yet_pushed');
 
     const result = await client.leads.backfillCrm();
-    expect(result).toMatchObject({ attempted: 1, synced: 1, failed: 0, skippedNoKey: 0, remaining: 0 });
+    expect(result).toMatchObject({
+      attempted: 1,
+      synced: 1,
+      failed: 0,
+      skippedNoKey: 0,
+      remaining: 0,
+    });
     const [after] = await client.leads.list();
     expect(after?.crmStatus).toBe('synced');
     // Idempotent by construction: a second pass finds nothing left.
@@ -106,7 +112,10 @@ describe('mock adapter: never_attempted and its posture-derived reason', () => {
     const [lead] = await client.leads.list();
     const id = lead!.leadId;
 
-    const edited = await client.leads.update(id, { email: ' Jordan.P@Example.COM ', phone: '+1 (604) 555-0100' });
+    const edited = await client.leads.update(id, {
+      email: ' Jordan.P@Example.COM ',
+      phone: '+1 (604) 555-0100',
+    });
     expect(edited.email).toBe('jordan.p@example.com');
     expect(edited.phone).toBe('+16045550100');
     expect(edited.name).toBe(lead!.name); // omitted → left alone

@@ -151,7 +151,9 @@ export default function LeadsPage() {
       await api.leads.unarchive(leadId);
       refresh();
     } catch {
-      setUnarchiveError('We could not un-archive that lead. It is still archived — please try again.');
+      setUnarchiveError(
+        'We could not un-archive that lead. It is still archived — please try again.',
+      );
     } finally {
       setUnarchiving(null);
     }

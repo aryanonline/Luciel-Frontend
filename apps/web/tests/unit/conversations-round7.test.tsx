@@ -148,14 +148,17 @@ describe('ended sessions (4a)', () => {
 
     // Opened: human_controlled would normally show the compose box — not once ended.
     expect(await screen.findByText('can I talk to a person?')).toBeInTheDocument();
-    expect(screen.getByText(/This conversation ended .* can.t be taken over or replied into/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/This conversation ended .* can.t be taken over or replied into/),
+    ).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Type your reply to the visitor…')).toBeNull();
   });
 
   it('renders the take-over 409 session_ended verbatim and re-reads the list', async () => {
-    list.mockReset().mockResolvedValueOnce([conversation({})]).mockResolvedValue([
-      conversation({ endedAt: '2026-09-05T10:30:00Z' }),
-    ]);
+    list
+      .mockReset()
+      .mockResolvedValueOnce([conversation({})])
+      .mockResolvedValue([conversation({ endedAt: '2026-09-05T10:30:00Z' })]);
     takeOver.mockRejectedValue(
       new LucielApiError({ code: 'conflict', message: SESSION_ENDED_MESSAGE }),
     );
@@ -187,7 +190,12 @@ describe('persisted delivery outcomes on reopen (4b)', () => {
         deliveryStatus: 'delivered',
         deliveredAt: '2026-09-05T10:02:05Z',
       }),
-      humanReply({ messageId: 'q1', text: 'queued one', deliveryStatus: 'queued', deliveryDetail: 'widget_poll_only' }),
+      humanReply({
+        messageId: 'q1',
+        text: 'queued one',
+        deliveryStatus: 'queued',
+        deliveryDetail: 'widget_poll_only',
+      }),
       humanReply({ messageId: 'u1', text: 'legacy one', deliveryStatus: null }),
     ]);
     await renderPage();
@@ -206,7 +214,9 @@ describe('persisted delivery outcomes on reopen (4b)', () => {
 
   it('a text reads "awaiting delivery confirmation" — the carrier receipt is not on the row', async () => {
     openParam = LIVE_ID;
-    list.mockReset().mockResolvedValue([conversation({ channel: 'sms', mode: 'human_controlled' })]);
+    list
+      .mockReset()
+      .mockResolvedValue([conversation({ channel: 'sms', mode: 'human_controlled' })]);
     getMessages.mockResolvedValue([
       visitor,
       humanReply({ deliveryStatus: 'delivered', deliveredAt: '2026-09-05T10:02:05Z' }),
@@ -229,7 +239,8 @@ describe('persisted delivery outcomes on reopen (4b)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send reply' }));
     await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(LIVE_ID, 'new one'));
     expect(
-      (await screen.findAllByText('Sent — awaiting delivery confirmation from the carrier.')).length,
+      (await screen.findAllByText('Sent — awaiting delivery confirmation from the carrier.'))
+        .length,
     ).toBeGreaterThanOrEqual(2);
   });
 });
@@ -237,7 +248,9 @@ describe('persisted delivery outcomes on reopen (4b)', () => {
 describe('new send-time details (4c)', () => {
   it('no_recipient_for_channel: honest copy, never re-routed, with the Configure → channel path', async () => {
     openParam = LIVE_ID;
-    list.mockReset().mockResolvedValue([conversation({ channel: 'sms', mode: 'human_controlled' })]);
+    list
+      .mockReset()
+      .mockResolvedValue([conversation({ channel: 'sms', mode: 'human_controlled' })]);
     sendMessage.mockResolvedValue({
       message: humanReply({ deliveryStatus: 'failed', deliveryDetail: 'no_recipient_for_channel' }),
       delivered: false,
@@ -262,9 +275,9 @@ describe('new send-time details (4c)', () => {
 
   it('meta_reconnect_needed: reconnect Meta under Configure → channel, not "try again"', async () => {
     openParam = LIVE_ID;
-    list.mockReset().mockResolvedValue([
-      conversation({ channel: 'instagram', mode: 'human_controlled' }),
-    ]);
+    list
+      .mockReset()
+      .mockResolvedValue([conversation({ channel: 'instagram', mode: 'human_controlled' })]);
     sendMessage.mockResolvedValue({
       message: humanReply({ deliveryStatus: 'failed', deliveryDetail: 'meta_reconnect_needed' }),
       delivered: false,
@@ -285,7 +298,9 @@ describe('new send-time details (4c)', () => {
 
   it('a reply refused with session_ended renders the server message, never a generic failure', async () => {
     openParam = LIVE_ID;
-    list.mockReset().mockResolvedValue([conversation({ channel: 'sms', mode: 'human_controlled' })]);
+    list
+      .mockReset()
+      .mockResolvedValue([conversation({ channel: 'sms', mode: 'human_controlled' })]);
     sendMessage.mockRejectedValue(
       new LucielApiError({ code: 'conflict', message: SESSION_ENDED_MESSAGE }),
     );

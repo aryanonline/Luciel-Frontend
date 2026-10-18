@@ -159,8 +159,8 @@ export default function AccountPage() {
         </div>
         {liveLuciel && (
           <p className="mt-vm-2 text-vm-1 text-vm-text-muted">
-            Your Luciel is still running. You can delete it first (the step above) or let closing
-            do it — the confirmation says so and offers your export before anything ends.
+            Your Luciel is still running. You can delete it first (the step above) or let closing do
+            it — the confirmation says so and offers your export before anything ends.
           </p>
         )}
       </Card>
@@ -232,7 +232,7 @@ export default function AccountPage() {
         description={
           liveLuciel
             ? `This ends your login, email, and billing. ${luciel?.name ?? 'Your Luciel'} is still running, so closing deletes it first. Everything — conversations, leads, knowledge, connections, and your audit log — is permanently deleted 30 days after closure; the export is how you keep anything. This can't be undone.`
-            : 'This ends your login, email, and billing. Everything — conversations, leads, knowledge, connections, and your audit log — is permanently deleted 30 days after closure; the export is how you keep anything. This can\'t be undone.'
+            : "This ends your login, email, and billing. Everything — conversations, leads, knowledge, connections, and your audit log — is permanently deleted 30 days after closure; the export is how you keep anything. This can't be undone."
         }
         confirmLabel={liveLuciel ? 'Delete my Luciel and close account' : 'Close account'}
         confirmPendingLabel="Closing…"
@@ -246,8 +246,8 @@ export default function AccountPage() {
         }}
       >
         <Banner tone="warning">
-          Take your data with you first. For 30 days after closing you can still sign in to
-          download it again or reopen the account; after that everything is permanently deleted.
+          Take your data with you first. For 30 days after closing you can still sign in to download
+          it again or reopen the account; after that everything is permanently deleted.
           <div className="mt-vm-2">
             <Button variant="secondary" onClick={() => setDialog('export')}>
               Download all my data
