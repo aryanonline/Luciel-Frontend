@@ -313,6 +313,13 @@ export function useLucielMutations() {
     sendTestEscalationSms: useMutation({
       mutationFn: (which: TestSmsWhich) => api.luciel.sendTestEscalationSms(which),
     }),
+    // Round 7 WP-4b: the owner types the code an SMS contact received. Any outcome
+    // re-reads the Luciel (its contact health moved, or the attempt counted).
+    confirmSmsContact: useMutation({
+      mutationFn: (args: { number: string; code: string }) =>
+        api.luciel.confirmSmsContact(args.number, args.code),
+      onSuccess: invalidate,
+    }),
     updatePersonality: useMutation({
       mutationFn: (p: PersonalityConfig) => api.luciel.updatePersonality(p),
       onSuccess: invalidate,

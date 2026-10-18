@@ -338,12 +338,55 @@ export type PersonalityConfig = z.infer<typeof personalityConfig>;
  */
 export const escalationContactHealth = z.object({
   address: z.string(),
-  /** `bouncing` means mail to this address is failing and escalations skip it. */
+  /**
+   * `bouncing` means mail to this address is failing and escalations skip it. For an
+   * SMS contact (round 7 WP-4b): `pending_confirmation` = a live 6-digit code is out,
+   * `unverified` = no live code (never sent, or it expired), `verified` = answered.
+   * Until an SMS contact is confirmed, the OWNER is copied on every page to it
+   * (escalation_dispatch `_proven`).
+   */
   state: z.enum(['unverified', 'pending_confirmation', 'verified', 'bouncing']),
   verifiedAt: isoTimestamp.nullable(),
   lastBouncedAt: isoTimestamp.nullable(),
+  /**
+   * Round 7 WP-4b: the list covers SMS contacts and the after-hours contact too.
+   * `channel` email | sms (absent from an older server = email); `role` primary |
+   * secondary | after_hours.
+   */
+  channel: z.enum(['email', 'sms']).optional(),
+  role: z.enum(['primary', 'secondary', 'after_hours']).nullable().optional(),
+  /**
+   * An honest refusal, code-shaped: `sms_channel_not_provisioned` (no number is
+   * connected to send the confirmation code from); for a bouncing email, the
+   * provider's bounce detail.
+   */
+  detail: z.string().nullable().optional(),
 });
 export type EscalationContactHealth = z.infer<typeof escalationContactHealth>;
+
+/**
+ * What a code entry did (round 7 WP-4b; contact_confirmation.confirm_sms_code). The
+ * vocabulary is the server's; an unknown word is still rendered honestly.
+ */
+export const confirmSmsOutcome = z.enum([
+  'confirmed',
+  'already_confirmed',
+  'wrong_code',
+  'locked',
+  'expired',
+  'no_pending',
+]);
+export type ConfirmSmsOutcome = z.infer<typeof confirmSmsOutcome>;
+
+/**
+ * POST /admin/luciel/escalation/contacts/confirm-sms body — mirrors the backend's
+ * StrictWireModel (`number` 3–32 chars, `code` exactly six digits).
+ */
+export const confirmSmsContactRequest = z.object({
+  number: z.string().min(3).max(32),
+  code: z.string().regex(/^[0-9]{6}$/, 'Enter the 6-digit code.'),
+});
+export type ConfirmSmsContactRequest = z.infer<typeof confirmSmsContactRequest>;
 
 // --- Team availability (round 6 WP-E, audit F054) -------------------------------
 /**
@@ -434,6 +477,13 @@ export const luciel = z.object({
   dailyBriefEnabled: z.boolean().optional(),
 });
 export type Luciel = z.infer<typeof luciel>;
+
+/** The confirm-sms answer: the outcome word and the Luciel with its fresh contact health. */
+export const confirmSmsContactResult = z.object({
+  outcome: z.string(),
+  luciel,
+});
+export type ConfirmSmsContactResult = z.infer<typeof confirmSmsContactResult>;
 
 export const createLucielRequest = z.object({
   name: z.string().min(1),
