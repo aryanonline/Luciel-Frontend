@@ -31,16 +31,13 @@ import {
 import { useActionNotice } from '@/lib/use-action-notice';
 import { api } from '@/lib/api';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
-import {
-  ConnectionControl,
-  ConnectionReadNote,
-  connectionReadState,
-} from './connection-control';
+import { ConnectionControl, ConnectionReadNote, connectionReadState } from './connection-control';
 import { SmsWebhookTokenRotate } from './sms-webhook-token';
 import { CredentialFields, credentialFieldsComplete } from './credential-fields';
 import { EmailChannelProvisioning } from './email-provisioning';
 import { channelLabel, chipKind, offRowConnectionNote, toolMeta } from './labels';
 import { MESSAGING_SURFACES, offRowSurfaceNote } from './messaging-surfaces';
+import { WIDGET_OFF_COPY } from '@/lib/widget-channel';
 
 /**
  * Channels pillar (Vision §3.1, Customer Journey §4.1). Multi-select of channels.
@@ -358,7 +355,13 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
           // "send sms") — the one de-snaked enum that had leaked into a toast.
           return `${channelLabel[id]} is off, and ${toolMeta[dependentToolId].label} was switched off with it. ${CHANNEL_OFF_TIMING}`;
         }
-        return enabled ? `${channelLabel[id]} is on.` : `${channelLabel[id]} is off. ${CHANNEL_OFF_TIMING}`;
+        if (!enabled && id === 'widget') {
+          // D9: the widget does not fall back to anything on the site — it is gone.
+          return `${channelLabel[id]} is off — the widget renders nothing on your site; conversations already open finish.`;
+        }
+        return enabled
+          ? `${channelLabel[id]} is on.`
+          : `${channelLabel[id]} is off. ${CHANNEL_OFF_TIMING}`;
       },
       `We could not turn ${channelLabel[id]} ${enabled ? 'on' : 'off'}. Nothing was changed — please try again.`,
     );
@@ -485,6 +488,17 @@ export function ChannelsPillar({ luciel }: { luciel: Luciel }) {
               {!c.enabled && offRowNote && (
                 <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
                   {offRowNote}
+                </p>
+              )}
+              {/* D9 (round 7): an off Website chat is not a dormant widget — the
+                  bootstrap answers channel_off and nothing renders on the site. */}
+              {!c.enabled && c.id === 'widget' && (
+                <p
+                  className="mt-vm-1 text-vm-0 text-vm-text-muted"
+                  role="note"
+                  data-testid="widget-off-note"
+                >
+                  {WIDGET_OFF_COPY}
                 </p>
               )}
               {/* Round 6 WP-D: an OFF row with a saved connection can still be managed —
