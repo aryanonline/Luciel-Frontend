@@ -106,17 +106,18 @@ export default function SignupPage() {
           {isSubmitting ? 'Creating…' : 'Create account'}
         </Button>
       </form>
-      <p className="mt-vm-4 text-vm-0 text-vm-text-muted">
-        By creating an account you agree to our{' '}
+      {/* Owner decision D11 (round 7): the legal pages are the early-access terms IN
+          EFFECT (v0.1) — not drafts — so the consent line names them as such. */}
+      <p className="mt-vm-4 text-vm-0 text-vm-text-muted" data-testid="signup-consent">
+        By creating an account you agree to the{' '}
         <Link href="/legal/terms" className="text-vm-accent underline">
-          Terms
+          Early-access Terms
         </Link>{' '}
         and{' '}
         <Link href="/legal/privacy" className="text-vm-accent underline">
           Privacy Policy
         </Link>
-        . Both are published as drafts while we launch; we will give you at least 30 days&apos;
-        notice before any change to them takes effect.
+        . We give at least 30 days&apos; notice before any change to them takes effect.
       </p>
       <p className="mt-vm-3 text-vm-1 text-vm-text-muted">
         Already have an account?{' '}
