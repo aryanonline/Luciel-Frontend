@@ -138,9 +138,9 @@ export function CrmBackfillOffer() {
       <span className="font-label">
         Send your {plural(candidates.length, 'earlier lead', 'earlier leads')} to {crmName}?
       </span>{' '}
-      {candidates.length === 1 ? 'It was' : 'They were'} captured before {crmName} was connected,
-      so {candidates.length === 1 ? 'it is' : 'they are'} not in it yet. Sending is one-time and
-      safe to repeat: a lead already in {crmName} is updated, never duplicated.
+      {candidates.length === 1 ? 'It was' : 'They were'} captured before {crmName} was connected, so{' '}
+      {candidates.length === 1 ? 'it is' : 'they are'} not in it yet. Sending is one-time and safe
+      to repeat: a lead already in {crmName} is updated, never duplicated.
       {noKey > 0 && (
         <>
           {' '}

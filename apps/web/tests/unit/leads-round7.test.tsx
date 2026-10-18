@@ -154,7 +154,9 @@ describe('CRM backfill offer', () => {
     });
     renderWithQuery(<CrmBackfillOffer />);
     fireEvent.click(await screen.findByRole('button', { name: 'Send 1 to HubSpot' }));
-    expect(await screen.findByText(/98 leads are now in HubSpot; 2 pushes failed/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/98 leads are now in HubSpot; 2 pushes failed/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/40 leads still to send/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send the next 40' })).toBeInTheDocument();
   });
@@ -215,10 +217,18 @@ describe('Edit dialog', () => {
     ).toEqual({});
 
     const base = lead({ name: 'Jordan P.', email: 'jordan@example.com', phone: '+16045550100' });
-    expect(leadPatchFrom(base, { name: 'Jordan P.', email: 'jordan@example.com', phone: '' })).toEqual({
+    expect(
+      leadPatchFrom(base, { name: 'Jordan P.', email: 'jordan@example.com', phone: '' }),
+    ).toEqual({
       phone: null,
     });
-    expect(leadPatchFrom(base, { name: 'Jordan Park', email: 'jordan@example.com', phone: '+16045550100' })).toEqual({
+    expect(
+      leadPatchFrom(base, {
+        name: 'Jordan Park',
+        email: 'jordan@example.com',
+        phone: '+16045550100',
+      }),
+    ).toEqual({
       name: 'Jordan Park',
     });
   });
@@ -233,7 +243,9 @@ describe('Edit dialog', () => {
     const email = await screen.findByLabelText('Email');
     fireEvent.change(email, { target: { value: 'nope' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('That is not a valid email address.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That is not a valid email address.',
+    );
     expect(update).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });

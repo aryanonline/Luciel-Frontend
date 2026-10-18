@@ -623,7 +623,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     const sms = state.luciel?.channels.find((c) => c.id === 'sms');
     return Boolean(
       sms?.connectionStatus &&
-        !['unconfigured', 'not_connected', 'revoked'].includes(sms.connectionStatus),
+      !['unconfigured', 'not_connected', 'revoked'].includes(sms.connectionStatus),
     );
   };
   /** luciel._configured_contacts: the pillar slots plus the after-hours contact. */
@@ -685,8 +685,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (channel === 'email') {
           const before = previous.find(
             (h) =>
-              (h.channel ?? 'email') === 'email' &&
-              h.address.toLowerCase() === value.toLowerCase(),
+              (h.channel ?? 'email') === 'email' && h.address.toLowerCase() === value.toLowerCase(),
           );
           return {
             address: value,
@@ -732,9 +731,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
    * reason the next push would be refused for.
    */
   const crmPosture = () => {
-    const row = state.connections.find(
-      (c) => c.connectionType === 'crm' && c.status !== 'revoked',
-    );
+    const row = state.connections.find((c) => c.connectionType === 'crm' && c.status !== 'revoked');
     const toolOn = state.luciel?.tools.some((t) => t.id === 'push_to_crm' && t.enabled) ?? false;
     const status = row?.status ?? null;
     return {
@@ -747,7 +744,8 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
   /** The identifier the CRM accepts: an email, or a phone for a custom webhook. */
   const crmKeyFor = (l: Lead, provider: string | null): string | null => {
     const email =
-      l.email ?? (l.contactIdentifier && l.contactIdentifier.includes('@') ? l.contactIdentifier : null);
+      l.email ??
+      (l.contactIdentifier && l.contactIdentifier.includes('@') ? l.contactIdentifier : null);
     if (email) return email;
     if (provider === 'custom_webhook' && l.phone) return l.phone;
     return null;
@@ -1540,7 +1538,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             throw syncUnavailable();
           }
           const removed = state.knowledge
-            .filter((k) => k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId))
+            .filter(
+              (k) => k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId),
+            )
             .map((k) => k.name);
           for (const k of [...state.knowledge]) {
             if (k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId)) {

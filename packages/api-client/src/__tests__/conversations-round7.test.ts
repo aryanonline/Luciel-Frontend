@@ -57,7 +57,9 @@ describe('mock models the ended, unbilled and delivery states', () => {
       code: 'conflict',
     });
     // Nothing changed on the refusal.
-    expect((await client.conversations.list()).find((c) => c.sessionId === ended.sessionId)?.mode).toBe('ai');
+    expect(
+      (await client.conversations.list()).find((c) => c.sessionId === ended.sessionId)?.mode,
+    ).toBe('ai');
   });
 
   it('serves one row the plan did not count', async () => {

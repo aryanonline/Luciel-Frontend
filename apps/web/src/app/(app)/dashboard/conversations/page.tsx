@@ -95,7 +95,10 @@ const awaitsCarrierReceipt = (channel: Channel | undefined, detail: string | nul
   channel === 'sms' || detail === 'voice_bridged_to_sms';
 
 /** An accepted reply, in the words its channel earns. */
-function describeAccepted(channel: Channel | undefined, detail: string | null | undefined): Delivery {
+function describeAccepted(
+  channel: Channel | undefined,
+  detail: string | null | undefined,
+): Delivery {
   // A caller has no chat to reply into: the reply reached them as a TEXT on
   // your number (owner decision 2026-09-05, audit F150) — say so, never let the
   // owner believe the caller heard it on the call.
@@ -163,8 +166,8 @@ function describeUndelivered(
         tone: 'warning',
         text: (
           <>
-            Saved, but not sent: your Meta connection needs reconnecting before replies can go out on{' '}
-            {channelName}. Reconnect it under {configureChannel}.
+            Saved, but not sent: your Meta connection needs reconnecting before replies can go out
+            on {channelName}. Reconnect it under {configureChannel}.
           </>
         ),
       };
