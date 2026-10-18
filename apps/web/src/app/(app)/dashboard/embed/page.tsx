@@ -8,6 +8,7 @@ import { useLuciel, useLucielMutations, qk } from '@/lib/hooks';
 import { LucielApiError } from '@luciel/api-client';
 import { api } from '@/lib/api';
 import { WidgetPreview } from '@/components/widget-preview';
+import { WIDGET_OFF_COPY, widgetChannelOff } from '@/lib/widget-channel';
 
 /**
  * Embed + launch (Customer Journey §5). One-line embed script with the embed
@@ -239,6 +240,9 @@ export default function EmbedPage() {
   // (P1-19).
   const embedKey = luciel?.embedKeyPublicId ?? null;
   const snippet = embedKey ? snippetFor(embedKey) : null;
+  // D9 (round 7): with Website chat off the widget renders nothing on the site, so
+  // the page must not present the snippet (or a test) as if it were live.
+  const widgetOff = widgetChannelOff(luciel);
 
   /**
    * Fallback chain + feedback on EVERY outcome (Harmony wave 2, item 5
@@ -285,7 +289,9 @@ export default function EmbedPage() {
       <div>
         <h1 className="font-heading text-vm-5">Embed &amp; launch</h1>
         <p className="mt-vm-1 text-vm-1 text-vm-text-muted">
-          Your Luciel is ready. Add this one line to your website.
+          {widgetOff
+            ? 'Website chat is switched off, so nothing shows on your site right now.'
+            : 'Your Luciel is ready. Add this one line to your website.'}
         </p>
       </div>
 
@@ -315,13 +321,23 @@ export default function EmbedPage() {
           </Banner>
         ) : (
           <>
-            <pre
-              ref={snippetRef}
-              className="mt-vm-3 overflow-x-auto rounded-vm-control border border-vm-border bg-vm-surface p-vm-3 text-vm-0"
-            >
-              <code>{snippet}</code>
-            </pre>
-            {/* Total-failure surface (Harmony wave 2, item 5 follow-up): shown
+            {widgetOff && (
+              <Banner tone="warning" className="mt-vm-3">
+                <span data-testid="embed-widget-off">Website chat: {WIDGET_OFF_COPY}</span>{' '}
+                <Link href="/dashboard/configure" className="underline">
+                  Turn it on under Configure → Channels
+                </Link>
+                .
+              </Banner>
+            )}
+            <SnippetFrame off={widgetOff}>
+              <pre
+                ref={snippetRef}
+                className="mt-vm-3 overflow-x-auto rounded-vm-control border border-vm-border bg-vm-surface p-vm-3 text-vm-0"
+              >
+                <code>{snippet}</code>
+              </pre>
+              {/* Total-failure surface (Harmony wave 2, item 5 follow-up): shown
                 only when BOTH the Clipboard API and the execCommand fallback
                 failed. `role="status"` is Banner's own built-in live region,
                 so this is announced to assistive tech without a second
@@ -329,14 +345,14 @@ export default function EmbedPage() {
                 programmatically at the moment this appears, so "select the
                 code above" is one keystroke (Cmd/Ctrl+C) away, not a manual
                 drag-select. */}
-            {copyState === 'failed' && (
-              <Banner tone="danger" className="mt-vm-3">
-                Couldn&apos;t copy — select the code above and copy it by hand (it&apos;s already
-                selected for you).
-              </Banner>
-            )}
-            <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
-              {/* Wave 2, item 5: the wave-1 fix (36d4087) swapped in a glyph +
+              {copyState === 'failed' && (
+                <Banner tone="danger" className="mt-vm-3">
+                  Couldn&apos;t copy — select the code above and copy it by hand (it&apos;s already
+                  selected for you).
+                </Banner>
+              )}
+              <div className="mt-vm-3 flex flex-wrap items-center gap-vm-2">
+                {/* Wave 2, item 5: the wave-1 fix (36d4087) swapped in a glyph +
                   text label but kept `variant="primary"` unconditionally, so
                   the button's own background/text color never actually
                   changed — despite the comment above claiming a "color echo"
@@ -354,35 +370,35 @@ export default function EmbedPage() {
                   `!` (important) modifiers so this override can never lose a
                   Tailwind cascade-order tie against the variant's own
                   same-specificity utility classes. */}
-              {/* Harmony wave 2, item 5 follow-up: feedback on EVERY click
+                {/* Harmony wave 2, item 5 follow-up: feedback on EVERY click
                   outcome, not just clipboard success. `copyState === 'failed'`
                   gets its own (danger-leaning) treatment so a total failure
                   reads as distinctly as the success state does — neither
                   looks like the plain idle button. */}
-              <Button
-                variant={copyState === 'idle' ? 'primary' : 'secondary'}
-                className={
-                  copyState === 'copied'
-                    ? '!border-vm-success !bg-vm-surface !text-vm-success'
-                    : copyState === 'failed'
-                      ? '!border-vm-danger !bg-vm-surface !text-vm-danger'
-                      : undefined
-                }
-                onClick={() => void copy()}
-              >
-                {copyState === 'copied' ? (
-                  <>
-                    <span aria-hidden="true">✓</span> Copied
-                  </>
-                ) : copyState === 'failed' ? (
-                  <>
-                    <span aria-hidden="true">⚠</span> Couldn&apos;t copy
-                  </>
-                ) : (
-                  'Copy'
-                )}
-              </Button>
-              {/* Announced for screen-reader users too — the label swap alone
+                <Button
+                  variant={copyState === 'idle' ? 'primary' : 'secondary'}
+                  className={
+                    copyState === 'copied'
+                      ? '!border-vm-success !bg-vm-surface !text-vm-success'
+                      : copyState === 'failed'
+                        ? '!border-vm-danger !bg-vm-surface !text-vm-danger'
+                        : undefined
+                  }
+                  onClick={() => void copy()}
+                >
+                  {copyState === 'copied' ? (
+                    <>
+                      <span aria-hidden="true">✓</span> Copied
+                    </>
+                  ) : copyState === 'failed' ? (
+                    <>
+                      <span aria-hidden="true">⚠</span> Couldn&apos;t copy
+                    </>
+                  ) : (
+                    'Copy'
+                  )}
+                </Button>
+                {/* Announced for screen-reader users too — the label swap alone
                   is silent to anyone not looking at the button. `aria-live`
                   is set explicitly rather than relying on role="status"'s
                   implicit mapping, so the announcement is robust across every
@@ -391,28 +407,31 @@ export default function EmbedPage() {
                   outcomes now, not just success — a screen-reader user
                   clicking Copy on a locked-down machine must hear that it
                   failed, not silence. */}
-              <span role="status" aria-live="polite" className="sr-only">
-                {copyState === 'copied'
-                  ? 'Snippet copied to clipboard.'
-                  : copyState === 'failed'
-                    ? "Couldn't copy the snippet. It has been selected above so you can copy it by hand."
-                    : ''}
-              </span>
-              {mailto && (
-                <Button asChild variant="secondary">
-                  <a href={mailto}>Email this to my web person</a>
-                </Button>
-              )}
-              <Button variant="ghost" onClick={() => setTesting((t) => !t)}>
-                {testing ? 'Close test' : 'Test it here'}
-              </Button>
-            </div>
+                <span role="status" aria-live="polite" className="sr-only">
+                  {copyState === 'copied'
+                    ? 'Snippet copied to clipboard.'
+                    : copyState === 'failed'
+                      ? "Couldn't copy the snippet. It has been selected above so you can copy it by hand."
+                      : ''}
+                </span>
+                {mailto && (
+                  <Button asChild variant="secondary">
+                    <a href={mailto}>Email this to my web person</a>
+                  </Button>
+                )}
+                {!widgetOff && (
+                  <Button variant="ghost" onClick={() => setTesting((t) => !t)}>
+                    {testing ? 'Close test' : 'Test it here'}
+                  </Button>
+                )}
+              </div>
+            </SnippetFrame>
           </>
         )}
 
         {/* The test runs against THIS Luciel's embed key, signed in, so what the
             admin tries here is the same assistant their visitors get (CJ §5). */}
-        {testing && luciel?.embedKeyPublicId && (
+        {testing && !widgetOff && luciel?.embedKeyPublicId && (
           <div className="mt-vm-4">
             <p className="mb-vm-3 text-vm-1 text-vm-text-muted">
               This is your Luciel, answering from your knowledge. Ask it something a customer would.
@@ -454,5 +473,22 @@ export default function EmbedPage() {
         <AllowedOriginsCard origins={luciel.allowedOrigins ?? []} websiteUrl={luciel.websiteUrl} />
       )}
     </div>
+  );
+}
+
+/**
+ * While Website chat is off the snippet is still the right line to install — it
+ * starts rendering the moment the channel is back on — but it is tucked behind a
+ * disclosure so the page never presents it as live (D9).
+ */
+function SnippetFrame({ off, children }: { off: boolean; children: React.ReactNode }) {
+  if (!off) return <>{children}</>;
+  return (
+    <details className="mt-vm-3">
+      <summary className="cursor-pointer text-vm-1 underline underline-offset-2">
+        Show the snippet anyway (it renders nothing until Website chat is on)
+      </summary>
+      {children}
+    </details>
   );
 }
