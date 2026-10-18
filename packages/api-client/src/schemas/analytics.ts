@@ -87,8 +87,14 @@ export const auditEvent = z.object({
   eventId: z.string(),
   eventType: z.string(),
   at: z.string().datetime({ offset: true }),
-  detail: z.string().optional(),
-  /** Present for owner-initiated actions (e.g. live takeover actor). */
-  actorUserId: z.string().uuid().optional(),
+  /**
+   * The owner-readable one-liner the backend renders from code-shaped payload values
+   * (round 7 WP-5 item 6; admin/usage.py `audit_detail`): `active → paused (owner)`,
+   * `conversation_transcript: 12 deleted (90d)`, `visa card added`, … Served as
+   * `null` for an event type with no renderer.
+   */
+  detail: z.string().nullable().optional(),
+  /** Present for owner-initiated actions (e.g. live takeover actor); null otherwise. */
+  actorUserId: z.string().uuid().nullable().optional(),
 });
 export type AuditEvent = z.infer<typeof auditEvent>;

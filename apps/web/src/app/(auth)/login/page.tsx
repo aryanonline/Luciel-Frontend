@@ -11,6 +11,7 @@ import { Button, Card, CardTitle, CardDescription, Field, Input, Banner } from '
 import { LucielApiError } from '@luciel/api-client';
 import { api } from '@/lib/api';
 import { qk } from '@/lib/hooks';
+import { ACCOUNT_CLOSED_PATH, sessionIsClosed } from '@/lib/account-closed';
 
 /**
  * Login (Arch §3.7.1a): email + password. Login never involves a magic link —
@@ -68,9 +69,12 @@ export default function LoginPage() {
       const session = await api.auth.login(values);
       qc.setQueryData(qk.session, session);
       // The wall and first-run outrank `next`: both are states the admin has to
-      // clear before any dashboard page would work for them anyway.
-      const dest =
-        session.nextRoute === 'verify_wall'
+      // clear before any dashboard page would work for them anyway. A CLOSED account
+      // outranks everything (round 7 WP-5 / D5): login succeeds, and the reduced
+      // page is the only surface it may use.
+      const dest = sessionIsClosed(session)
+        ? ACCOUNT_CLOSED_PATH
+        : session.nextRoute === 'verify_wall'
           ? '/verify'
           : session.nextRoute === 'first_run'
             ? '/first-run'

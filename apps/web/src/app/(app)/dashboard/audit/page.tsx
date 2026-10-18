@@ -43,6 +43,7 @@ const EVENT_LABEL: Record<string, string> = {
   escalation_after_hours_routing: 'Escalation routed after hours',
   escalation_contact_verification_sent: 'Escalation contact confirmation sent',
   escalation_contact_verified: 'Escalation contact confirmed',
+  escalation_contact_code_rejected: 'Escalation contact code refused',
   email_contact_bounced: 'Escalation email bounced',
   deferred_abandon_emailed: 'Abandoned follow-up reported by email',
   llm_unavailable_escalation: 'Escalated because the assistant was unavailable',
@@ -64,13 +65,18 @@ const EVENT_LABEL: Record<string, string> = {
   lead_merged: 'Leads merged',
   lead_opt_out_recorded: 'Lead opt-out recorded',
   lead_outcome_marked: 'Lead outcome marked',
+  lead_edited: 'Lead details corrected',
+  lead_identifier_rehomed: 'Lead contact detail moved to its proven owner',
   crm_record_upserted: 'Lead written to your CRM',
   crm_links_cleared: 'CRM record links cleared',
   crm_push_failure_emailed: 'CRM push failure reported by email',
+  crm_backfill_run: 'Earlier leads sent to your CRM',
+  crm_portal_shared: 'CRM account is also connected to another account',
   // Budget and billing
   budget_exhausted: 'Free conversations used up',
   budget_overage_threshold: 'Pay-as-you-go heads-up',
   billing_checkout_started: 'Checkout started',
+  billing_portal_session_created: 'Card update started',
   payment_method_added: 'Payment method added',
   payment_method_removed: 'Payment method removed',
   invoice_paid: 'Invoice paid',
@@ -78,6 +84,7 @@ const EVENT_LABEL: Record<string, string> = {
   dunning_state_changed: 'Payment retry status changed',
   billing_closure_settled: 'Final invoice settled at closure',
   billing_period_anchored: 'Billing period anchored',
+  billing_meter_unbound: 'Usage could not be reported for billing',
   billing_notice_sent: 'Billing notice sent',
   lifecycle_notice_sent: 'Account notice sent',
   stripe_customer_deleted: 'Billing profile deleted at purge',
@@ -87,6 +94,7 @@ const EVENT_LABEL: Record<string, string> = {
   connection_secret_cleanup: 'Connection credentials destroyed',
   connection_secret_cleanup_scheduled: 'Connection credentials scheduled for destruction',
   connection_attention_emailed: 'Connection attention email sent',
+  knowledge_pause_notice_emailed: 'Knowledge source pause notice emailed',
   destination_claim_rejected: 'Destination already in use elsewhere — refused',
   byo_webhook_circuit_open: 'Your endpoint paused after repeated failures',
   // SMS / Voice number
@@ -105,6 +113,7 @@ const EVENT_LABEL: Record<string, string> = {
   data_export_ready: 'Data export ready',
   data_export_downloaded: 'Data export downloaded',
   account_closure_initiated: 'Account closure started',
+  account_reopened: 'Account reopened',
   // Widget, channels and safety
   widget_abuse_blocked: 'Widget abuse blocked',
   widget_origin_blocked: 'Widget blocked on an unlisted site',
@@ -176,8 +185,10 @@ export default function AuditPage() {
               >
                 <div>
                   <div className="font-label">{eventLabel(e.eventType)}</div>
-                  {/* The served detail, when the backend attaches one (it is starting
-                      to): the row's own words, rendered as-is under the label. */}
+                  {/* The served detail (round 7 WP-5 item 6; usage.audit_detail): a
+                      from → to transition, a data class + count + policy, a billing
+                      move — rendered as-is under the label. Null for event types the
+                      backend has no renderer for, and then nothing renders. */}
                   {e.detail && (
                     <div className="text-vm-0 text-vm-text-muted" data-testid="audit-detail">
                       {e.detail}

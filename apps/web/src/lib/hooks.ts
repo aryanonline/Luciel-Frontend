@@ -41,6 +41,7 @@ export const qk = {
   analytics: ['analytics'] as const,
   employeeStatus: ['employeeStatus'] as const,
   audit: ['audit'] as const,
+  accountStatus: ['accountStatus'] as const,
   twilioNumbers: (connectionId: string) => ['twilioNumbers', connectionId] as const,
   calendlyEventTypes: (connectionId: string) => ['calendlyEventTypes', connectionId] as const,
 };
@@ -127,6 +128,13 @@ export const useAnalytics = () =>
   useQuery({ queryKey: qk.analytics, queryFn: () => api.analytics.overview() });
 export const useAudit = () =>
   useQuery({ queryKey: qk.audit, queryFn: () => api.analytics.auditLog() });
+/**
+ * The account's lifecycle status (round 7 WP-5 / D5) — the one read a closed
+ * account may make. Not retried: past the window it refuses with the typed 403,
+ * which IS the answer the closed-account page renders.
+ */
+export const useAccountStatus = () =>
+  useQuery({ queryKey: qk.accountStatus, queryFn: () => api.account.status(), retry: false });
 
 /**
  * Re-run the own-domain MX routing probe (Arch §3.1.6a). Stateless and

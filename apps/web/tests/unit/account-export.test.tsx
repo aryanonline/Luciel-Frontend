@@ -46,6 +46,7 @@ describe('account export shows the served link, or the failure', () => {
       ok: true,
       downloadUrl: 'https://api.example.com/api/v1/admin/account/export/abc',
       ttlDays: 7,
+      emailOutcome: 'sent',
     });
     await openExportAndPrepare();
 
@@ -58,13 +59,40 @@ describe('account export shows the served link, or the failure', () => {
     expect(screen.queryByRole('button', { name: 'Prepare my export' })).not.toBeInTheDocument();
   });
 
-  it('degrades to the email sentence alone when an older server returns no link', async () => {
+  it('degrades to the least-claiming email sentence when an older server returns no link or outcome', async () => {
     requestExport.mockResolvedValue({ ok: true });
     await openExportAndPrepare();
 
     expect(await screen.findByText(/Your export is ready/)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Download your export' })).not.toBeInTheDocument();
-    expect(screen.getByText(/We emailed the download link to you/i)).toBeInTheDocument();
+    // No emailOutcome on the wire: we know it was attempted, not that it arrived.
+    expect(screen.getByText(/We tried to email the download link to you/i)).toBeInTheDocument();
+  });
+
+  /**
+   * Round 7 WP-5 item 4: the response now carries `emailOutcome` beside the link
+   * (account.py `_email_outcome`). An email that never left is said plainly and the
+   * link on the page is named as the only copy — never "check your inbox".
+   */
+  it.each([
+    ['no_sender', /could not email this link — email sending is not set up yet/],
+    ['failed:SMTPException', /email carrying this link did not go out/],
+    ['recorded', /does not send email, so the link above is the only copy/],
+  ])('emailOutcome %s renders honestly beside the link', async (emailOutcome, copy) => {
+    requestExport.mockResolvedValue({
+      ok: true,
+      downloadUrl: 'https://api.example.com/api/v1/exports/tok',
+      ttlDays: 7,
+      emailOutcome,
+    });
+    await openExportAndPrepare();
+
+    expect(await screen.findByRole('link', { name: 'Download your export' })).toBeInTheDocument();
+    expect(screen.getByText(copy)).toBeInTheDocument();
+    expect(screen.queryByText(/also emailed this link to you/i)).not.toBeInTheDocument();
+    if (emailOutcome.startsWith('failed:')) {
+      expect(screen.getByText('Reference: SMTPException')).toBeInTheDocument();
+    }
   });
 
   it('keeps the dialog open with the reason when the request fails, and claims no link', async () => {
