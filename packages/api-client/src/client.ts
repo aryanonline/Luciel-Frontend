@@ -18,6 +18,7 @@ import type {
   EscalationContact,
   TestSmsWhich,
   TestSmsResult,
+  ConfirmSmsContactResult,
   PersonalityConfig,
   KnowledgeSource,
   KnowledgeChunk,
@@ -128,6 +129,15 @@ export interface LucielApiClient {
      * is empty; `rate_limited` after a handful in a row.
      */
     sendTestEscalationSms(which: TestSmsWhich): Promise<TestSmsResult>;
+    /**
+     * The owner enters the 6-digit code an SMS escalation contact received (round 7
+     * WP-4b; POST /admin/luciel/escalation/contacts/confirm-sms). A wrong, expired or
+     * locked code is NOT an error — read `outcome`. `validation_error` when the number
+     * is not a configured SMS contact (or the code is not six digits); `rate_limited`
+     * (429) after a few entries in a row. A fresh code is `resendContactConfirmation`
+     * with the number as the address.
+     */
+    confirmSmsContact(number: string, code: string): Promise<ConfirmSmsContactResult>;
     updatePersonality(config: PersonalityConfig): Promise<Luciel>;
     /**
      * Set (`days` ≥ 1) or clear (`null`) the lead auto-prune rule — the Admin's

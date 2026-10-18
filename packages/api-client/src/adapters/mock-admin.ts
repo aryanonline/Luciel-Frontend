@@ -18,6 +18,7 @@ import type {
   ScopeCandidate,
   Message,
   EmployeeStatus,
+  EscalationContactHealth,
   Lead,
   NeverAttemptedReason,
 } from '../schemas';
@@ -38,6 +39,9 @@ import * as seed from './mock-data';
  *                         window (D5): every admin route refuses with the typed
  *                         403 `account_closed`; status/reopen/export still answer
  *   - 'closed_window_passed' → closed 31 days ago: even the reduced surface refuses
+ *   - 'escalation_sms'  → SMS escalation contacts in every confirmation state (round
+ *                         7 WP-4b): primary has a live code (enter 123456), backup's
+ *                         code expired, the after-hours number is confirmed
  *
  * No network. Returned objects are clones so callers can't mutate seed state.
  */
@@ -51,7 +55,34 @@ export type MockScenario =
   | 'paused'
   | 'grace'
   | 'closed'
-  | 'closed_window_passed';
+  | 'closed_window_passed'
+  | 'escalation_sms';
+
+/**
+ * The mock's SMS confirmation code (round 7 WP-4b). The backend mints a random one
+ * and texts it; the mock has no phone, so every code it "sends" is this one.
+ */
+export const MOCK_SMS_CODE = '123456';
+/** contact_confirmation: CODE_TTL, RESEND_COOLDOWN, MAX_CODE_ATTEMPTS. */
+const SMS_CODE_TTL_MS = 15 * 60 * 1000;
+const SMS_RESEND_COOLDOWN_MS = 5 * 60 * 1000;
+const SMS_MAX_ATTEMPTS = 5;
+/** rate_limit `escalation_test_sms`: burst 3 per 600 s for code entries. */
+const SMS_CONFIRM_BURST = 3;
+const SMS_CONFIRM_WINDOW_MS = 600 * 1000;
+const normalizeNumber = (value: string) => value.replace(/[\s\-.()]/g, '');
+const looksLikeNumber = (value: string) => {
+  const raw = value.trim();
+  return raw.startsWith('+') || /^\d+$/.test(raw.replace(/ /g, ''));
+};
+
+interface SmsConfirmationRow {
+  code: string | null;
+  expiresAt: number | null;
+  attempts: number;
+  confirmedAt: string | null;
+  lastSentAt: number | null;
+}
 
 /** The D5 reopen window: 30 days from closure (close_purge.reopen_deadline). */
 const REOPEN_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -227,6 +258,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
      * that deletion stays the owner's and reopening does not undo it).
      */
     closure: null as null | { closedAt: string; lucielBefore: Luciel | null },
+    /** SMS escalation-contact confirmations by normalized number (round 7 WP-4b). */
+    smsConfirmations: {} as Record<string, SmsConfirmationRow>,
+    /** Recent code entries — the per-tenant rate limit on the confirm route. */
+    smsConfirmEntries: [] as number[],
   };
 
   // Apply scenario-derived state up front.
@@ -258,6 +293,49 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
   if (state.scenario === 'grace' && state.luciel) {
     state.luciel.state = 'luciel_grace_window';
     state.luciel.graceWindowStartedAt = '2026-06-10T12:00:00Z';
+  }
+  if (state.scenario === 'escalation_sms' && state.luciel) {
+    const now = Date.now();
+    state.luciel.channels = state.luciel.channels.map((c) =>
+      c.id === 'sms' ? { ...c, enabled: true, connectionStatus: 'connected' } : c,
+    );
+    state.luciel.escalation = {
+      ...state.luciel.escalation,
+      primarySms: '+16045550101',
+      secondarySms: '+16045550102',
+    };
+    state.luciel.teamAvailability = {
+      enabled: true,
+      weekly: [{ day: 0, start: '09:00', end: '17:00' }],
+      closures: [],
+      afterHours: { escalation: { channel: 'sms', contactSms: '+16045550103' } },
+    };
+    state.luciel.timezone = 'America/Vancouver';
+    state.smsConfirmations = {
+      // A live code, sent six minutes ago (outside the resend cooldown).
+      '+16045550101': {
+        code: MOCK_SMS_CODE,
+        expiresAt: now + 9 * 60 * 1000,
+        attempts: 0,
+        confirmedAt: null,
+        lastSentAt: now - 6 * 60 * 1000,
+      },
+      // The code went out twenty minutes ago and has expired.
+      '+16045550102': {
+        code: MOCK_SMS_CODE,
+        expiresAt: now - 5 * 60 * 1000,
+        attempts: 0,
+        confirmedAt: null,
+        lastSentAt: now - 20 * 60 * 1000,
+      },
+      '+16045550103': {
+        code: null,
+        expiresAt: null,
+        attempts: 0,
+        confirmedAt: '2026-10-01T15:00:00Z',
+        lastSentAt: null,
+      },
+    };
   }
   if (state.scenario === 'closed' || state.scenario === 'closed_window_passed') {
     // Relative to now, never a hard-coded date: the window is a wall-clock fact.
@@ -374,6 +452,114 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     state.syncConnections.push(connection);
     return connection;
   };
+
+  // --- SMS escalation-contact confirmation (round 7 WP-4b) ----------------------
+  /** Whether a number is connected to send a code from (resolve_sms_number). */
+  const smsSenderConnected = () => {
+    const sms = state.luciel?.channels.find((c) => c.id === 'sms');
+    return Boolean(
+      sms?.connectionStatus &&
+        !['unconfigured', 'not_connected', 'revoked'].includes(sms.connectionStatus),
+    );
+  };
+  /** luciel._configured_contacts: the pillar slots plus the after-hours contact. */
+  const configuredContacts = (): { channel: 'email' | 'sms'; role: string; value: string }[] => {
+    if (!state.luciel) return [];
+    const esc = state.luciel.escalation;
+    const out: { channel: 'email' | 'sms'; role: string; value: string }[] = [];
+    if (esc.primaryEmail) out.push({ channel: 'email', role: 'primary', value: esc.primaryEmail });
+    if (esc.secondaryEmail)
+      out.push({ channel: 'email', role: 'secondary', value: esc.secondaryEmail });
+    if (esc.primarySms) out.push({ channel: 'sms', role: 'primary', value: esc.primarySms });
+    if (esc.secondarySms) out.push({ channel: 'sms', role: 'secondary', value: esc.secondarySms });
+    const after = state.luciel.teamAvailability?.afterHours?.escalation;
+    if (after?.channel === 'sms' && after.contactSms) {
+      out.push({ channel: 'sms', role: 'after_hours', value: after.contactSms });
+    } else if (after?.channel === 'email' && after.contactEmail) {
+      out.push({ channel: 'email', role: 'after_hours', value: after.contactEmail });
+    }
+    return out;
+  };
+  /** contact_confirmation.begin_sms_confirmation, with the mock's fixed code. */
+  const beginSmsConfirmation = (number: string, force: boolean): string => {
+    const key = normalizeNumber(number);
+    const now = Date.now();
+    const row = (state.smsConfirmations[key] ??= {
+      code: null,
+      expiresAt: null,
+      attempts: 0,
+      confirmedAt: null,
+      lastSentAt: null,
+    });
+    if (row.confirmedAt) return 'already_confirmed';
+    if (row.lastSentAt !== null && now - row.lastSentAt < SMS_RESEND_COOLDOWN_MS) return 'cooldown';
+    const live =
+      row.code !== null &&
+      row.expiresAt !== null &&
+      row.expiresAt > now &&
+      row.attempts < SMS_MAX_ATTEMPTS;
+    if (!force && live) return 'pending';
+    if (!smsSenderConnected()) return 'sms_channel_not_provisioned';
+    row.code = MOCK_SMS_CODE;
+    row.expiresAt = now + SMS_CODE_TTL_MS;
+    row.lastSentAt = now;
+    row.attempts = 0;
+    return 'sent';
+  };
+  /**
+   * luciel._contact_health: every configured contact with its deliverability truth.
+   * Email states are kept as they were (the link loop owns them); a newly saved email
+   * starts pending. SMS states derive from the confirmation rows and the clock.
+   */
+  const refreshContactHealth = () => {
+    if (!state.luciel) return;
+    const previous = state.luciel.escalationContactHealth;
+    const now = Date.now();
+    const sender = smsSenderConnected();
+    state.luciel.escalationContactHealth = configuredContacts().map(
+      ({ channel, role, value }): EscalationContactHealth => {
+        if (channel === 'email') {
+          const before = previous.find(
+            (h) =>
+              (h.channel ?? 'email') === 'email' &&
+              h.address.toLowerCase() === value.toLowerCase(),
+          );
+          return {
+            address: value,
+            state: before?.state ?? 'pending_confirmation',
+            verifiedAt: before?.verifiedAt ?? null,
+            lastBouncedAt: before?.lastBouncedAt ?? null,
+            channel,
+            role: role as EscalationContactHealth['role'],
+            detail: before?.state === 'bouncing' ? (before.detail ?? null) : null,
+          };
+        }
+        const row = state.smsConfirmations[normalizeNumber(value)];
+        const smsState: EscalationContactHealth['state'] = row?.confirmedAt
+          ? 'verified'
+          : row?.code && row.expiresAt !== null && row.expiresAt > now
+            ? 'pending_confirmation'
+            : 'unverified';
+        return {
+          address: value,
+          state: smsState,
+          verifiedAt: row?.confirmedAt ?? null,
+          lastBouncedAt: null,
+          channel,
+          role: role as EscalationContactHealth['role'],
+          detail: smsState !== 'verified' && !sender ? 'sms_channel_not_provisioned' : null,
+        };
+      },
+    );
+  };
+  /** A save kicks the code to every configured, unproven number (_kick_sms_confirmation). */
+  const kickSmsConfirmations = () => {
+    for (const c of configuredContacts()) {
+      if (c.channel === 'sms') beginSmsConfirmation(c.value, false);
+    }
+  };
+  // The seeded SMS scenario's health is derived like any other (after the helpers exist).
+  if (state.scenario === 'escalation_sms') refreshContactHealth();
 
   /**
    * The tenant's CURRENT ability to push a lead (round 7 WP-3c item 5), read the
@@ -493,6 +679,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     luciel: {
       async get() {
         guardVerified();
+        // SMS confirmation states move with the clock (a code expires).
+        if (state.luciel?.escalationContactHealth.some((h) => h.channel === 'sms')) {
+          refreshContactHealth();
+        }
         return ok(state.luciel);
       },
       async create(req) {
@@ -569,20 +759,67 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // Round 5B item 13, mirroring the backend's save hook: a newly saved
         // email contact enters the confirmation loop; an already-verified one
         // keeps its state. Health is server-owned and never rides in the PUT.
-        const emails = [contact.primaryEmail, contact.secondaryEmail].filter((a): a is string =>
-          Boolean(a),
+        // A newly saved email restarts its loop; a verified one keeps its state. Round
+        // 7 WP-4b: a saved number is texted its 6-digit code the same way.
+        const kept = state.luciel.escalationContactHealth.filter(
+          (h) => (h.channel ?? 'email') !== 'email' || h.state === 'verified',
         );
-        const previous = state.luciel.escalationContactHealth;
-        state.luciel.escalationContactHealth = emails.map(
-          (address) =>
-            previous.find((h) => h.address === address && h.state === 'verified') ?? {
-              address,
-              state: 'pending_confirmation' as const,
-              verifiedAt: null,
-              lastBouncedAt: null,
-            },
-        );
+        state.luciel.escalationContactHealth = kept;
+        kickSmsConfirmations();
+        refreshContactHealth();
         return ok(state.luciel);
+      },
+      async confirmSmsContact(number, code) {
+        guardVerified();
+        if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        // The StrictWireModel's pattern answers first (422, the converted body).
+        if (!/^[0-9]{6}$/.test(code)) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: "code: String should match pattern '^[0-9]{6}$'",
+          });
+        }
+        const now = Date.now();
+        state.smsConfirmEntries = state.smsConfirmEntries.filter(
+          (t) => now - t < SMS_CONFIRM_WINDOW_MS,
+        );
+        if (state.smsConfirmEntries.length >= SMS_CONFIRM_BURST) {
+          throw new LucielApiError({
+            code: 'rate_limited',
+            message: 'Too many code entries. Please wait a few minutes.',
+            retryAfterSeconds: 60,
+          });
+        }
+        state.smsConfirmEntries.push(now);
+        const key = normalizeNumber(number);
+        const configured = configuredContacts()
+          .filter((c) => c.channel === 'sms')
+          .map((c) => normalizeNumber(c.value));
+        if (!key || !configured.includes(key)) {
+          throw new LucielApiError({
+            code: 'validation_error',
+            message: 'That number is not currently configured as an escalation contact.',
+          });
+        }
+        // contact_confirmation.confirm_sms_code, outcome for outcome.
+        const row = state.smsConfirmations[key];
+        let outcome: string;
+        if (!row) outcome = 'no_pending';
+        else if (row.confirmedAt) outcome = 'already_confirmed';
+        else if (row.code === null || row.expiresAt === null) outcome = 'no_pending';
+        else if (row.expiresAt <= now) outcome = 'expired';
+        else if (row.attempts >= SMS_MAX_ATTEMPTS) outcome = 'locked';
+        else if (code !== row.code) {
+          row.attempts += 1;
+          outcome = row.attempts >= SMS_MAX_ATTEMPTS ? 'locked' : 'wrong_code';
+        } else {
+          row.confirmedAt = new Date(now).toISOString();
+          row.code = null;
+          row.expiresAt = null;
+          outcome = 'confirmed';
+        }
+        refreshContactHealth();
+        return ok({ outcome, luciel: state.luciel });
       },
       async sendTestEscalationSms(which) {
         guardVerified();
@@ -605,6 +842,33 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async resendContactConfirmation(address) {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        if (looksLikeNumber(address)) {
+          // Round 7 WP-4b: a number gets a fresh code (the backend's SMS branch).
+          const configured = configuredContacts()
+            .filter((c) => c.channel === 'sms')
+            .map((c) => normalizeNumber(c.value));
+          if (!configured.includes(normalizeNumber(address))) {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: 'That number is not currently configured as an escalation contact.',
+            });
+          }
+          const outcome = beginSmsConfirmation(address, true);
+          const refusal: Record<string, string> = {
+            cooldown: 'A code was sent moments ago — give it a few minutes, then retry.',
+            already_confirmed: 'That number is already confirmed.',
+            sms_channel_not_provisioned:
+              'Connect an SMS number under Configure → Channels first — the confirmation code is sent from your own number.',
+          };
+          if (outcome !== 'sent') {
+            throw new LucielApiError({
+              code: 'validation_error',
+              message: refusal[outcome] ?? `The code could not be sent (${outcome}).`,
+            });
+          }
+          refreshContactHealth();
+          return ok(state.luciel);
+        }
         const entry = state.luciel.escalationContactHealth.find((h) => h.address === address);
         if (!entry) {
           throw new LucielApiError({
@@ -720,6 +984,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           closures: req.closures ?? [],
           afterHours: req.afterHours ?? null,
         });
+        // Round 7 WP-4b: the after-hours contact is confirmed like any other — a
+        // saved number is texted its code, and the health list names it.
+        kickSmsConfirmations();
+        refreshContactHealth();
         return ok(state.luciel);
       },
       async status() {
