@@ -39,6 +39,12 @@ import * as seed from './mock-data';
  *                         window (D5): every admin route refuses with the typed
  *                         403 `account_closed`; status/reopen/export still answer
  *   - 'closed_window_passed' → closed 31 days ago: even the reduced surface refuses
+ *   - 'knowledge_states' → knowledge in every round-7 state: the Drive grant is
+ *                         revoked at the provider while its row still says
+ *                         connected (a re-sync flips it to error and pauses its
+ *                         sources), a Notion source paused 3 days ago (still
+ *                         answering), a HubSpot KB source paused 9 days ago (no
+ *                         longer answering), a crawled page removed at its origin
  *   - 'escalation_sms'  → SMS escalation contacts in every confirmation state (round
  *                         7 WP-4b): primary has a live code (enter 123456), backup's
  *                         code expired, the after-hours number is confirmed
@@ -56,7 +62,13 @@ export type MockScenario =
   | 'grace'
   | 'closed'
   | 'closed_window_passed'
-  | 'escalation_sms';
+  | 'escalation_sms'
+  | 'knowledge_states';
+
+/** The backend's chunk preview page (knowledge/service.py CHUNK_PREVIEW_PAGE). */
+const CHUNK_PREVIEW_PAGE = 20;
+/** connections/health `_DEAD_CREDENTIAL_DETAIL` (round 7 WP-4c #7). */
+const DEAD_CREDENTIAL_DETAIL = 'knowledge sync could not use the stored credential — reconnect';
 
 /**
  * The mock's SMS confirmation code (round 7 WP-4b). The backend mints a random one
@@ -262,6 +274,12 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     smsConfirmations: {} as Record<string, SmsConfirmationRow>,
     /** Recent code entries — the per-tenant rate limit on the confirm route. */
     smsConfirmEntries: [] as number[],
+    /** Who tombstoned each deleted source (knowledge_sources.deleted_by). */
+    tombstoneBy: {} as Record<string, 'owner' | 'origin'>,
+    /** Knowledge grants the provider has revoked while the row still says connected. */
+    revokedGrants: [] as string[],
+    /** Synced sources whose item is gone at the origin (the next sync tombstones them). */
+    removedAtOrigin: [] as string[],
   };
 
   // Apply scenario-derived state up front.
@@ -336,6 +354,90 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         lastSentAt: null,
       },
     };
+  }
+  if (state.scenario === 'knowledge_states') {
+    const now = Date.now();
+    const drive = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const notion = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const hubspotKb = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const crawl = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    state.revokedGrants = [drive];
+    state.knowledge = state.knowledge.map((k) =>
+      k.origin === 'google_drive' ? { ...k, connectionId: drive } : k,
+    );
+    state.connections.push(
+      {
+        connectionId: notion,
+        connectionType: 'knowledge_source',
+        provider: 'notion',
+        displayName: 'Notion',
+        providerAvailable: true,
+        status: 'error',
+        statusDetail: DEAD_CREDENTIAL_DETAIL,
+        createdAt: '2026-02-01T10:12:00Z',
+      },
+      {
+        connectionId: hubspotKb,
+        connectionType: 'knowledge_source',
+        provider: 'hubspot',
+        displayName: 'HubSpot knowledge base',
+        providerAvailable: true,
+        status: 'expired',
+        statusDetail: DEAD_CREDENTIAL_DETAIL,
+        createdAt: '2026-02-01T10:14:00Z',
+      },
+      {
+        connectionId: crawl,
+        connectionType: 'knowledge_source',
+        provider: 'website_crawl',
+        displayName: 'Website crawl',
+        providerAvailable: true,
+        status: 'connected',
+        nonSecretConfig: { crawl_urls: ['https://sarahchen.com'] },
+        createdAt: '2026-02-01T10:16:00Z',
+      },
+    );
+    state.knowledge.push(
+      {
+        sourceId: 'abababab-0000-4000-8000-000000000001',
+        name: 'Notion — Client onboarding',
+        origin: 'notion',
+        ingestionStatus: 'ready',
+        sizeBytes: 800_000,
+        lastUpdatedAt: '2026-09-30T08:00:00Z',
+        lastSyncedAt: '2026-10-10T06:00:00Z',
+        syncStatus: 'paused_reconnect_needed',
+        connectionId: notion,
+        usedByQuestions7d: 4,
+        pausedSince: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        sourceId: 'abababab-0000-4000-8000-000000000002',
+        name: 'HubSpot KB — Returns policy',
+        origin: 'crm_kb',
+        ingestionStatus: 'ready',
+        sizeBytes: 300_000,
+        lastUpdatedAt: '2026-09-20T08:00:00Z',
+        lastSyncedAt: '2026-10-01T06:00:00Z',
+        syncStatus: 'paused_reconnect_needed',
+        connectionId: hubspotKb,
+        usedByQuestions7d: 0,
+        pausedSince: new Date(now - 9 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        sourceId: 'abababab-0000-4000-8000-000000000003',
+        name: 'sarahchen.com/old-pricing',
+        origin: 'website_crawl',
+        ingestionStatus: 'ready',
+        sizeBytes: 40_000,
+        lastUpdatedAt: '2026-10-01T08:00:00Z',
+        lastSyncedAt: '2026-10-12T06:00:00Z',
+        syncStatus: 'synced',
+        connectionId: crawl,
+        usedByQuestions7d: 1,
+      },
+    );
+    state.removedAtOrigin = ['abababab-0000-4000-8000-000000000003'];
   }
   if (state.scenario === 'closed' || state.scenario === 'closed_window_passed') {
     // Relative to now, never a hard-coded date: the window is a wall-clock fact.
@@ -451,6 +553,41 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     };
     state.syncConnections.push(connection);
     return connection;
+  };
+
+  // --- Knowledge sync truth (round 7 WP-4c) ---------------------------------------
+  /**
+   * knowledge.py `_flag_dead_credential`: the provider refused the stored grant. The
+   * connection's sources pause (the D10 clock starts once per incident) and a row
+   * that said connected is marked broken — so the chip follows the SERVED status.
+   */
+  const flagDeadCredential = (connectionId: string) => {
+    const now = new Date().toISOString();
+    for (const k of state.knowledge) {
+      if (k.connectionId === connectionId) {
+        k.syncStatus = 'paused_reconnect_needed';
+        k.pausedSince ??= now;
+      }
+    }
+    const conn = state.connections.find((c) => c.connectionId === connectionId);
+    if (conn && conn.status === 'connected') {
+      conn.status = 'error';
+      conn.statusDetail = DEAD_CREDENTIAL_DETAIL;
+    }
+  };
+  const syncUnavailable = () =>
+    new LucielApiError({
+      code: 'conflict',
+      message: 'Sync unavailable: the provider refused the stored credential — reconnect it.',
+    });
+  /** sync.py: an item gone at its origin becomes an ORIGIN tombstone (never restorable). */
+  const tombstoneAtOrigin = (sourceId: string) => {
+    const gone = state.knowledge.find((k) => k.sourceId === sourceId);
+    if (!gone) return;
+    state.knowledge = state.knowledge.filter((k) => k.sourceId !== sourceId);
+    state.deletedKnowledge.push(gone);
+    state.tombstoneBy[sourceId] = 'origin';
+    state.removedAtOrigin = state.removedAtOrigin.filter((id) => id !== sourceId);
   };
 
   // --- SMS escalation-contact confirmation (round 7 WP-4b) ----------------------
@@ -1172,9 +1309,19 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async getChunks(sourceId) {
         guardVerified();
-        return ok([
-          { chunkId: 'chunk-1', sourceId, ordinal: 0, text: 'Sample chunk preview text.' },
-        ]);
+        // KnowledgeChunkPageOut (round 7 WP-4c #6): the first page WITH the real
+        // count. The mock sizes a source at ~60 KB per piece so a larger file has
+        // more pieces than one page holds.
+        const source = state.knowledge.find((k) => k.sourceId === sourceId);
+        if (!source) throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
+        const total = Math.max(1, Math.round(source.sizeBytes / 60_000));
+        const chunks = Array.from({ length: Math.min(total, CHUNK_PREVIEW_PAGE) }, (_, i) => ({
+          chunkId: `c0c0c0c0-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+          sourceId,
+          ordinal: i,
+          text: `Piece ${i + 1} of “${source.name}”: sample chunk preview text.`,
+        }));
+        return ok({ chunks, totalChunks: total, pageSize: CHUNK_PREVIEW_PAGE });
       },
       async quota() {
         guardVerified();
@@ -1189,7 +1336,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const gone = state.knowledge.find((s) => s.sourceId === sourceId);
         state.knowledge = state.knowledge.filter((s) => s.sourceId !== sourceId);
         // Tombstoned, not destroyed: the 30-day undo window (Arch §3.2.2).
-        if (gone) state.deletedKnowledge.push(gone);
+        if (gone) {
+          state.deletedKnowledge.push(gone);
+          state.tombstoneBy[sourceId] = 'owner';
+        }
         await delay();
       },
       async restoreSource(sourceId) {
@@ -1205,6 +1355,15 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (!back) {
           throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
         }
+        // Round 7 WP-4c #9: gone at its origin — nothing here can bring it back.
+        if (state.tombstoneBy[sourceId] === 'origin') {
+          const origin = back.origin === 'crm_kb' ? 'crm_kb' : back.origin;
+          throw new LucielApiError({
+            code: 'conflict',
+            message: `${back.name} was removed at its sync source (${origin}) and cannot be restored here. Re-add it at the source and sync again.`,
+          });
+        }
+        delete state.tombstoneBy[sourceId];
         state.deletedKnowledge.splice(idx, 1);
         state.knowledge.push(back);
         return ok(back);
@@ -1213,6 +1372,20 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         const s = state.knowledge.find((k) => k.sourceId === sourceId);
         if (!s) throw new LucielApiError({ code: 'not_found', message: 'Source not found.' });
+        // knowledge.py resync_source, round 7: a revoked grant pauses the sources and
+        // marks the connection broken BEFORE the 409; an item gone at its origin is
+        // tombstoned by the sync and the route answers an honest 404.
+        if (s.connectionId && state.revokedGrants.includes(s.connectionId)) {
+          flagDeadCredential(s.connectionId);
+          throw syncUnavailable();
+        }
+        if (state.removedAtOrigin.includes(sourceId)) {
+          tombstoneAtOrigin(sourceId);
+          throw new LucielApiError({
+            code: 'not_found',
+            message: 'Source no longer exists at the sync origin.',
+          });
+        }
         s.lastSyncedAt = new Date().toISOString();
         s.syncStatus = 'synced';
         return ok(s);
@@ -1307,7 +1480,36 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
               'The source now reports 1 item(s) where 4 are synced, so nothing was removed. If you did remove them at the source, sync again and confirm the shrink.',
           });
         }
-        if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+        if (!c) {
+          // A knowledge connection listed under /connections (the seeded Drive, or
+          // a row the scenario adds) syncs too — with the same round-7 truths.
+          const row = state.connections.find(
+            (x) => x.connectionId === connectionId && x.connectionType === 'knowledge_source',
+          );
+          if (!row) {
+            throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+          }
+          if (state.revokedGrants.includes(connectionId) || row.status !== 'connected') {
+            flagDeadCredential(connectionId);
+            throw syncUnavailable();
+          }
+          const removed = state.knowledge
+            .filter((k) => k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId))
+            .map((k) => k.name);
+          for (const k of [...state.knowledge]) {
+            if (k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId)) {
+              tombstoneAtOrigin(k.sourceId);
+            }
+          }
+          const now = new Date().toISOString();
+          for (const k of state.knowledge) {
+            if (k.connectionId === connectionId) {
+              k.lastSyncedAt = now;
+              k.syncStatus = 'synced';
+            }
+          }
+          return ok({ added: [], updated: [], removed });
+        }
         if (c.status !== 'connected') {
           throw new LucielApiError({
             code: 'conflict',

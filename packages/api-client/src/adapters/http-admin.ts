@@ -1,5 +1,5 @@
 import type { LucielApiClient, PageOptions } from '../client';
-import type { BillingInfo } from '../schemas';
+import type { BillingInfo, KnowledgeChunk, KnowledgeChunkPage } from '../schemas';
 import { createTransport, type TransportOptions } from './transport';
 
 /** POST /admin/account/export as served: camelCase or the endpoint's snake_case. */
@@ -88,7 +88,19 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     },
     knowledge: {
       listSources: () => t.get('/api/v1/admin/knowledge/sources'),
-      getChunks: (sourceId) => t.get(`/api/v1/admin/knowledge/sources/${sourceId}/chunks`),
+      // KnowledgeChunkPageOut {chunks, totalChunks, pageSize}; an older server's bare
+      // list still reads, with the count unknown rather than the page length.
+      getChunks: async (sourceId) => {
+        const raw = await t.get<KnowledgeChunkPage | KnowledgeChunk[]>(
+          `/api/v1/admin/knowledge/sources/${sourceId}/chunks`,
+        );
+        if (Array.isArray(raw)) return { chunks: raw, totalChunks: null, pageSize: null };
+        return {
+          chunks: raw.chunks ?? [],
+          totalChunks: typeof raw.totalChunks === 'number' ? raw.totalChunks : null,
+          pageSize: typeof raw.pageSize === 'number' ? raw.pageSize : null,
+        };
+      },
       quota: () => t.get('/api/v1/admin/knowledge/quota'),
       deleteSource: (sourceId) => t.del(`/api/v1/admin/knowledge/sources/${sourceId}`),
       restoreSource: (sourceId) => t.post(`/api/v1/admin/knowledge/sources/${sourceId}/restore`),

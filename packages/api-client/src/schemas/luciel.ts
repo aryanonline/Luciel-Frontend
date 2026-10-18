@@ -154,8 +154,29 @@ export const knowledgeSource = z.object({
    * source no answer has used.
    */
   usedByQuestions7d: z.number().int().nonnegative().default(0),
+  /**
+   * Round 7 WP-4c #5 (owner decision D10): when a revoked/expired grant paused this
+   * source. It keeps answering for `KNOWLEDGE_PAUSED_SERVING_DAYS` from this
+   * instant, then stops until the connection is reconnected
+   * (knowledge/service.py `stops_serving_at`). NOT SERVED by KnowledgeSourceOut at
+   * backend 5de5cf6 — the column is `knowledge_sources.paused_since` and this is its
+   * WireModel camelization; optional so today's wire parses and the UI falls back
+   * to "paused — reconnect needed" without a date.
+   */
+  pausedSince: isoTimestamp.nullable().optional(),
+  /**
+   * Who tombstoned the source (round 7 WP-4c #9; `knowledge_sources.deleted_by`):
+   * `owner` (undo-able for 30 days), `origin` (gone at Drive/Notion/the site — never
+   * restorable here), `lifecycle` (comes back with the Luciel). NOT SERVED at
+   * 5de5cf6 (the list omits tombstones); the served truth today is the restore
+   * route's 409 and the re-sync's 404, which the UI renders verbatim.
+   */
+  deletedBy: z.enum(['owner', 'origin', 'lifecycle']).nullable().optional(),
 });
 export type KnowledgeSource = z.infer<typeof knowledgeSource>;
+
+/** D10: a source paused for reconnect keeps answering this many days (PAUSED_SERVING_DAYS). */
+export const KNOWLEDGE_PAUSED_SERVING_DAYS = 7;
 
 export const knowledgeChunk = z.object({
   chunkId: uuid,
@@ -164,6 +185,20 @@ export const knowledgeChunk = z.object({
   text: z.string(),
 });
 export type KnowledgeChunk = z.infer<typeof knowledgeChunk>;
+
+/**
+ * GET /admin/knowledge/sources/{id}/chunks (round 7 WP-4c #6; KnowledgeChunkPageOut):
+ * the first page of a source's chunks WITH the real count. The bare list it used to
+ * return made the preview say "first 20 of 20" for a source with 300 pieces.
+ * `totalChunks`/`pageSize` are null only for an older server's bare list — the
+ * count is then unknown, never the page length.
+ */
+export const knowledgeChunkPage = z.object({
+  chunks: z.array(knowledgeChunk),
+  totalChunks: z.number().int().nonnegative().nullable(),
+  pageSize: z.number().int().positive().nullable(),
+});
+export type KnowledgeChunkPage = z.infer<typeof knowledgeChunkPage>;
 
 /** 5 GB total, 50 MB per file — single quota (Vision §3.3). */
 export const knowledgeQuota = z.object({
