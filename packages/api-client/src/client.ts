@@ -21,7 +21,7 @@ import type {
   ConfirmSmsContactResult,
   PersonalityConfig,
   KnowledgeSource,
-  KnowledgeChunk,
+  KnowledgeChunkPage,
   KnowledgeQuota,
   PasteTextRequest,
   KnowledgeSyncProvider,
@@ -183,7 +183,11 @@ export interface LucielApiClient {
 
   knowledge: {
     listSources(): Promise<KnowledgeSource[]>;
-    getChunks(sourceId: string): Promise<KnowledgeChunk[]>;
+    /**
+     * The first page of a source's chunks plus the honest total (round 7 WP-4c #6).
+     * `totalChunks: null` = an older server that sent only the page.
+     */
+    getChunks(sourceId: string): Promise<KnowledgeChunkPage>;
     quota(): Promise<KnowledgeQuota>;
     /** Tombstones the source; undo-able for 30 days via restoreSource (Arch §3.2.2). */
     deleteSource(sourceId: string): Promise<void>;

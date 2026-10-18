@@ -29,6 +29,7 @@ import { authorizeOrExplain } from '@/lib/oauth-connect';
 import { useQueryClient } from '@tanstack/react-query';
 import { KnowledgeScopeSections } from './knowledge-scope';
 import { KnowledgeConnections } from './knowledge-connections';
+import { pausedServing, pausedServingCopy } from '@/lib/knowledge-pause';
 
 /**
  * Knowledge pillar (Vision §3.3, Arch §3.2.2, Customer Journey §4.3). Ingestion
@@ -319,11 +320,26 @@ export function KnowledgePillar() {
       );
     });
 
+  /**
+   * Whatever a re-sync did, the chips must follow the SERVED status afterwards
+   * (round 7 WP-4c #7): a revoked grant now pauses the sources and marks the
+   * connection broken before the 409, and an item gone at its origin is tombstoned
+   * before the 404 — so success and failure both re-read sources and connections.
+   * Nothing here paints a local green.
+   */
+  const refreshServedKnowledge = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: qk.knowledge }),
+      qc.invalidateQueries({ queryKey: qk.connections }),
+      qc.invalidateQueries({ queryKey: qk.employeeStatus }),
+    ]);
+
   const resync = (source: KnowledgeSource) =>
     run(async () => {
       try {
         await api.knowledge.resyncSource(source.sourceId);
       } catch (err) {
+        void refreshServedKnowledge();
         if (isShrinkRefusal(err) && source.connectionId) {
           setNotice({
             tone: 'danger',
@@ -334,6 +350,7 @@ export function KnowledgePillar() {
         }
         throw err;
       }
+      await refreshServedKnowledge();
       return `Re-synced “${source.name}”.`;
     });
 
@@ -360,6 +377,9 @@ export function KnowledgePillar() {
     qc.invalidateQueries({ queryKey: qk.quota });
   };
 
+  // A refused restore keeps the served reason (an ORIGIN tombstone answers 409 "was
+  // removed at its sync source … cannot be restored here") and drops the Undo
+  // button with the notice it lived in, so nothing offers an undo that cannot work.
   const onUndoDelete = (sourceId: string, name: string) =>
     run(async () => {
       await api.knowledge.restoreSource(sourceId);
@@ -538,79 +558,104 @@ export function KnowledgePillar() {
       {/* Raw knowledge view (Arch §3.2.2). */}
       <h4 className="mt-vm-5 text-vm-1 font-label">Your sources</h4>
       <ul className="mt-vm-2 divide-y divide-vm-border">
-        {sources.data?.map((s) => (
-          <li key={s.sourceId} className="flex items-center justify-between gap-vm-3 py-vm-3">
-            <div className="min-w-0">
-              <div className="truncate text-vm-2">{s.name}</div>
-              <div className="text-vm-0 text-vm-text-muted">
-                {originLabel(s.origin)} · {fmtBytes(s.sizeBytes)} ·{' '}
-                {s.lastSyncedAt
-                  ? `last synced ${new Date(s.lastSyncedAt).toLocaleDateString()}`
-                  : `updated ${new Date(s.lastUpdatedAt).toLocaleDateString()}`}
-                {INGESTION_COPY[s.ingestionStatus] && (
-                  <>
-                    {' · '}
-                    <span className={s.ingestionStatus === 'error' ? 'text-vm-danger' : undefined}>
-                      {INGESTION_COPY[s.ingestionStatus]}
-                    </span>
-                  </>
+        {sources.data?.map((s) => {
+          const paused = pausedServingCopy(pausedServing(s));
+          // An ORIGIN tombstone (round 7 WP-4c #9) is gone at Drive / Notion / the
+          // site: there is no undo window and nothing to re-sync — say so, offer
+          // no Restore (served only if the list ever carries tombstones).
+          const removedAtOrigin = s.deletedBy === 'origin';
+          return (
+            <li key={s.sourceId} className="flex items-center justify-between gap-vm-3 py-vm-3">
+              <div className="min-w-0">
+                <div className="truncate text-vm-2">{s.name}</div>
+                <div className="text-vm-0 text-vm-text-muted">
+                  {originLabel(s.origin)} · {fmtBytes(s.sizeBytes)} ·{' '}
+                  {s.lastSyncedAt
+                    ? `last synced ${new Date(s.lastSyncedAt).toLocaleDateString()}`
+                    : `updated ${new Date(s.lastUpdatedAt).toLocaleDateString()}`}
+                  {INGESTION_COPY[s.ingestionStatus] && (
+                    <>
+                      {' · '}
+                      <span
+                        className={s.ingestionStatus === 'error' ? 'text-vm-danger' : undefined}
+                      >
+                        {INGESTION_COPY[s.ingestionStatus]}
+                      </span>
+                    </>
+                  )}
+                </div>
+                {paused && (
+                  <div className="text-vm-0 text-vm-warning" data-testid="knowledge-paused">
+                    {paused}
+                  </div>
+                )}
+                {removedAtOrigin && (
+                  <div
+                    className="text-vm-0 text-vm-text-muted"
+                    data-testid="knowledge-removed-at-origin"
+                  >
+                    Removed at its source, so it cannot be restored here — re-add it there and sync
+                    again.
+                  </div>
                 )}
               </div>
-            </div>
-            <div className="flex items-center gap-vm-2">
-              {s.ingestionStatus === 'error' && <StatusChip kind="action_needed" />}
-              {s.syncStatus && (
-                <StatusChip
-                  kind={
-                    // Explicit per-state mapping: only the two known-healthy
-                    // states may claim Connected. A sync status this build does
-                    // not recognize is unknown, and unknown must never render
-                    // as Connected (honest-states invariant) — it asks for
-                    // attention instead.
-                    s.syncStatus === 'paused_reconnect_needed'
-                      ? 'reconnect_needed'
-                      : s.syncStatus === 'synced' || s.syncStatus === 'syncing'
-                        ? 'connected'
-                        : 'action_needed'
-                  }
-                />
+              {removedAtOrigin ? null : (
+                <div className="flex items-center gap-vm-2">
+                  {s.ingestionStatus === 'error' && <StatusChip kind="action_needed" />}
+                  {s.syncStatus && (
+                    <StatusChip
+                      kind={
+                        // Explicit per-state mapping: only the two known-healthy
+                        // states may claim Connected. A sync status this build does
+                        // not recognize is unknown, and unknown must never render
+                        // as Connected (honest-states invariant) — it asks for
+                        // attention instead.
+                        s.syncStatus === 'paused_reconnect_needed'
+                          ? 'reconnect_needed'
+                          : s.syncStatus === 'synced' || s.syncStatus === 'syncing'
+                            ? 'connected'
+                            : 'action_needed'
+                      }
+                    />
+                  )}
+                  {s.syncStatus && (
+                    <Button variant="ghost" disabled={busy} onClick={() => resync(s)}>
+                      Re-sync
+                    </Button>
+                  )}
+                  <Button variant="ghost" onClick={() => setViewing(s)}>
+                    View
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      setRenaming(s);
+                      setRenameTo(s.name);
+                    }}
+                  >
+                    Rename
+                  </Button>
+                  {!s.syncStatus && (
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => {
+                        setReplacing(s);
+                        replaceRef.current?.click();
+                      }}
+                    >
+                      Replace file
+                    </Button>
+                  )}
+                  <Button variant="ghost" onClick={() => setToDelete(s)}>
+                    Delete
+                  </Button>
+                </div>
               )}
-              {s.syncStatus && (
-                <Button variant="ghost" disabled={busy} onClick={() => resync(s)}>
-                  Re-sync
-                </Button>
-              )}
-              <Button variant="ghost" onClick={() => setViewing(s)}>
-                View
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() => {
-                  setRenaming(s);
-                  setRenameTo(s.name);
-                }}
-              >
-                Rename
-              </Button>
-              {!s.syncStatus && (
-                <Button
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    setReplacing(s);
-                    replaceRef.current?.click();
-                  }}
-                >
-                  Replace file
-                </Button>
-              )}
-              <Button variant="ghost" onClick={() => setToDelete(s)}>
-                Delete
-              </Button>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
         {/* "Still loading", "we could not load" and "you have not added anything
             yet" are three different things; only the last invites an upload
             (P2-4). */}
@@ -741,13 +786,13 @@ export function KnowledgePillar() {
           <p className="text-vm-1 text-vm-danger" role="alert">
             We could not load this source right now.
           </p>
-        ) : !chunks.data?.length ? (
+        ) : !chunks.data?.chunks.length ? (
           <p className="text-vm-1 text-vm-text-muted">
             Nothing stored for this source yet — it may still be processing.
           </p>
         ) : (
           <ul className="max-h-80 space-y-vm-3 overflow-y-auto">
-            {chunks.data.slice(0, CHUNK_PREVIEW_LIMIT).map((c) => (
+            {chunks.data.chunks.slice(0, CHUNK_PREVIEW_LIMIT).map((c) => (
               <li
                 key={c.chunkId}
                 className="whitespace-pre-wrap rounded-vm-control border border-vm-border bg-vm-surface p-vm-3 text-vm-0"
@@ -755,11 +800,14 @@ export function KnowledgePillar() {
                 {c.text}
               </li>
             ))}
-            {chunks.data.length > CHUNK_PREVIEW_LIMIT && (
-              <li className="text-vm-0 text-vm-text-muted">
-                Showing the first {CHUNK_PREVIEW_LIMIT} of {chunks.data.length} pieces.
-              </li>
-            )}
+            {/* The served total (round 7 WP-4c #6) — never the page length, which
+                read "first 20 of 20" for a source of 300 pieces. An older server
+                that sends only the page gets no total claimed at all. */}
+            <ChunkCount
+              shown={Math.min(chunks.data.chunks.length, CHUNK_PREVIEW_LIMIT)}
+              served={chunks.data.chunks.length}
+              total={chunks.data.totalChunks}
+            />
           </ul>
         )}
       </Modal>
@@ -788,5 +836,31 @@ export function KnowledgePillar() {
         onConfirm={onDelete}
       />
     </Card>
+  );
+}
+
+/** "Showing the first N of <served total> pieces" — or nothing claimed when unknown. */
+function ChunkCount({
+  shown,
+  served,
+  total,
+}: {
+  shown: number;
+  served: number;
+  total: number | null;
+}) {
+  if (total !== null) {
+    if (total <= shown) return null;
+    return (
+      <li className="text-vm-0 text-vm-text-muted" data-testid="chunk-count">
+        Showing the first {shown} of {total} {total === 1 ? 'piece' : 'pieces'}.
+      </li>
+    );
+  }
+  if (served <= shown) return null;
+  return (
+    <li className="text-vm-0 text-vm-text-muted" data-testid="chunk-count">
+      Showing the first {shown} pieces.
+    </li>
   );
 }
