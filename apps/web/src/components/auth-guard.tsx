@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Banner } from '@luciel/ui';
 import { LucielApiError } from '@luciel/api-client';
 import { useSession } from '@/lib/hooks';
+import { ACCOUNT_CLOSED_PATH, isAccountClosedError, sessionIsClosed } from '@/lib/account-closed';
 
 /**
  * Client-side session guard for the dashboard surfaces. HONEST NOTE
@@ -14,6 +15,9 @@ import { useSession } from '@/lib/hooks';
  *   - 401 / no session  → /login
  *   - unverified        → /verify
  *   - verified, no Luciel → /first-run (handled where needed)
+ *   - CLOSED account      → /account-closed (round 7 WP-5 / D5): the session is
+ *     fine — the owner signed in — so it is never a bounce to /login; every
+ *     admin route would answer the typed 403 `account_closed` anyway.
  * This is a UX redirect, NOT a security control — the server is the authority.
  */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -30,13 +34,19 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     error instanceof LucielApiError &&
     (error.code === 'unauthorized' || error.code === 'verification_required');
   const unexplained = error !== null && !redirecting;
+  const closed = sessionIsClosed(data);
 
   React.useEffect(() => {
     if (error instanceof LucielApiError) {
-      if (error.code === 'unauthorized') router.replace('/login');
+      // A typed account_closed outranks the 403 → unauthorized mapping (D5).
+      if (isAccountClosedError(error)) router.replace(ACCOUNT_CLOSED_PATH);
+      else if (error.code === 'unauthorized') router.replace('/login');
       else if (error.code === 'verification_required') router.replace('/verify');
     } else if (data) {
-      if (data.nextRoute === 'verify_wall') router.replace('/verify');
+      // The served account state outranks nextRoute: a closed account still has a
+      // Luciel row in its grace window, so the server may say "dashboard".
+      if (sessionIsClosed(data)) router.replace(ACCOUNT_CLOSED_PATH);
+      else if (data.nextRoute === 'verify_wall') router.replace('/verify');
       else if (data.nextRoute === 'first_run') router.replace('/first-run');
     }
   }, [data, error, router]);
@@ -59,7 +69,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       </Banner>
     );
   }
-  if (!data || data.nextRoute !== 'dashboard') {
+  if (!data || closed || data.nextRoute !== 'dashboard') {
     // Redirecting; render nothing to avoid a flash of gated content.
     return null;
   }

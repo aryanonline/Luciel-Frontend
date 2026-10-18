@@ -9,6 +9,9 @@ interface AccountExportWire {
   download_url?: string;
   ttlDays?: number;
   ttl_days?: number;
+  // account.py serialises this one field by its alias (`emailOutcome`).
+  emailOutcome?: string;
+  email_outcome?: string;
 }
 
 /** Ingest endpoints take `file` + `name` as multipart form fields. */
@@ -228,12 +231,17 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         const raw = await t.post<AccountExportWire>('/api/v1/admin/account/export');
         const downloadUrl = raw?.downloadUrl ?? raw?.download_url;
         const ttlDays = raw?.ttlDays ?? raw?.ttl_days;
+        const emailOutcome = raw?.emailOutcome ?? raw?.email_outcome;
         return {
           ok: raw?.ok ?? true,
           ...(typeof downloadUrl === 'string' && downloadUrl ? { downloadUrl } : {}),
           ...(typeof ttlDays === 'number' ? { ttlDays } : {}),
+          ...(typeof emailOutcome === 'string' && emailOutcome ? { emailOutcome } : {}),
         };
       },
+      // The D5 reduced surface (round 7 WP-5): the status read and the reopen.
+      status: () => t.get('/api/v1/admin/account'),
+      reopen: () => t.post('/api/v1/admin/account/reopen'),
       close: (opts) =>
         t.post('/api/v1/admin/account/close', {
           confirmDeleteLuciel: opts?.confirmDeleteLuciel ?? false,

@@ -48,9 +48,12 @@ const DEV_EVAL = process.env.NODE_ENV === 'production' ? '' : " 'unsafe-eval'";
 
 /**
  * Path prefixes that belong to the (app) route group and require a session.
- * Must match the Next.js (app) group layout: /dashboard/*, /first-run/*.
+ * Must match the Next.js (app) group layout: /dashboard/*, /first-run/*, and the
+ * closed-account reduced page (round 7 WP-5 / D5). A closed account HAS a session —
+ * login succeeds — so this gate passes it through; the client guards then route it
+ * to /account-closed rather than letting a 403 bounce it to /login.
  */
-const APP_ROUTE_PREFIXES = ['/dashboard', '/first-run'];
+const APP_ROUTE_PREFIXES = ['/dashboard', '/first-run', '/account-closed'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

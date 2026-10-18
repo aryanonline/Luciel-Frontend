@@ -1,5 +1,5 @@
 import type { LucielApiClient, PageOptions } from '../client';
-import { LucielApiError } from '../schemas';
+import { LucielApiError, ACCOUNT_CLOSED } from '../schemas';
 import type {
   Account,
   AddonToolId,
@@ -34,6 +34,10 @@ import * as seed from './mock-data';
  *   - 'payg'            → payment method on file
  *   - 'paused'          → Luciel paused
  *   - 'grace'           → Luciel in 30-day grace window
+ *   - 'closed'          → account closed 3 days ago, inside its 30-day reopen
+ *                         window (D5): every admin route refuses with the typed
+ *                         403 `account_closed`; status/reopen/export still answer
+ *   - 'closed_window_passed' → closed 31 days ago: even the reduced surface refuses
  *
  * No network. Returned objects are clones so callers can't mutate seed state.
  */
@@ -45,7 +49,13 @@ export type MockScenario =
   | 'at_cap'
   | 'payg'
   | 'paused'
-  | 'grace';
+  | 'grace'
+  | 'closed'
+  | 'closed_window_passed';
+
+/** The D5 reopen window: 30 days from closure (close_purge.reopen_deadline). */
+const REOPEN_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface MockAdminOptions {
   scenario?: MockScenario;
@@ -211,6 +221,12 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     escalations: clone(seed.seedEscalations),
     analytics: clone(seed.seedAnalytics),
     audit: clone(seed.seedAudit),
+    /**
+     * The closure on record (D5): when it happened and the Luciel as it was before
+     * the closure deleted it (null when there was none, or it was already deleted —
+     * that deletion stays the owner's and reopening does not undo it).
+     */
+    closure: null as null | { closedAt: string; lucielBefore: Luciel | null },
   };
 
   // Apply scenario-derived state up front.
@@ -243,6 +259,17 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     state.luciel.state = 'luciel_grace_window';
     state.luciel.graceWindowStartedAt = '2026-06-10T12:00:00Z';
   }
+  if (state.scenario === 'closed' || state.scenario === 'closed_window_passed') {
+    // Relative to now, never a hard-coded date: the window is a wall-clock fact.
+    const ago = state.scenario === 'closed' ? 3 : 31;
+    const closedAt = new Date(Date.now() - ago * DAY_MS).toISOString();
+    state.closure = { closedAt, lucielBefore: state.luciel ? clone(state.luciel) : null };
+    state.account.state = 'closed';
+    if (state.luciel) {
+      state.luciel.state = 'luciel_grace_window';
+      state.luciel.graceWindowStartedAt = closedAt;
+    }
+  }
 
   const delay = () => (latency ? new Promise((r) => setTimeout(r, latency)) : Promise.resolve());
 
@@ -252,6 +279,27 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       throw new LucielApiError({ code: 'unauthorized', message: 'Session expired.' });
     }
   };
+  /** The closure's reopen deadline (null when no closure instant is on record). */
+  const reopenUntil = (): string | null =>
+    state.closure
+      ? new Date(new Date(state.closure.closedAt).getTime() + REOPEN_WINDOW_MS).toISOString()
+      : null;
+  const insideReopenWindow = () => {
+    const until = reopenUntil();
+    return until !== null && Date.now() < new Date(until).getTime();
+  };
+  /**
+   * The backend's typed 403 for a closed account (errors.py `account_closed`): a
+   * 403 maps to `unauthorized`, and the `reason` word + `detail` instants are what
+   * tell it apart from an expired session.
+   */
+  const accountClosed = () =>
+    new LucielApiError({
+      code: 'unauthorized',
+      message: 'Account closed.',
+      reason: ACCOUNT_CLOSED,
+      detail: { closedAt: state.closure?.closedAt ?? null, reopenUntil: reopenUntil() },
+    });
   const guardVerified = () => {
     guardSession();
     if (state.account.state === 'unverified') {
@@ -260,6 +308,22 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         message: 'Please verify your email to continue.',
       });
     }
+    // deps.current_admin: every admin route refuses a closed account (D5).
+    if (state.account.state === 'closed') throw accountClosed();
+  };
+  /**
+   * deps.current_account_owner: the D5 reduced surface — open, or closed and still
+   * inside the 30-day window. Past it, the same typed refusal.
+   */
+  const guardAccountOwner = () => {
+    guardSession();
+    if (state.account.state === 'unverified') {
+      throw new LucielApiError({
+        code: 'verification_required',
+        message: 'Please verify your email to continue.',
+      });
+    }
+    if (state.account.state === 'closed' && !insideReopenWindow()) throw accountClosed();
   };
 
   const ok = async <T>(value: T): Promise<T> => {
@@ -2040,15 +2104,60 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     },
 
     account: {
+      async status() {
+        guardAccountOwner();
+        if (state.account.state !== 'closed') {
+          return ok({
+            state: state.account.state,
+            closedAt: null,
+            reopenUntil: null,
+            canReopen: false,
+            lucielRestoredOnReopen: false,
+          });
+        }
+        return ok({
+          state: state.account.state,
+          closedAt: state.closure?.closedAt ?? null,
+          reopenUntil: reopenUntil(),
+          canReopen: insideReopenWindow(),
+          lucielRestoredOnReopen:
+            state.closure?.lucielBefore != null && state.luciel?.state === 'luciel_grace_window',
+        });
+      },
+      async reopen() {
+        guardAccountOwner();
+        await delay();
+        if (state.account.state !== 'closed') {
+          throw new LucielApiError({ code: 'conflict', message: 'This account is not closed.' });
+        }
+        const before = state.closure?.lucielBefore ?? null;
+        const restored = before !== null && state.luciel?.state === 'luciel_grace_window';
+        if (restored && state.luciel) {
+          // Back to the state it had before the closure: active, or paused if paused.
+          state.luciel.state = before.state === 'paused' ? 'paused' : 'active';
+          delete state.luciel.graceWindowStartedAt;
+        }
+        state.account.state = 'verified';
+        state.closure = null;
+        return clone({
+          state: 'verified' as const,
+          lucielRestored: restored,
+          lucielState: restored ? (state.luciel?.state ?? null) : null,
+          billingState: state.billing.budget.billingState,
+        });
+      },
       async requestExport() {
-        guardVerified();
+        // Also the D5 re-request: a closed account inside its window may ask again.
+        guardAccountOwner();
         // The bundle's time-limited link comes back in the body as well as by email
         // (round 7 WP-10, item 12) — the mock hands back the same shape the backend
-        // does, so the UI can show the link and the link's life.
+        // does, so the UI can show the link, the link's life and whether the email
+        // carrying it actually left (round 7 WP-5).
         return ok({
           ok: true,
           downloadUrl: `${MOCK_AUTHORIZE_ORIGIN}/api/v1/admin/account/export/${nextId()}`,
           ttlDays: 7,
+          emailOutcome: 'sent',
         });
       },
       async close(opts) {
@@ -2064,8 +2173,17 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
               'Your Luciel is still active. Delete it first, or confirm that closing the account deletes it.',
           });
         }
+        // The closure deletes a Luciel still serving: it enters its grace window,
+        // which is what a reopen inside the 30 days brings it back from (D5).
+        const serving =
+          state.luciel && (state.luciel.state === 'active' || state.luciel.state === 'paused');
+        const closedAt = new Date().toISOString();
+        state.closure = { closedAt, lucielBefore: serving ? clone(state.luciel) : null };
+        if (serving && state.luciel) {
+          state.luciel.state = 'luciel_grace_window';
+          state.luciel.graceWindowStartedAt = closedAt;
+        }
         state.account.state = 'closed';
-        state.luciel = null;
         await delay();
       },
     },

@@ -1,6 +1,8 @@
 import type {
   Session,
   AccountExportResult,
+  AccountStatus,
+  ReopenResult,
   SignupRequest,
   LoginRequest,
   ForgotPasswordRequest,
@@ -479,11 +481,26 @@ export interface LucielApiClient {
 
   account: {
     /**
+     * The account's lifecycle status (round 7 WP-5 / owner decision D5): GET
+     * /admin/account — the one read a CLOSED account may make inside its 30-day
+     * window. Every other admin route answers a closed account with the typed 403
+     * `account_closed` (`LucielApiError.reason`; see `accountClosedDetail`). Past the
+     * window this read refuses the same way, `reopenUntil` now in the past.
+     */
+    status(): Promise<AccountStatus>;
+    /**
+     * Reopen a closed account inside its 30-day window (D5). `conflict` when the
+     * account is not closed, or the window closed in between.
+     */
+    reopen(): Promise<ReopenResult>;
+    /**
      * Self-serve export (Arch §3.6.6 / §5.10; round 7 WP-10, item 12). The bundle
      * is built and stored, and the time-limited link comes back HERE as well as by
      * email — so an email that never arrives is not the owner's only path to their
      * own data. `downloadUrl`/`ttlDays` are optional only for an older server's bare
      * `{ ok: true }`; the UI then falls back to the email sentence alone.
+     * `emailOutcome` says whether that email actually left (round 7 WP-5). Also the
+     * RE-REQUEST on the closed-account page (D5).
      */
     requestExport(): Promise<AccountExportResult>;
     /**
