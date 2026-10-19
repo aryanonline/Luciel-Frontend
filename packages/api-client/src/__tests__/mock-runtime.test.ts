@@ -249,3 +249,20 @@ describe('scenario shapes the walk relies on', () => {
     expect(newest).toMatchObject({ eventType: 'lifecycle_transition', detail: 'active → paused' });
   });
 });
+
+describe('mock parity the walk relies on', () => {
+  it('Twilio takes its credential form as the fallback to OAuth (service.py _takes_form)', async () => {
+    const api = createLucielClient({ adapter: 'mock' });
+    await api.connections.start('sms_sender', 'twilio');
+    const row = (await api.connections.list()).find((c) => c.connectionType === 'sms_sender')!;
+    const saved = await api.connections.submitCredentials(row.connectionId, {
+      accountSid: 'AC00000000000000000000000000000001',
+      authToken: 'test-auth-token',
+    });
+    // An account on file with no designated number is not live (§3.1.4).
+    expect(saved.status).toBe('unconfigured');
+    expect(saved.statusDetail).toMatch(/^Action needed: add your number/);
+    expect(saved.nonSecretConfig?.accountSid).toBe('AC00000000000000000000000000000001');
+    expect(saved.nonSecretConfig).not.toHaveProperty('authToken');
+  });
+});

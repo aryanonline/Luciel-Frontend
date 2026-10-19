@@ -182,7 +182,7 @@ export interface MockControl {
   scenario: () => MockScenario;
   /** The next `times` calls to `method` ("leads.archive") fail with a typed error. */
   failNext: (method: string, times?: number, code?: ApiErrorCode) => void;
-  /** Extra latency (ms) on every call from now on — 0 turns it off. */
+  /** Extra latency (ms) on every call from now on, across reloads — 0 turns it off. */
   setExtraLatency: (ms: number) => void;
   /** The visitor's side ended this conversation (§3.4.8) while the page still shows it open. */
   endSession: (sessionId: string) => void;
@@ -451,8 +451,6 @@ interface OauthAttempt {
 
 export function createMockAdminClient(options: MockAdminOptions = {}): LucielApiClient {
   const latency = options.latencyMs ?? 0;
-  /** Extra latency the e2e control adds to every call (never persisted). */
-  let extraLatency = 0;
 
   // Round 7 WP-12: in a browser the scenario is chosen at RUNTIME — the query
   // parameter (remembered in the cookie) or the cookie — never by the build.
@@ -518,6 +516,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     pendingStripe: null as null | 'checkout' | 'portal',
     /** Failures the e2e control injected, by "namespace.method" (browser runtime). */
     faults: {} as Record<string, { times: number; code: ApiErrorCode }>,
+    /** Extra latency (ms) the e2e control adds to every call — persisted, so a slow
+     *  read can be shown on the page load that follows (browser runtime). */
+    extraLatency: 0,
   };
 
   // The served, read-only voice disclosure preview (settled contract, round 7).
@@ -2544,7 +2545,15 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const option = seed.seedConnectionProviders
           .find((p) => p.connectionType === c.connectionType)
           ?.providers.find((p) => p.provider === c.provider);
-        if (!option || option.authKind !== 'credential_form') {
+        // connections/service.py `_takes_form`: a credential-form provider, OR an
+        // OAuth-primary one that keeps its form as the explicit fallback (Twilio, C10 —
+        // "Use API keys instead"). The mock refused the fallback, so that path was
+        // unwalkable on the mock (round 7 WP-12, caught by the customer walk).
+        const takesForm =
+          option !== undefined &&
+          (option.authKind === 'credential_form' ||
+            (option.authKind === 'oauth' && option.credentialFields.length > 0));
+        if (!option || !takesForm) {
           throw new LucielApiError({
             code: 'validation_error',
             // The backend's own refusal wording for a provider that takes no form (a
@@ -3244,7 +3253,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       const key = `${nsName}.${method}`;
       ns[method] = async (...args: unknown[]) => {
         try {
-          if (extraLatency) await new Promise((r) => setTimeout(r, extraLatency));
+          if (state.extraLatency) await new Promise((r) => setTimeout(r, state.extraLatency));
           const fault = state.faults[key];
           if (fault && fault.times > 0) {
             fault.times -= 1;
@@ -3267,7 +3276,8 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       persist();
     },
     setExtraLatency: (ms) => {
-      extraLatency = Math.max(0, ms);
+      state.extraLatency = Math.max(0, ms);
+      persist();
     },
     endSession: (sessionId) => {
       const c = state.conversations.find((x) => x.sessionId === sessionId);
