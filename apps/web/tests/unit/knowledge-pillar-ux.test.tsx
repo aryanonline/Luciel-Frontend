@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { screen, fireEvent, waitFor, within, render } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderWithQuery } from './test-utils';
 import { KnowledgePillar } from '@/components/config/knowledge-pillar';
 import type { KnowledgeQuota, KnowledgeSource } from '@luciel/api-client';
@@ -216,5 +217,38 @@ describe('a refused shrink becomes a decision (F107)', () => {
     expect(
       await screen.findByText(/3 source\(s\) removed to match the source/),
     ).toBeInTheDocument();
+  });
+});
+
+describe('a finished crawl shows up under Connected sources at once (round 7 WP-12)', () => {
+  it('re-reads the connections, so the crawl can be re-synced or removed without a reload', async () => {
+    syncConnection.mockResolvedValue({
+      added: ['https://walk.example.com/'],
+      updated: [],
+      removed: [],
+    });
+    // The app's own staleness (query-provider.tsx): nothing refetches on its own.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <KnowledgePillar />
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Price list.pdf');
+    await screen.findByRole('list', { name: 'Connected sources' });
+    fireEvent.click(screen.getByRole('button', { name: 'Crawl a website' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Crawl a website' });
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.change(within(dialog).getByLabelText(/Page address/), {
+      target: { value: 'https://walk.example.com/' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Crawl this site' }));
+    const connected = await screen.findByRole('list', { name: 'Connected sources' });
+    const row = (await within(connected).findByText('https://walk.example.com/')).closest(
+      'li',
+    ) as HTMLElement;
+    expect(within(row).getByRole('button', { name: 'Remove crawl' })).toBeInTheDocument();
   });
 });

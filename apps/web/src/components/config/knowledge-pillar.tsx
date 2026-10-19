@@ -270,6 +270,10 @@ export function KnowledgePillar() {
     });
     qc.invalidateQueries({ queryKey: qk.knowledge });
     qc.invalidateQueries({ queryKey: qk.quota });
+    // The crawl IS a connection (GET /connections lists it): without this re-read
+    // "Connected sources" did not show it — nor offer Re-sync / Remove crawl —
+    // until the page was reloaded (round 7 WP-12, caught by the customer walk).
+    qc.invalidateQueries({ queryKey: qk.connections });
   };
 
   const renameSource = async () => {
@@ -307,6 +311,9 @@ export function KnowledgePillar() {
   const connectProvider = (provider: KnowledgeSyncProvider, label: string) =>
     run(async () => {
       const connection = await api.knowledge.startSyncConnection(provider);
+      // The start creates the connection row; when the browser does not leave (an
+      // "Action needed" answer), the list must show it now, not after a reload.
+      void qc.invalidateQueries({ queryKey: qk.connections });
       if (connection.status === 'connected') return `${label} is connected and will sync.`;
       const authorizeUrl = connection.nonSecretConfig?.authorize_url;
       return (

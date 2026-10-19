@@ -53,6 +53,16 @@ bundle.
   page shows after it must have come back from the mock's persisted store.
   `support/provider-stubs.ts` stands in for Stripe Checkout / the Billing Portal and the
   OAuth consent host, returning exactly the way the provider + backend callback would.
+- `tests/e2e/walk/customer-walk.spec.ts` (round 7 WP-12, project `walk`) — the customer-style
+  walk, in order: sign in, Today card, every Configure pillar, Embed + allowlist + Test it
+  here, Conversations, Leads, Analytics, Audit, the walk's own knowledge deleted again,
+  Billing, Pause/Resume, Delete/Restore, Close/Re-export/Reopen. `walk/walk-kit.ts`'s
+  `Walk.mutate` runs every write the honest way — (mock) an injected failure first, the
+  pending label while slowed, the success, then a reload. A success check must not pass
+  while the call is still pending (a button relabelled "Restoring…" is not "restored"), or
+  the reload cuts the write off. Timings (each pillar, time to the first GROUNDED answer —
+  judged from the evidence panel, the widget reply carries no attribution) are report
+  annotations. ~4–5 minutes on the mock.
 
 ## Invariants owned here
 
