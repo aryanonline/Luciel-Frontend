@@ -35,7 +35,11 @@ bundle.
 - `src/components/connection-chip.tsx` — status-chip presentation bridge.
 - `src/lib/api.ts` and `src/lib/hooks.ts` — typed control-plane client and queries.
 - `tests/unit/` — focused UI behavior and regression tests.
-- `tests/e2e/a11y.spec.ts` — browser accessibility coverage.
+- `tests/e2e/a11y.spec.ts` — the WCAG 2.1 AA gate over EVERY route (round 7 WP-12: 23 today).
+  Each entry names the page's own heading and waits for it (and for no "Loading…") before
+  axe runs; the last test fails when a `page.tsx` is added without an entry. A page that
+  exists in one account state runs under that scenario (first-run → fresh, account-closed →
+  closed).
 - `tests/e2e/journey.spec.ts` — the mock-adapter customer walk (overview → configure →
   embed → conversations → leads → billing); `tests/e2e/live-smoke.spec.ts` — the opt-in,
   read-only walk of a deployed environment; `tests/e2e/mock-session.ts` — the planted
