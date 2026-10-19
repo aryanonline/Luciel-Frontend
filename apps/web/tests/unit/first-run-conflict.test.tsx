@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import * as React from 'react';
+import { screen, fireEvent, waitFor, render } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderWithQuery } from './test-utils';
 import FirstRunPage from '@/app/(app)/first-run/page';
-import { LucielApiError } from '@luciel/api-client';
+import { LucielApiError, type Session } from '@luciel/api-client';
+import { qk } from '@/lib/hooks';
 
 /**
  * First-run resilience (found live on dev, 2026-08-10): the very first thing a
@@ -19,16 +22,34 @@ vi.mock('next/navigation', () => ({
 }));
 
 const create = vi.fn();
+const me = vi.fn();
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
     api: {
       ...actual.api,
+      auth: { ...actual.api.auth, me: () => me() },
       luciel: { ...actual.api.luciel, create: (req: unknown) => create(req) },
     },
   };
 });
+
+const session = (nextRoute: Session['nextRoute']): Session =>
+  ({
+    account: {
+      adminId: '11111111-1111-4111-8111-111111111111',
+      userId: '22222222-2222-4222-8222-222222222222',
+      email: 'owner@example.com',
+      state: 'verified',
+      createdAt: '2026-01-15T14:00:00Z',
+      emailVerified: true,
+      hasCompletedFirstRun: nextRoute === 'dashboard',
+      hasLuciel: nextRoute === 'dashboard',
+    },
+    nextRoute,
+    notices: [],
+  }) as Session;
 
 async function fillAndSubmit() {
   fireEvent.change(screen.getByLabelText(/what should we call/i), {
@@ -50,7 +71,10 @@ beforeEach(() => {
 describe('first-run create resilience', () => {
   it('a 409 (Luciel already exists) routes to configure instead of claiming failure', async () => {
     create.mockRejectedValueOnce(
-      new LucielApiError({ code: 'conflict', message: 'A Luciel already exists for this account.' }),
+      new LucielApiError({
+        code: 'conflict',
+        message: 'A Luciel already exists for this account.',
+      }),
     );
     renderWithQuery(<FirstRunPage />);
     await fillAndSubmit();
@@ -60,9 +84,7 @@ describe('first-run create resilience', () => {
   });
 
   it('a real failure still returns to the form with the error banner', async () => {
-    create.mockRejectedValueOnce(
-      new LucielApiError({ code: 'server_error', message: 'boom' }),
-    );
+    create.mockRejectedValueOnce(new LucielApiError({ code: 'server_error', message: 'boom' }));
     renderWithQuery(<FirstRunPage />);
     await fillAndSubmit();
 
@@ -79,5 +101,37 @@ describe('first-run create resilience', () => {
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/configure'));
     expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  // Round 7 WP-12 (the `fresh` scenario walk): the session cached at login still said
+  // `first_run`, so the dashboard guard bounced the owner straight back here after a
+  // create that had succeeded. The session is re-read BEFORE leaving first-run.
+  it.each([
+    ['success', () => create.mockResolvedValueOnce({ id: 'l1' })],
+    [
+      'a 409 (already exists)',
+      () =>
+        create.mockRejectedValueOnce(
+          new LucielApiError({ code: 'conflict', message: 'A Luciel already exists.' }),
+        ),
+    ],
+  ])('%s: the cached session says dashboard by the time it navigates', async (_label, arrange) => {
+    arrange();
+    me.mockResolvedValue(session('dashboard'));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(qk.session, session('first_run'));
+    let routeAtNavigation: string | undefined;
+    replace.mockImplementation(() => {
+      routeAtNavigation = client.getQueryData<Session>(qk.session)?.nextRoute;
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <FirstRunPage />
+      </QueryClientProvider>,
+    );
+    await fillAndSubmit();
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/configure'));
+    expect(me).toHaveBeenCalled();
+    expect(routeAtNavigation).toBe('dashboard');
   });
 });

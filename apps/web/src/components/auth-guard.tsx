@@ -20,6 +20,20 @@ import { ACCOUNT_CLOSED_PATH, isAccountClosedError, sessionIsClosed } from '@/li
  *     admin route would answer the typed 403 `account_closed` anyway.
  * This is a UX redirect, NOT a security control — the server is the authority.
  */
+/**
+ * Round 7 WP-12: the session cookie was present (the middleware let the page
+ * through) but the API refused it — it expired, or a password reset revoked it.
+ * Say so on the login page (`reason=session_expired`) instead of dropping the
+ * owner there with no explanation, and keep where they were going.
+ */
+export const SESSION_EXPIRED_REASON = 'session_expired';
+function sessionExpiredLogin(): string {
+  const params = new URLSearchParams({ reason: SESSION_EXPIRED_REASON });
+  const here = typeof window !== 'undefined' ? window.location.pathname : '';
+  if (here.startsWith('/') && !here.startsWith('//') && here !== '/') params.set('next', here);
+  return `/login?${params.toString()}`;
+}
+
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { data, isLoading, error, refetch } = useSession();
@@ -40,7 +54,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (error instanceof LucielApiError) {
       // A typed account_closed outranks the 403 → unauthorized mapping (D5).
       if (isAccountClosedError(error)) router.replace(ACCOUNT_CLOSED_PATH);
-      else if (error.code === 'unauthorized') router.replace('/login');
+      else if (error.code === 'unauthorized') router.replace(sessionExpiredLogin());
       else if (error.code === 'verification_required') router.replace('/verify');
     } else if (data) {
       // The served account state outranks nextRoute: a closed account still has a

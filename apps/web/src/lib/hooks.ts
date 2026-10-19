@@ -48,6 +48,16 @@ export const qk = {
 
 export const useSession = () =>
   useQuery({ queryKey: qk.session, queryFn: () => api.auth.me(), retry: false });
+/**
+ * Re-read the session NOW, whether or not anything observes it (round 7 WP-12). A
+ * session cached by the login page (setQueryData) carries no query function, so an
+ * invalidation alone never refetched it. A failed read leaves the cache as it was —
+ * the guard then asks again itself.
+ */
+export const refreshSession = (qc: ReturnType<typeof useQueryClient>) =>
+  qc
+    .fetchQuery({ queryKey: qk.session, queryFn: () => api.auth.me(), staleTime: 0 })
+    .catch(() => undefined);
 export const useLuciel = () => useQuery({ queryKey: qk.luciel, queryFn: () => api.luciel.get() });
 export const useBilling = () =>
   useQuery({ queryKey: qk.billing, queryFn: () => api.billing.get() });
@@ -289,10 +299,12 @@ export function useLucielMutations() {
   return {
     create: useMutation({
       mutationFn: (req: CreateLucielRequest) => api.luciel.create(req),
-      onSuccess: () => {
-        invalidate();
-        qc.invalidateQueries({ queryKey: qk.session });
-      },
+      // Returned, and the session re-read even though nothing on first-run observes it:
+      // the cached session still says `first_run`, and the dashboard guard read that
+      // stale answer and bounced the owner straight back to first-run after a create
+      // that had succeeded (round 7 WP-12, caught by the `fresh` scenario walk).
+      // `mutateAsync` resolves once the served session is in.
+      onSuccess: () => Promise.all([invalidate(), refreshSession(qc)]),
     }),
     updateChannels: useMutation({
       mutationFn: (c: ChannelConfig[]) => api.luciel.updateChannels(c),

@@ -565,6 +565,32 @@ export const seedLeads: Lead[] = [
     lastActivityAt: '2026-06-13T23:47:00Z',
     createdAt: '2026-06-13T23:42:00Z',
   },
+  // Round 7 WP-12: the walk needs a lead already in the CRM and an archived one, so
+  // prune, erase and un-archive each have a row of their own. Neither is a backfill
+  // candidate (synced / archived), so the CRM backfill counts stay Jordan's alone.
+  {
+    leadId: '99999999-9999-4999-8999-999999999998',
+    name: 'Priya S.',
+    contactIdentifier: 'priya.s@example.com',
+    email: 'priya.s@example.com',
+    intent: 'Quote for quarterly bookkeeping',
+    state: 'active',
+    outcome: 'in_progress',
+    lastActivityAt: '2026-06-10T15:20:00Z',
+    createdAt: '2026-06-10T15:00:00Z',
+    crmStatus: 'synced',
+    crmPushedAt: '2026-06-10T15:21:00Z',
+  },
+  {
+    leadId: '99999999-9999-4999-8999-999999999997',
+    name: 'Sam R.',
+    contactIdentifier: '+16045550199',
+    intent: 'Asked about weekend availability',
+    state: 'archived',
+    outcome: 'lost',
+    lastActivityAt: '2026-05-02T18:00:00Z',
+    createdAt: '2026-05-02T17:45:00Z',
+  },
 ];
 
 export const seedEscalations: EscalationEvent[] = [

@@ -174,7 +174,7 @@ describe('the reduced page', () => {
 
     expect(await screen.findByText(new RegExp(`ended on ${day(ended)}`))).toBeInTheDocument();
     expect(screen.queryAllByRole('button')).toHaveLength(0);
-    expect(replace).not.toHaveBeenCalledWith('/login');
+    expect(replace).not.toHaveBeenCalledWith(expect.stringMatching(/^\/login/));
   });
 
   it('an account that is open is sent to the dashboard', async () => {
@@ -199,7 +199,7 @@ describe('every guard routes a closed account to the reduced page, never to /log
       </AuthGuard>,
     );
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/account-closed'));
-    expect(replace).not.toHaveBeenCalledWith('/login');
+    expect(replace).not.toHaveBeenCalledWith(expect.stringMatching(/^\/login/));
     expect(screen.queryByText('dashboard content')).not.toBeInTheDocument();
   });
 
@@ -211,7 +211,7 @@ describe('every guard routes a closed account to the reduced page, never to /log
       </AuthGuard>,
     );
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/account-closed'));
-    expect(replace).not.toHaveBeenCalledWith('/login');
+    expect(replace).not.toHaveBeenCalledWith(expect.stringMatching(/^\/login/));
   });
 
   it('AuthGuard: a plain 401 still goes to /login', async () => {
@@ -223,7 +223,8 @@ describe('every guard routes a closed account to the reduced page, never to /log
         <p>dashboard content</p>
       </AuthGuard>,
     );
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'));
+    // Round 7 WP-12: with the reason the login page explains.
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/login?reason=session_expired'));
   });
 
   it('login: a closed account lands on /account-closed whatever nextRoute says', async () => {

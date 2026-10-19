@@ -7,6 +7,8 @@ import {
 } from '../schemas';
 import type {
   Account,
+  ApiErrorCode,
+  AuditEvent,
   AddonToolId,
   ChannelId,
   Luciel,
@@ -123,9 +125,185 @@ export interface MockAdminOptions {
   scenario?: MockScenario;
   /** Artificial latency (ms) so loading states are exercisable. */
   latencyMs?: number;
+  /**
+   * The browser runtime (round 7 WP-12). `'browser'` reads the page's own
+   * location / cookies / sessionStorage; a {@link MockRuntime} object injects
+   * them (unit tests). Absent — every unit test — the client is a fresh,
+   * in-memory store with the scenario fixed at construction, exactly as before.
+   */
+  runtime?: 'browser' | MockRuntime;
+}
+
+/**
+ * What the mock reads from, and writes to, the page it runs in (round 7 WP-12).
+ *
+ *  - The SCENARIO is chosen at runtime, never at build time: `?mock_scenario=<name>`
+ *    (which also sets the cookie, so the choice survives navigation) or the
+ *    `luciel_mock_scenario` cookie. Neither present → the build's default.
+ *  - The STORE persists in sessionStorage after every call, so a reload reads back
+ *    what a mutation wrote: the mock is the server, and a page that only kept a
+ *    change in component state shows the served value again after a reload.
+ *    A different scenario (or `?mock_reset=1`) starts from that scenario's seed.
+ *  - The SESSION cookie is modelled: login sets the presence cookie the middleware
+ *    gates on, logout clears it (the real backend's Set-Cookie, for a mock that has
+ *    no server to send one).
+ *  - Provider round-trips land the way the backend lands them: a consent screen
+ *    (stubbed by the e2e suite) returns to `/dashboard/configure?status=connected
+ *    &connectionId=…`, and the attempt that minted the URL is redeemed — the
+ *    callback the backend runs before its 303. Stripe Checkout returns with
+ *    `?checkout=success` (the backend's success_url) and the open session is
+ *    completed — the webhook the backend would have received first. The Billing
+ *    Portal returns to a bare `/dashboard/billing`, so the stub says what happened
+ *    there with `mock_stripe=portal_card_updated`.
+ *  - A control surface (`window.__lucielMock`) lets an e2e walk inject a failure
+ *    into the next call, slow the next calls down so a pending state is visible,
+ *    end a conversation mid-takeover, or revoke a knowledge grant at the provider.
+ */
+export interface MockRuntime {
+  /** The page's `location.search`. */
+  search: string;
+  /** The page's `location.pathname`. */
+  pathname?: string;
+  /** Reads `document.cookie`. */
+  readCookie: () => string;
+  /** Writes one `document.cookie` assignment. */
+  writeCookie: (cookie: string) => void;
+  /** Where the store persists (sessionStorage); null = in-memory only. */
+  storage: MockStorage | null;
+  /** Installs the e2e control surface (on `window.__lucielMock` in a browser). */
+  installControl?: (control: MockControl) => void;
+}
+
+export type MockStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+/** The e2e control surface (round 7 WP-12). Mock-only; the http adapter has none. */
+export interface MockControl {
+  /** The scenario this store was seeded from. */
+  scenario: () => MockScenario;
+  /** The next `times` calls to `method` ("leads.archive") fail with a typed error. */
+  failNext: (method: string, times?: number, code?: ApiErrorCode) => void;
+  /** Extra latency (ms) on every call from now on — 0 turns it off. */
+  setExtraLatency: (ms: number) => void;
+  /** The visitor's side ended this conversation (§3.4.8) while the page still shows it open. */
+  endSession: (sessionId: string) => void;
+  /** The provider revoked this knowledge grant; the row still says connected until a sync. */
+  revokeKnowledgeGrant: (connectionId: string) => void;
+  /** Drop the persisted store; the next page load starts from the scenario's seed. */
+  reset: () => void;
+}
+
+/** `?mock_scenario=<name>` selects a scenario for this tab (and sets the cookie). */
+export const MOCK_SCENARIO_PARAM = 'mock_scenario';
+/** The cookie the mock reads its scenario from (set by the e2e projects, or the param). */
+export const MOCK_SCENARIO_COOKIE = 'luciel_mock_scenario';
+/** `?mock_reset=1` drops the persisted store. */
+export const MOCK_RESET_PARAM = 'mock_reset';
+/** The sessionStorage key the store persists under. */
+export const MOCK_STORE_KEY = 'luciel.mock.store.v1';
+/** The session-presence cookie (middleware.ts / app/config.py session_cookie_name). */
+const SESSION_COOKIE = 'luciel_session';
+/** The Billing Portal stub says what the owner did there (the real return URL is bare). */
+const MOCK_STRIPE_PARAM = 'mock_stripe';
+
+export const MOCK_SCENARIOS: readonly MockScenario[] = [
+  'verified',
+  'unverified',
+  'fresh',
+  'expired_session',
+  'at_cap',
+  'payg',
+  'paused',
+  'grace',
+  'closed',
+  'closed_window_passed',
+  'escalation_sms',
+  'knowledge_states',
+];
+
+const isScenario = (value: string | null | undefined): value is MockScenario =>
+  typeof value === 'string' && (MOCK_SCENARIOS as readonly string[]).includes(value);
+
+const readCookieValue = (cookies: string, name: string): string | null => {
+  for (const part of cookies.split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return decodeURIComponent(rest.join('='));
+  }
+  return null;
+};
+
+/**
+ * Which scenario the page asked for: the query parameter first (it is the
+ * explicit "start this scenario" and is remembered in the cookie), then the
+ * cookie. Null when neither names a known scenario.
+ */
+export function resolveMockScenario(
+  search: string,
+  cookies: string,
+): { scenario: MockScenario | null; fromQuery: boolean } {
+  const fromQuery = new URLSearchParams(search).get(MOCK_SCENARIO_PARAM);
+  if (isScenario(fromQuery)) return { scenario: fromQuery, fromQuery: true };
+  const fromCookie = readCookieValue(cookies, MOCK_SCENARIO_COOKIE);
+  return { scenario: isScenario(fromCookie) ? fromCookie : null, fromQuery: false };
+}
+
+/** The page's own location, cookies and sessionStorage — every access guarded. */
+function browserRuntime(): MockRuntime | undefined {
+  const g = globalThis as unknown as {
+    document?: { cookie: string };
+    location?: { search: string; pathname: string };
+    sessionStorage?: MockStorage;
+    __lucielMock?: MockControl;
+  };
+  if (!g.document || !g.location) return undefined;
+  let storage: MockStorage | null = null;
+  try {
+    storage = g.sessionStorage ?? null;
+  } catch {
+    storage = null; // blocked storage: the store lives in memory for this page
+  }
+  return {
+    search: g.location.search,
+    pathname: g.location.pathname,
+    readCookie: () => {
+      try {
+        return g.document?.cookie ?? '';
+      } catch {
+        return '';
+      }
+    },
+    writeCookie: (cookie) => {
+      try {
+        if (g.document) g.document.cookie = cookie;
+      } catch {
+        /* cookies blocked: nothing to model */
+      }
+    },
+    storage,
+    installControl: (control) => {
+      g.__lucielMock = control;
+    },
+  };
 }
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+/** Bumped whenever the persisted state's shape changes; an older store is ignored. */
+const STORE_VERSION = 1;
+
+/** The persisted store, or null when absent, unreadable or from another version. */
+function readStore(storage: MockStorage): { seededScenario: MockScenario; state: object } | null {
+  try {
+    const raw = storage.getItem(MOCK_STORE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { v?: number; seededScenario?: string; state?: object };
+    if (parsed.v !== STORE_VERSION || !isScenario(parsed.seededScenario) || !parsed.state) {
+      return null;
+    }
+    return { seededScenario: parsed.seededScenario, state: parsed.state };
+  } catch {
+    return null;
+  }
+}
 
 /** Mirrors the backend's lead export columns so mock ↔ http downloads match. */
 function toCsv(rows: Record<string, string>[]): string {
@@ -167,6 +345,15 @@ export const MOCK_AUTHORIZE_ORIGIN = 'https://accounts.example.com';
 const SCOPE_KINDS: Partial<Record<KnowledgeSyncProvider, KnowledgeScopeKind>> = {
   google_drive: 'drive_folders',
   notion: 'notion_pages',
+};
+
+/** The served human label of a knowledge connection row (connections registry). */
+const KNOWLEDGE_DISPLAY_NAME: Partial<Record<KnowledgeSyncProvider, string>> = {
+  google_drive: 'Google Drive',
+  notion: 'Notion',
+  hubspot: 'HubSpot knowledge base',
+  salesforce: 'Salesforce knowledge base',
+  website_crawl: 'Website crawl',
 };
 
 /** What the owner may pick, per provider. Absent ⇒ nothing to narrow (409). */
@@ -255,12 +442,32 @@ const pageOf = <T>(rows: T[], page?: PageOptions): T[] => {
   return rows.slice(offset, offset + limit);
 };
 
+/** A consent URL minted for a connection, waiting for its provider round-trip. */
+interface OauthAttempt {
+  provider: string;
+  /** Which completion the backend's callback would run for it. */
+  kind: 'connection' | 'knowledge';
+}
+
 export function createMockAdminClient(options: MockAdminOptions = {}): LucielApiClient {
   const latency = options.latencyMs ?? 0;
+  /** Extra latency the e2e control adds to every call (never persisted). */
+  let extraLatency = 0;
+
+  // Round 7 WP-12: in a browser the scenario is chosen at RUNTIME — the query
+  // parameter (remembered in the cookie) or the cookie — never by the build.
+  const runtime = options.runtime === 'browser' ? browserRuntime() : options.runtime;
+  const chosen = runtime
+    ? resolveMockScenario(runtime.search, runtime.readCookie())
+    : { scenario: null, fromQuery: false };
+  if (runtime && chosen.fromQuery && chosen.scenario) {
+    runtime.writeCookie(`${MOCK_SCENARIO_COOKIE}=${chosen.scenario}; path=/; SameSite=Lax`);
+  }
+  const seededScenario: MockScenario = chosen.scenario ?? options.scenario ?? 'verified';
 
   // Mutable in-memory state, seeded from the deterministic fixtures.
   const state = {
-    scenario: options.scenario ?? 'verified',
+    scenario: seededScenario as MockScenario,
     account: clone(seed.seedAccount),
     luciel: clone(seed.seedLuciel) as Luciel | null,
     billing: clone(seed.seedBilling),
@@ -299,6 +506,18 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     revokedGrants: [] as string[],
     /** Synced sources whose item is gone at the origin (the next sync tombstones them). */
     removedAtOrigin: [] as string[],
+    /** The deterministic id counter — part of the store so a reload never reuses an id. */
+    seq: 0,
+    /** Drives the mock contact form's anti-spam rate limit. */
+    contactSubmissions: 0,
+    /** `${sessionId}:${messageId}` the owner flagged (messages.flagged_by_admin_at). */
+    flaggedAnswers: [] as string[],
+    /** Consent URLs minted and not yet redeemed, by connection id (browser runtime). */
+    oauthAttempts: {} as Record<string, OauthAttempt>,
+    /** The Stripe session the owner was last sent to (browser runtime). */
+    pendingStripe: null as null | 'checkout' | 'portal',
+    /** Failures the e2e control injected, by "namespace.method" (browser runtime). */
+    faults: {} as Record<string, { times: number; code: ApiErrorCode }>,
   };
 
   // The served, read-only voice disclosure preview (settled contract, round 7).
@@ -318,13 +537,35 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     state.luciel = null;
   }
   if (state.scenario === 'fresh') {
+    // A brand-new account (round 7 WP-12): verified, no Luciel, and nothing it
+    // could have produced yet — no knowledge, conversations, leads, connections,
+    // analytics or history. Every collection page renders its honest EMPTY branch.
     state.account.hasCompletedFirstRun = false;
     state.account.hasLuciel = false;
     state.luciel = null;
+    state.connections = [];
+    state.knowledge = [];
+    state.conversations = [];
+    state.leads = [];
+    state.escalations = [];
+    state.audit = [];
+    state.analytics = clone(seed.seedAnalyticsEmpty);
+    state.billing.budget.conversationsThisPeriod = 0;
   }
   if (state.scenario === 'at_cap') {
     state.billing.budget.atCap = true;
     state.billing.budget.conversationsThisPeriod = 50;
+    // The free 50 are used and a visitor is mid-conversation (round 7 WP-12): the
+    // session that started at the cap is listed, unsummarised, still open.
+    const started = new Date(Date.now() - 4 * 60 * 1000).toISOString();
+    state.conversations.unshift({
+      sessionId: '55555555-5555-4555-8555-000000000050',
+      channel: 'widget',
+      mode: 'ai',
+      startedAt: started,
+      lastMessageAt: new Date(Date.now() - 60 * 1000).toISOString(),
+      countedForBilling: true,
+    });
   }
   if (state.scenario === 'payg') {
     state.billing.budget.billingState = 'payg_enabled';
@@ -478,6 +719,37 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     }
   }
 
+  // Round 7 WP-12: the persisted store wins over the seed when it was seeded from
+  // the same scenario — that is what a reload reads back. `?mock_reset=1` or a
+  // different scenario starts over.
+  const resetRequested =
+    runtime !== undefined && new URLSearchParams(runtime.search).get(MOCK_RESET_PARAM) === '1';
+  if (runtime?.storage) {
+    if (resetRequested) {
+      try {
+        runtime.storage.removeItem(MOCK_STORE_KEY);
+      } catch {
+        /* blocked storage: nothing persisted to drop */
+      }
+    } else {
+      const stored = readStore(runtime.storage);
+      if (stored && stored.seededScenario === seededScenario) Object.assign(state, stored.state);
+    }
+  }
+  /** Set by the control's reset(): the next page load starts from the seed. */
+  let storeDropped = false;
+  const persist = () => {
+    if (!runtime?.storage || storeDropped) return;
+    try {
+      runtime.storage.setItem(
+        MOCK_STORE_KEY,
+        JSON.stringify({ v: STORE_VERSION, seededScenario, state }),
+      );
+    } catch {
+      /* blocked or full storage: this page keeps its in-memory store */
+    }
+  };
+
   const delay = () => (latency ? new Promise((r) => setTimeout(r, latency)) : Promise.resolve());
 
   /** Guards that model the cross-cutting states the UI must handle (§7). */
@@ -538,18 +810,50 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     return clone(value);
   };
 
-  /** Drives the mock contact form's anti-spam rate limit. */
-  let contactSubmissions = 0;
-
   // Deterministic ids for anything the mock creates at runtime.
-  let seq = 0;
-  const nextId = () => `aaaaaaaa-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
+  const nextId = () => `aaaaaaaa-0000-4000-8000-${String(++state.seq).padStart(12, '0')}`;
+
+  /**
+   * The audit row the backend writes for the same action (app/audit/events.py
+   * types), newest first — so the Audit log shows what the owner just did.
+   */
+  const audit = (eventType: string, detail?: string) => {
+    const row: AuditEvent = {
+      eventId: `evt-${nextId()}`,
+      eventType,
+      at: new Date().toISOString(),
+      ...(detail ? { detail } : {}),
+      actorUserId: state.account.userId,
+    };
+    state.audit.unshift(row);
+  };
+
+  /**
+   * A consent URL for the stand-in host, carrying the provider and connection the
+   * backend would have bound into its signed state — the e2e consent stub reads
+   * them to send the browser back the way the backend's callback does.
+   */
+  const mintAuthorizeUrl = (
+    connectionId: string,
+    provider: string,
+    kind: OauthAttempt['kind'],
+    path = '/oauth/authorize',
+  ) => {
+    state.oauthAttempts[connectionId] = { provider, kind };
+    const query = new URLSearchParams({
+      provider,
+      connection_id: connectionId,
+      state: nextId(),
+    });
+    return `${MOCK_AUTHORIZE_ORIGIN}${path}?${query.toString()}`;
+  };
 
   const addSource = (
     name: string,
     origin: KnowledgeSource['origin'],
     sizeBytes: number,
     syncStatus?: KnowledgeSource['syncStatus'],
+    connectionId?: string,
   ): KnowledgeSource => {
     const now = new Date().toISOString();
     const source: KnowledgeSource = {
@@ -562,6 +866,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       // A just-added source has served no answers yet — a real zero (C14).
       usedByQuestions7d: 0,
       ...(syncStatus ? { syncStatus, lastSyncedAt: now } : {}),
+      ...(connectionId ? { connectionId } : {}),
     };
     state.knowledge.push(source);
     return source;
@@ -579,7 +884,28 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       ...(nonSecretConfig ? { nonSecretConfig } : {}),
     };
     state.syncConnections.push(connection);
+    // The backend's knowledge connection IS a connections row (GET /connections
+    // lists it, which is what "Connected sources" renders): the same id, the same
+    // status, the crawl targets under the served `crawl_urls` key.
+    const crawl = nonSecretConfig?.crawlUrls;
+    state.connections.push({
+      connectionId: connection.connectionId,
+      connectionType: 'knowledge_source',
+      provider,
+      displayName: KNOWLEDGE_DISPLAY_NAME[provider] ?? provider,
+      providerAvailable: true,
+      status,
+      ...(Array.isArray(crawl) ? { nonSecretConfig: { crawl_urls: crawl } } : {}),
+      createdAt: new Date().toISOString(),
+    });
     return connection;
+  };
+  /** Keep a knowledge sync connection and its connections row saying the same thing. */
+  const setKnowledgeStatus = (connectionId: string, status: Connection['status']) => {
+    const sync = state.syncConnections.find((x) => x.connectionId === connectionId);
+    if (sync) sync.status = status;
+    const row = state.connections.find((x) => x.connectionId === connectionId);
+    if (row) row.status = status;
   };
 
   // --- Knowledge sync truth (round 7 WP-4c) ---------------------------------------
@@ -776,7 +1102,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
   };
 
-  return {
+  const client: LucielApiClient = {
     auth: {
       async signup() {
         await delay();
@@ -791,6 +1117,12 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async login() {
         await delay();
+        // A sign-in is a NEW session: whatever expired before (a stale cookie, a
+        // password reset that revoked every session) no longer applies.
+        if (state.scenario === 'expired_session') state.scenario = 'verified';
+        // The backend's Set-Cookie, modelled: the presence cookie the middleware
+        // gates the dashboard on (browser runtime only — it has no httpOnly flag).
+        runtime?.writeCookie(`${SESSION_COOKIE}=mock-session; path=/; SameSite=Lax`);
         const next =
           state.account.state === 'unverified'
             ? ('verify_wall' as const)
@@ -801,6 +1133,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async logout() {
         await delay();
+        runtime?.writeCookie(
+          `${SESSION_COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`,
+        );
       },
       async me() {
         guardSession();
@@ -861,12 +1196,14 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         };
         state.account.hasLuciel = true;
         state.account.hasCompletedFirstRun = true;
+        audit('instance_created', req.name);
         return clone(state.luciel);
       },
       async updateChannels(channels) {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
         state.luciel.channels = clone(channels);
+        audit('instance_configured', 'channels changed');
         return ok(state.luciel);
       },
       async updateTools(tools) {
@@ -883,6 +1220,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             disabledReason: before?.disabledReason ?? null,
           };
         });
+        audit('instance_configured', 'tools changed');
         return ok(state.luciel);
       },
       async capabilities() {
@@ -898,6 +1236,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           ...state.luciel,
           embedKeyPublicId: `vm_live_${Math.random().toString(16).slice(2, 14)}`,
         };
+        audit('embed_key_rotated');
         return ok(state.luciel);
       },
       async updateEscalation(contact) {
@@ -933,6 +1272,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         state.luciel.escalationContactHealth = kept;
         kickSmsConfirmations();
         refreshContactHealth();
+        audit('instance_configured', 'escalation contacts changed');
         return ok(state.luciel);
       },
       async confirmSmsContact(number, code) {
@@ -1066,6 +1406,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           ...(cleaned !== undefined ? { voiceDisclosureIntro: cleaned || null } : {}),
           voiceDisclosurePreview: buildVoiceDisclosure(cleaned),
         };
+        audit('instance_configured', 'personality changed');
         return ok(state.luciel);
       },
       async updateLeadRetention(days) {
@@ -1116,6 +1457,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           });
         }
         state.luciel.allowedOrigins = normalised.length ? normalised : null;
+        audit('instance_configured', 'allowed websites changed');
         return ok(state.luciel);
       },
       async updateTeamAvailability(req) {
@@ -1169,6 +1511,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // saved number is texted its code, and the health list names it.
         kickSmsConfirmations();
         refreshContactHealth();
+        audit('instance_configured', 'team availability changed');
         return ok(state.luciel);
       },
       async status() {
@@ -1320,18 +1663,21 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       async pause() {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        audit('lifecycle_transition', `${state.luciel.state} → paused`);
         state.luciel.state = 'paused';
         return ok(state.luciel);
       },
       async resume() {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        audit('lifecycle_transition', `${state.luciel.state} → active`);
         state.luciel.state = 'active';
         return ok(state.luciel);
       },
       async delete() {
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
+        audit('lifecycle_transition', `${state.luciel.state} → luciel_grace_window`);
         state.luciel.state = 'luciel_grace_window';
         state.luciel.graceWindowStartedAt = new Date().toISOString();
         return ok(state.luciel);
@@ -1340,6 +1686,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         if (!state.luciel) throw new LucielApiError({ code: 'not_found', message: 'No Luciel.' });
         // Restore returns ACTIVE, not paused (Arch §3.6.4).
+        audit('lifecycle_transition', `${state.luciel.state} → active (restored)`);
         state.luciel.state = 'active';
         delete state.luciel.graceWindowStartedAt;
         return ok(state.luciel);
@@ -1383,6 +1730,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (gone) {
           state.deletedKnowledge.push(gone);
           state.tombstoneBy[sourceId] = 'owner';
+          audit('knowledge_source_deleted', gone.name);
         }
         await delay();
       },
@@ -1410,6 +1758,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         delete state.tombstoneBy[sourceId];
         state.deletedKnowledge.splice(idx, 1);
         state.knowledge.push(back);
+        audit('knowledge_source_restored', back.name);
         return ok(back);
       },
       async resyncSource(sourceId) {
@@ -1497,11 +1846,14 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         const configured =
           provider === 'google_drive' || provider === 'hubspot' || provider === 'salesforce';
         const connection = addSyncConnection(provider, 'unconfigured', {
-          authorize_url: configured
-            ? `${MOCK_AUTHORIZE_ORIGIN}/o/oauth2/v2/auth?provider=${provider}&state=${nextId()}`
-            : `https://${provider}.invalid/authorize`,
           oauth_state_jti: nextId(),
         });
+        connection.nonSecretConfig = {
+          ...connection.nonSecretConfig,
+          authorize_url: configured
+            ? mintAuthorizeUrl(connection.connectionId, provider, 'knowledge', '/o/oauth2/v2/auth')
+            : `https://${provider}.invalid/authorize`,
+        };
         if (!configured) {
           connection.statusDetail =
             "Action needed: this provider's OAuth client is not configured yet";
@@ -1556,18 +1908,36 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           }
           return ok({ added: [], updated: [], removed });
         }
+        if (state.revokedGrants.includes(connectionId) && c.status === 'connected') {
+          flagDeadCredential(connectionId);
+          setKnowledgeStatus(connectionId, 'error');
+          throw syncUnavailable();
+        }
         if (c.status !== 'connected') {
           throw new LucielApiError({
             code: 'conflict',
             message: 'Sync unavailable: this connection is not authorized yet.',
           });
         }
+        // A re-sync is idempotent: a page already synced is refreshed, never added twice.
         const urls = (c.nonSecretConfig?.crawlUrls as string[] | undefined) ?? [];
-        const added = urls.map((u) => {
-          addSource(u, 'website_crawl', 40_000, 'synced');
-          return u;
-        });
-        return ok({ added, updated: [], removed: [] });
+        const now = new Date().toISOString();
+        const added: string[] = [];
+        const updated: string[] = [];
+        for (const u of urls) {
+          const existing = state.knowledge.find(
+            (k) => k.connectionId === connectionId && k.name === u,
+          );
+          if (existing) {
+            existing.lastSyncedAt = now;
+            existing.syncStatus = 'synced';
+            updated.push(u);
+          } else {
+            addSource(u, 'website_crawl', 40_000, 'synced', connectionId);
+            added.push(u);
+          }
+        }
+        return ok({ added, updated, removed: [] });
       },
       async getScope(connectionId) {
         guardVerified();
@@ -1693,7 +2063,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (option?.authKind === 'credential_form' || option?.authKind === 'provisioned') {
           return ok({ requiresClientForm: true });
         }
-        return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
+        return ok({ authorizeUrl: mintAuthorizeUrl(row.connectionId, provider, 'connection') });
       },
       async reconnect(connectionId) {
         guardVerified();
@@ -1710,7 +2080,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (option?.authKind === 'credential_form') {
           return ok({ requiresClientForm: true });
         }
-        return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
+        return ok({ authorizeUrl: mintAuthorizeUrl(c.connectionId, c.provider, 'connection') });
       },
       async reverifySms() {
         guardVerified();
@@ -1939,6 +2309,18 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         c.status = 'connected';
         c.statusDetail = null;
         c.lastHealthCheckAt = new Date().toISOString();
+        // A knowledge grant redeemed afresh replaces the one the provider revoked;
+        // its sources resume on the next sync (round 7 WP-4c).
+        if (c.connectionType === 'knowledge_source') {
+          state.revokedGrants = state.revokedGrants.filter((id) => id !== connectionId);
+          setKnowledgeStatus(connectionId, 'connected');
+          for (const k of state.knowledge) {
+            if (k.connectionId === connectionId && k.syncStatus === 'paused_reconnect_needed') {
+              k.syncStatus = 'synced';
+              delete k.pausedSince;
+            }
+          }
+        }
         // One-click Twilio (C10): the post-exchange verifier binds WHOSE account
         // authorized — and §3.1.4 honesty holds on this path too: with no
         // designated number the row lands on "add your number", never a false
@@ -2060,10 +2442,19 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
         // Fail-safe: the credential is destroyed and the row lands on the
         // RECONNECTABLE not_connected, not terminal revoked (contract §1).
+        audit(
+          'connection_status_changed',
+          `${c.provider} ${c.connectionType}: ${c.status} → not_connected`,
+        );
+        const crawlTargets = c.nonSecretConfig?.crawl_urls;
         c.status = 'not_connected';
         c.statusDetail = 'disconnected_by_admin';
         c.lastHealthCheckAt = null;
         delete c.nonSecretConfig;
+        // A knowledge connection's sync row says the same (no further pulls); a
+        // crawl keeps naming its targets so the row still says what it crawled.
+        setKnowledgeStatus(connectionId, 'not_connected');
+        if (Array.isArray(crawlTargets)) c.nonSecretConfig = { crawl_urls: crawlTargets };
 
         const disabledTools: string[] = [];
         const disabledChannels: string[] = [];
@@ -2109,7 +2500,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         c.status = 'not_connected';
         c.statusDetail = 'switch_started';
         delete c.nonSecretConfig;
-        return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
+        return ok({ authorizeUrl: mintAuthorizeUrl(c.connectionId, c.provider, 'connection') });
       },
       async bindDestination(connectionId, destination, channel) {
         guardVerified();
@@ -2231,7 +2622,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           });
         }
         state.stagedSwaps[connectionId] = provider;
-        return ok({ authorizeUrl: `${MOCK_AUTHORIZE_ORIGIN}/oauth/authorize?state=${nextId()}` });
+        return ok({ authorizeUrl: mintAuthorizeUrl(connectionId, provider, 'connection') });
       },
     },
 
@@ -2274,14 +2665,16 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Session not found.' });
         // Round 7 WP-3b item 4: an ended session is refused before anything changes.
         if (c.endedAt) throw sessionEnded();
+        if (c.mode !== 'human_controlled') audit('human_takeover_started', 'admin_initiated');
         c.mode = 'human_controlled';
         return ok(c);
       },
       async handBack(sessionId) {
         guardVerified();
         const c = state.conversations.find((x) => x.sessionId === sessionId);
-        if (c) c.mode = 'ai';
         if (!c) throw new LucielApiError({ code: 'not_found', message: 'Session not found.' });
+        if (c.mode === 'human_controlled') audit('human_takeover_ended');
+        c.mode = 'ai';
         return ok(c);
       },
       async sendMessage(sessionId, text) {
@@ -2321,14 +2714,18 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         };
         (state.humanReplies[sessionId] ??= []).push(message);
         c.lastMessageAt = message.at;
+        audit('human_agent_message_sent');
         return ok({
           message,
           delivered: outcome.deliveryStatus === 'delivered',
           deliveryDetail: outcome.deliveryDetail ?? null,
         });
       },
-      async getAnswerEvidence(_sessionId, messageId) {
+      async getAnswerEvidence(sessionId, messageId) {
         guardVerified();
+        // messages.flagged_by_admin_at, read back (round 7 WP-4c #8): the owner
+        // flagged an answer, reloaded, and must see it still flagged.
+        const flaggedByAdmin = state.flaggedAnswers.includes(`${sessionId}:${messageId}`);
         if (messageId === 'm0') {
           // The greeting: composed in code, never a knowledge answer — scoring
           // does not apply and no attribution was captured (#5c).
@@ -2338,7 +2735,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             scoringStatus: 'not_applicable' as const,
             sourceChunks: [],
             attributionStatus: 'attribution_unavailable' as const,
-            flaggedByAdmin: false,
+            flaggedByAdmin,
           });
         }
         return ok({
@@ -2353,11 +2750,17 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             },
           ],
           attributionStatus: 'has_sources' as const,
-          flaggedByAdmin: false,
+          flaggedByAdmin,
         });
       },
-      async flagAnswer() {
+      async flagAnswer(sessionId, messageId) {
         guardVerified();
+        // Idempotent, like the backend: flagging twice keeps the first flag.
+        const key = `${sessionId}:${messageId}`;
+        if (!state.flaggedAnswers.includes(key)) {
+          state.flaggedAnswers.push(key);
+          audit('answer_flagged_by_admin');
+        }
         await delay();
       },
       async listEscalations(page) {
@@ -2375,11 +2778,14 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async erase(leadId) {
         guardVerified();
+        if (state.leads.some((l) => l.leadId === leadId)) audit('lead_erasure');
         state.leads = state.leads.filter((l) => l.leadId !== leadId);
         await delay();
       },
       async prune(leadIds) {
         guardVerified();
+        const gone = state.leads.filter((l) => leadIds.includes(l.leadId)).length;
+        if (gone) audit('lead_pruned', `${gone} deleted (owner)`);
         state.leads = state.leads.filter((l) => !leadIds.includes(l.leadId));
         await delay();
       },
@@ -2387,6 +2793,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         guardVerified();
         const l = state.leads.find((x) => x.leadId === leadId);
         if (!l) throw new LucielApiError({ code: 'not_found', message: 'Lead not found.' });
+        if (l.state !== 'archived') audit('lead_archived');
         l.state = 'archived';
         l.lastActivityAt = new Date().toISOString();
         return ok(withCrmPosture(l));
@@ -2399,6 +2806,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         if (l.state === 'archived') {
           l.state = 'active';
           l.lastActivityAt = new Date().toISOString();
+          audit('lead_reactivated');
         }
         return ok(withCrmPosture(l));
       },
@@ -2461,7 +2869,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             changed = true;
           }
         }
-        if (changed) l.lastActivityAt = new Date().toISOString();
+        if (changed) {
+          l.lastActivityAt = new Date().toISOString();
+          audit('lead_edited');
+        }
         return ok(withCrmPosture(l));
       },
       async backfillCrm() {
@@ -2499,6 +2910,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           l.crmDetail = null;
           l.crmPushedAt = new Date().toISOString();
         }
+        audit('crm_backfill_run', `${batch.length} sent`);
         await delay();
         return {
           attempted: batch.length,
@@ -2542,6 +2954,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         l.crmStatus = 'synced';
         l.crmDetail = null;
         l.crmPushedAt = new Date().toISOString();
+        audit('crm_record_upserted');
         await delay();
         return ok(withCrmPosture(l));
       },
@@ -2579,6 +2992,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             message: 'Card payments are not live in this deployment yet.',
           });
         }
+        // The open Checkout session; the success return completes it (browser runtime).
+        state.pendingStripe = 'checkout';
+        audit('billing_checkout_started');
         return ok({ url: 'https://checkout.stripe.com/mock-session' });
       },
       async startPortal() {
@@ -2598,12 +3014,19 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             message: 'No card on file to update — add a card first.',
           });
         }
+        state.pendingStripe = 'portal';
+        audit('billing_portal_session_created');
         return ok({ url: 'https://billing.stripe.com/mock-portal-session' });
       },
       async removePaymentMethod() {
         guardVerified();
         state.billing.budget.billingState = 'free_cap';
         delete state.billing.paymentMethod;
+        // Past the free 50 with no card, new conversations stop at the cap.
+        const budget = state.billing.budget;
+        budget.atCap = budget.conversationsThisPeriod >= budget.freeAllowance;
+        budget.nearNextBlock = false;
+        audit('payment_method_removed', 'card removed (admin_removed)');
         return ok(state.billing as BillingInfo);
       },
     },
@@ -2655,6 +3078,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         }
         state.account.state = 'verified';
         state.closure = null;
+        audit(
+          'account_reopened',
+          restored ? `Luciel restored (${state.luciel?.state})` : undefined,
+        );
         return clone({
           state: 'verified' as const,
           lucielRestored: restored,
@@ -2669,6 +3096,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // (round 7 WP-10, item 12) — the mock hands back the same shape the backend
         // does, so the UI can show the link, the link's life and whether the email
         // carrying it actually left (round 7 WP-5).
+        audit('data_export_requested');
         return ok({
           ok: true,
           downloadUrl: `${MOCK_AUTHORIZE_ORIGIN}/api/v1/admin/account/export/${nextId()}`,
@@ -2700,6 +3128,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
           state.luciel.graceWindowStartedAt = closedAt;
         }
         state.account.state = 'closed';
+        audit('account_closure_initiated');
         await delay();
       },
     },
@@ -2716,8 +3145,8 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             message: 'That spam-protection challenge expired. Please try it again.',
           });
         }
-        contactSubmissions += 1;
-        if (contactSubmissions > 3) {
+        state.contactSubmissions += 1;
+        if (state.contactSubmissions > 3) {
           throw new LucielApiError({
             code: 'rate_limited',
             message: 'Too many messages just now. Please try again in a few minutes.',
@@ -2752,4 +3181,111 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
     },
   };
+
+  if (!runtime) return client;
+
+  // ---- Browser runtime (round 7 WP-12) ----------------------------------------
+  /**
+   * The provider round-trips this page load is the return of. The backend runs
+   * the OAuth callback and receives the Stripe webhook BEFORE the browser lands
+   * back here; the mock does the same work the moment the landing page loads.
+   */
+  const landing = new URLSearchParams(runtime.search);
+  const landedConnection = landing.get('connectionId');
+  const attempt = landedConnection ? state.oauthAttempts[landedConnection] : undefined;
+  if (landedConnection && attempt) {
+    delete state.oauthAttempts[landedConnection];
+    if (landing.get('status') === 'connected') {
+      // Runs synchronously up to its first await, so the row is redeemed before
+      // any read this page makes.
+      const redeem =
+        attempt.kind === 'knowledge'
+          ? client.connections.completeOauth(landedConnection, 'mock-code', 'mock-state')
+          : client.connections.completeConnectionOauth(landedConnection, 'mock-code', 'mock-state');
+      void redeem.catch(() => undefined);
+    } else if (landing.get('status') === 'error') {
+      // A declined or failed consent: nothing changes, and a staged swap is dropped.
+      delete state.stagedSwaps[landedConnection];
+    }
+  }
+  if (state.pendingStripe === 'checkout' && landing.has('checkout')) {
+    if (landing.get('checkout') === 'success') {
+      // checkout.session.completed → the card is on file, pay-as-you-go is on.
+      const year = new Date().getUTCFullYear() + 3;
+      state.billing.paymentMethod = { brand: 'visa', last4: '4242', expMonth: 12, expYear: year };
+      state.billing.budget.billingState = 'payg_enabled';
+      state.billing.budget.atCap = false;
+      state.billing.budget.billable = true;
+      audit('payment_method_added', 'visa card added');
+    }
+    state.pendingStripe = null;
+  }
+  if (state.pendingStripe === 'portal' && runtime.pathname === '/dashboard/billing') {
+    if (landing.get(MOCK_STRIPE_PARAM) === 'portal_card_updated') {
+      const year = new Date().getUTCFullYear() + 4;
+      state.billing.paymentMethod = {
+        brand: 'mastercard',
+        last4: '4444',
+        expMonth: 6,
+        expYear: year,
+      };
+      audit('payment_method_added', 'mastercard card added');
+    }
+    state.pendingStripe = null;
+  }
+  persist();
+
+  // Every call: an injected failure first, then the extra latency, then the real
+  // work — and the store is written back whatever happened.
+  const namespaces = client as unknown as Record<string, Record<string, unknown>>;
+  for (const [nsName, ns] of Object.entries(namespaces)) {
+    for (const [method, fn] of Object.entries(ns)) {
+      if (typeof fn !== 'function') continue;
+      const key = `${nsName}.${method}`;
+      ns[method] = async (...args: unknown[]) => {
+        try {
+          if (extraLatency) await new Promise((r) => setTimeout(r, extraLatency));
+          const fault = state.faults[key];
+          if (fault && fault.times > 0) {
+            fault.times -= 1;
+            if (fault.times === 0) delete state.faults[key];
+            await delay();
+            throw new LucielApiError({ code: fault.code, message: 'Internal Server Error' });
+          }
+          return await (fn as (...a: unknown[]) => Promise<unknown>).apply(ns, args);
+        } finally {
+          persist();
+        }
+      };
+    }
+  }
+
+  runtime.installControl?.({
+    scenario: () => seededScenario,
+    failNext: (method, times = 1, code = 'server_error') => {
+      state.faults[method] = { times, code };
+      persist();
+    },
+    setExtraLatency: (ms) => {
+      extraLatency = Math.max(0, ms);
+    },
+    endSession: (sessionId) => {
+      const c = state.conversations.find((x) => x.sessionId === sessionId);
+      if (c && !c.endedAt) c.endedAt = new Date().toISOString();
+      persist();
+    },
+    revokeKnowledgeGrant: (connectionId) => {
+      if (!state.revokedGrants.includes(connectionId)) state.revokedGrants.push(connectionId);
+      persist();
+    },
+    reset: () => {
+      storeDropped = true;
+      try {
+        runtime.storage?.removeItem(MOCK_STORE_KEY);
+      } catch {
+        /* nothing persisted */
+      }
+    },
+  });
+  return client;
 }

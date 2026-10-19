@@ -53,10 +53,25 @@ const loginErrorMessage = (err: unknown): string => {
   return 'Email or password is incorrect.';
 };
 
+/**
+ * Why the owner is here, when a guard sent them (round 7 WP-12): the dashboard
+ * guard adds `reason=session_expired` when the API refused a session the browser
+ * still held. Read after mount (no Suspense boundary needed for a static page).
+ */
+const REASON_COPY: Record<string, string> = {
+  session_expired:
+    'Your session has ended — it expired or was signed out elsewhere. Log in again to pick up where you left off.',
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [serverError, setServerError] = React.useState<string | null>(null);
+  const [reason, setReason] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get('reason');
+    setReason(value && REASON_COPY[value] ? REASON_COPY[value] : null);
+  }, []);
   const {
     register,
     handleSubmit,
@@ -89,6 +104,11 @@ export default function LoginPage() {
     <Card>
       <CardTitle>Log in</CardTitle>
       <CardDescription>Welcome back.</CardDescription>
+      {reason && !serverError && (
+        <Banner tone="info" className="mt-vm-4">
+          <span data-testid="login-reason">{reason}</span>
+        </Banner>
+      )}
       {serverError && (
         <Banner tone="danger" className="mt-vm-4">
           {serverError}
