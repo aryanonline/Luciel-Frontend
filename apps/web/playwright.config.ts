@@ -93,6 +93,10 @@ const liveProjects: PlaywrightTestProject<MockOptions>[] = [
           expect: { timeout: 30_000 },
           use: {
             ...chromium,
+            // A click that never becomes possible must fail in half a minute with the
+            // locator named, not hold the runner until the 30-minute test timeout (the
+            // third live walk, 2026-10-19, waited that long on one Re-sync button).
+            actionTimeout: 30_000,
             mockScenario: null,
             plantSession: false,
             trace: 'off',
