@@ -13,8 +13,21 @@ export type { LucielApiClient, PageOptions } from './client';
 
 // The selector + adapter options.
 export { createLucielClient, type ApiAdapterKind, type CreateClientConfig } from './factory';
-export type { MockScenario, MockAdminOptions } from './adapters/mock-admin';
-export { MOCK_AUTHORIZE_ORIGIN } from './adapters/mock-admin';
+export type {
+  MockScenario,
+  MockAdminOptions,
+  MockRuntime,
+  MockStorage,
+  MockControl,
+} from './adapters/mock-admin';
+export {
+  MOCK_AUTHORIZE_ORIGIN,
+  MOCK_SCENARIOS,
+  MOCK_SCENARIO_COOKIE,
+  MOCK_SCENARIO_PARAM,
+  MOCK_STORE_KEY,
+  resolveMockScenario,
+} from './adapters/mock-admin';
 
 // Helpers.
 export { chipForConnection } from './chips';

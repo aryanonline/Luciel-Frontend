@@ -13,10 +13,14 @@ import {
  * The flags are NON-secret public values (NEXT_PUBLIC_*). The API base URL is a
  * public URL, not a secret. No secret ever flows through here.
  *
- * NEXT_PUBLIC_MOCK_SCENARIO lets you exercise different documented states when
- * running on the mock — try the whole journey from a fresh account, or jump to
- * at-cap / payg / paused / grace to see those surfaces (Space Instructions §7):
- *   verified (default) | fresh | unverified | at_cap | payg | paused | grace
+ * NEXT_PUBLIC_MOCK_SCENARIO sets the build's DEFAULT mock state. In a browser the
+ * scenario is chosen at RUNTIME instead (round 7 WP-12): open any page with
+ * `?mock_scenario=<name>` (remembered in the `luciel_mock_scenario` cookie, which
+ * the Playwright scenario projects plant directly) — fresh, at_cap, payg, paused,
+ * grace, closed, expired_session, escalation_sms, knowledge_states … — and the
+ * mock persists its store in sessionStorage, so a reload reads back what a
+ * mutation wrote (`?mock_reset=1` starts the scenario over). Unit tests (NODE_ENV
+ * test) keep the old in-memory store with the scenario fixed at construction.
  */
 /**
  * The mock is opt-in, never the fallback (P2-15). Defaulting to it meant a
@@ -33,8 +37,10 @@ const scenario = (process.env.NEXT_PUBLIC_MOCK_SCENARIO ?? 'verified') as MockSc
 /** True when this build talks to the real backend (deploy sets `http`). */
 export const isHttpAdapter = adapter === 'http';
 
+const browserRuntime = typeof window !== 'undefined' && process.env.NODE_ENV !== 'test';
+
 export const api: LucielApiClient = createLucielClient({
   adapter,
   baseUrl,
-  mock: { latencyMs: 150, scenario },
+  mock: { latencyMs: 150, scenario, ...(browserRuntime ? { runtime: 'browser' as const } : {}) },
 });

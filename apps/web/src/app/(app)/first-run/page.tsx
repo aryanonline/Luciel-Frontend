@@ -14,8 +14,9 @@ import {
   Banner,
   ProgressBar,
 } from '@luciel/ui';
+import { useQueryClient } from '@tanstack/react-query';
 import { createLucielRequest, LucielApiError, type CreateLucielRequest } from '@luciel/api-client';
-import { useLucielMutations } from '@/lib/hooks';
+import { refreshSession, useLucielMutations } from '@/lib/hooks';
 
 /**
  * First-run (Customer Journey Phase 3): "Create my Luciel" — three fields →
@@ -25,6 +26,7 @@ import { useLucielMutations } from '@/lib/hooks';
  */
 export default function FirstRunPage() {
   const router = useRouter();
+  const qc = useQueryClient();
   const { create } = useLucielMutations();
   const [phase, setPhase] = React.useState<'form' | 'provisioning'>('form');
   const [progress, setProgress] = React.useState(0);
@@ -61,6 +63,9 @@ export default function FirstRunPage() {
       // destination to go to. One account, one Luciel (Arch §3.7.1).
       if (err instanceof LucielApiError && err.code === 'conflict') {
         setProgress(100);
+        // The account HAS its Luciel, so the cached session's `first_run` is stale:
+        // re-read it before the dashboard guard does (it would bounce back here).
+        await refreshSession(qc);
         router.replace('/dashboard/configure');
         return;
       }

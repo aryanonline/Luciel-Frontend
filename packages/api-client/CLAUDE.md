@@ -62,3 +62,12 @@ rules. Test adapters through their public client behavior where possible.
   persisted takeover reply will arrive on a later poll, not a push.
 - Mock scenarios must exercise loading/failure/honesty paths but do not grant
   permission to claim behavior absent from the served contract.
+- Browser runtime (round 7 WP-12, `MockAdminOptions.runtime: 'browser'`): the scenario
+  comes from `?mock_scenario=` / the `luciel_mock_scenario` cookie, the store persists in
+  sessionStorage (`luciel.mock.store.v1`, a different scenario or `?mock_reset=1` reseeds),
+  login/logout model the session-presence cookie, OAuth consent landings
+  (`?status=connected&connectionId=…`) redeem the attempt the URL was minted for, Stripe
+  Checkout's `?checkout=success` completes the open session (the portal stub adds
+  `mock_stripe=portal_card_updated`), and `window.__lucielMock` is the e2e control surface.
+  Anything new in `state` must be JSON-serialisable; bump `STORE_VERSION` when its shape
+  changes. Without `runtime` (every unit test) nothing of this applies.
