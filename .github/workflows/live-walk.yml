@@ -1,0 +1,108 @@
+name: live-walk
+
+# Round 7 WP-12 — the customer-style walk against a DEPLOYED environment.
+#
+# The SAME spec the `walk` project runs against the mock
+# (apps/web/tests/e2e/walk/customer-walk.spec.ts), run as the `live-walk` Playwright
+# project with E2E_LIVE_WRITE=1. It signs in as the dev walk account (repo secrets
+# E2E_LIVE_EMAIL / E2E_LIVE_PASSWORD — never typed by a person, never logged: the spec
+# sets them through the DOM, GitHub masks them, and the project keeps no trace or
+# video) and WRITES to that account's tenant only: Today card, every Configure
+# pillar, the allowlist, a Test-it-here conversation and the lead it captures, a
+# takeover reply, Pause/Resume, Delete/Restore, Close/Reopen/Re-export. Every step
+# that needs an owner asset or a provider consent (a Twilio number, a mailbox, Meta,
+# a CRM or calendar sign-in, Drive/Notion, a real card) is SKIPPED with its reason —
+# a skipped step in the report, a `skipped-step` annotation, a console line and a row
+# in the job summary.
+#
+# Dispatch-only. Never scheduled, never on push: a deployed tenant is not a CI
+# fixture, and the walk changes it.
+#
+#   gh workflow run live-walk.yml --ref feat/docs-conformance-build-20260713-r2 \
+#     -f base_url=https://vantagemind.ai -f confirm=walk-account-only
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Dashboard origin to walk (the walk account's environment)
+        required: true
+        default: https://vantagemind.ai
+        type: string
+      confirm:
+        description: Type walk-account-only — this walk WRITES to the walk account's tenant
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One walk at a time: two walks on the one tenant would race each other's writes.
+concurrency:
+  group: live-walk
+  cancel-in-progress: false
+
+jobs:
+  walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Guard — explicit confirmation and an https origin
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          if [ "$CONFIRM" != "walk-account-only" ]; then
+            echo "::error::confirm must be walk-account-only — this walk writes to the walk account's tenant"
+            exit 1
+          fi
+          case "$BASE_URL" in
+            https://*) ;;
+            *) echo "::error::base_url must be an https:// origin"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @luciel/web exec playwright install --with-deps chromium
+
+      - name: Walk the deployed dashboard as a customer (writes to the walk tenant only)
+        env:
+          E2E_LIVE: '1'
+          E2E_LIVE_WRITE: '1'
+          E2E_BASE_URL: ${{ inputs.base_url }}
+          E2E_EMAIL: ${{ secrets.E2E_LIVE_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_LIVE_PASSWORD }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: walk-results.json
+          # The HTML report is kept as an artifact; never serve it from the runner.
+          PW_TEST_HTML_REPORT_OPEN: never
+        run: |
+          if [ -z "$E2E_EMAIL" ] || [ -z "$E2E_PASSWORD" ]; then
+            echo "::error::E2E_LIVE_EMAIL / E2E_LIVE_PASSWORD repo secrets are not set"
+            exit 1
+          fi
+          pnpm --filter @luciel/web exec playwright test --project=live-walk --reporter=list,json,html
+
+      - name: Timings and skipped steps → job summary
+        if: always()
+        run: node apps/web/tests/e2e/walk/summary.mjs apps/web/walk-results.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-walk-report
+          path: |
+            apps/web/playwright-report
+            apps/web/walk-results.json
+          retention-days: 7
