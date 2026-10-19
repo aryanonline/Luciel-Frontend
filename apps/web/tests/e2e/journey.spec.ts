@@ -9,8 +9,9 @@ import { withMockSession } from './mock-session';
  * (naming the website that may load the chat). No backend is needed: the mock
  * adapter is the seeded, verified tenant "Sarah's Front-Desk Assistant".
  *
- * Every `page.goto` is a full load, so the mock's in-memory state is fresh per
- * page; assertions that depend on a change are made before navigating away.
+ * Each test starts from the seed (a fresh browser context, so an empty
+ * sessionStorage); within the test the mock persists its store across page loads
+ * (round 7 WP-12), so a change made on one page is still there on the next.
  */
 const LUCIEL = "Sarah's Front-Desk Assistant";
 

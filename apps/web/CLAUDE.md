@@ -40,6 +40,15 @@ bundle.
   embed → conversations → leads → billing); `tests/e2e/live-smoke.spec.ts` — the opt-in,
   read-only walk of a deployed environment; `tests/e2e/mock-session.ts` — the planted
   session-presence cookie the middleware requires before any dashboard page renders.
+- `tests/e2e/scenarios/*.spec.ts` (round 7 WP-12) — one Playwright project per mock
+  scenario (`scenario-fresh`, `-at-cap`, `-payg`, `-paused`, `-grace`, `-closed`,
+  `-expired-session`). `tests/e2e/support/fixtures.ts` plants the `luciel_mock_scenario`
+  cookie (a project option) and offers `mockControl` (inject a failure, slow calls so a
+  pending label is readable, end a session, revoke a knowledge grant), `expectPending` and
+  `reloadAndExpect` — EVERY mutation a spec makes is followed by a reload, and what the
+  page shows after it must have come back from the mock's persisted store.
+  `support/provider-stubs.ts` stands in for Stripe Checkout / the Billing Portal and the
+  OAuth consent host, returning exactly the way the provider + backend callback would.
 
 ## Invariants owned here
 
@@ -98,6 +107,13 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
 - Voice/SMS chip split at `pending_carrier_registration` (2026-08-18): 10DLC gates
   TEXTING only, so the Voice row renders Connected + "Calls work now…" while SMS
   keeps action_needed — presentation-only; the wire status stays one value.
+- The mock scenario is a RUNTIME choice (round 7 WP-12): `?mock_scenario=<name>` or the
+  `luciel_mock_scenario` cookie, read by the mock adapter; `NEXT_PUBLIC_MOCK_SCENARIO` is
+  only the build default. In a browser the mock persists in sessionStorage (`?mock_reset=1`
+  starts over); unit tests (NODE_ENV test) keep the old fresh-per-client store. A session
+  the API refuses sends the owner to `/login?reason=session_expired&next=…`, and the login
+  page says why. After first-run's create the session is re-read (`refreshSession`) — the
+  cached `first_run` answer used to bounce the owner straight back to first-run.
 - Conversations page: rows carry `#<first-8-of-sessionId>` matching the escalation
   email's ref; `?open=<sessionId>` deep-opens a transcript (useSearchParams under
   Suspense); escalation badges ride `useEscalations` and degrade to a note on

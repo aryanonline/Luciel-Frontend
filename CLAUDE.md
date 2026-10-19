@@ -158,7 +158,9 @@ a11y gate plus the mock-adapter customer journey (`tests/e2e/journey.spec.ts`) a
 the dev server; the dashboard pages need the planted session cookie from
 `tests/e2e/mock-session.ts` or the middleware bounces them to /login. `E2E_LIVE=1`
 with `E2E_BASE_URL`, `E2E_EMAIL`, `E2E_PASSWORD` selects the read-only live-smoke
-project instead (the `live-smoke` workflow is its dispatch-only home).
+project instead (the `live-smoke` workflow is its dispatch-only home). Round 7 WP-12 adds
+one project per mock scenario (`--project=scenario-<name>`; the scenario is a runtime
+cookie, never a build constant, and every mutation is checked again after a reload).
 
 The web app runs on Next 15 / React 19 (migrated 2026-09-07). The strict CSP admits
 `'unsafe-eval'` for development builds only, because `next dev` cannot hydrate without
