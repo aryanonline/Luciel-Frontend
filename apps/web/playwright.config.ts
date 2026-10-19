@@ -87,6 +87,10 @@ const liveProjects: PlaywrightTestProject<MockOptions>[] = [
           // A deployed tenant is not a fixture to retry against: one pass, and no
           // trace/video that would keep what the walk typed.
           retries: 0,
+          // A deployed dashboard answers over the network and reloads re-fetch every
+          // query before a state line can render: the mock's 5 s is not a live budget
+          // (the first live walk, 2026-10-19, lost a reload check to exactly that).
+          expect: { timeout: 30_000 },
           use: {
             ...chromium,
             mockScenario: null,
