@@ -62,7 +62,13 @@ bundle.
   while the call is still pending (a button relabelled "Restoring…" is not "restored"), or
   the reload cuts the write off. Timings (each pillar, time to the first GROUNDED answer —
   judged from the evidence panel, the widget reply carries no attribution) are report
-  annotations. ~4–5 minutes on the mock.
+  annotations. ~4–5 minutes on the mock. As the `live-walk` project (E2E_LIVE=1 +
+  E2E_LIVE_WRITE=1, `.github/workflows/live-walk.yml`, dispatch-only) the same spec signs in
+  with the walk account (credentials set through the DOM by `fillSecret`, never a titled
+  `fill`; no trace or video), first repairs what a cut-short walk left (closed / deleted /
+  paused), changes only what it created or toggles back, and skips with the reason every
+  step needing an owner asset or provider consent (`NEEDS` in walk-kit.ts).
+  `walk/summary.mjs` turns the JSON report into the job summary.
 
 ## Invariants owned here
 

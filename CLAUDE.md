@@ -160,7 +160,15 @@ the dev server; the dashboard pages need the planted session cookie from
 with `E2E_BASE_URL`, `E2E_EMAIL`, `E2E_PASSWORD` selects the read-only live-smoke
 project instead (the `live-smoke` workflow is its dispatch-only home). Round 7 WP-12 adds
 one project per mock scenario (`--project=scenario-<name>`; the scenario is a runtime
-cookie, never a build constant, and every mutation is checked again after a reload).
+cookie, never a build constant, and every mutation is checked again after a reload), the
+customer-style walk (`--project=walk`, tests/e2e/walk/), an a11y gate over every route,
+and `live-walk`: the SAME walk against a deployed environment with `E2E_LIVE=1
+E2E_LIVE_WRITE=1`, run only by the dispatch-only `live-walk` workflow
+(`-f confirm=walk-account-only`) with the walk account from repo secrets. It writes to that tenant only
+and skips, with the reason, every step that needs an owner asset or a provider consent.
+`pnpm test:scripts` pins both live workflows to `workflow_dispatch`. On a machine whose
+Playwright browser cache is older than the installed Playwright, point
+`E2E_CHROMIUM_EXECUTABLE` at an installed Chromium.
 
 The web app runs on Next 15 / React 19 (migrated 2026-09-07). The strict CSP admits
 `'unsafe-eval'` for development builds only, because `next dev` cannot hydrate without
