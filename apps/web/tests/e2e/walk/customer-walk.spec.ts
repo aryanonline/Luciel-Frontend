@@ -637,6 +637,7 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
 
     // On live the walk crawls the product's own site (never a third party's).
     const crawlUrl = w.live ? `${origin}/` : 'https://sarahchen.com/services';
+    const crawlWait = w.live ? 180_000 : 5_000;
     const crawl = page.getByRole('dialog', { name: 'Crawl a website' });
     const connected = pillar.getByRole('list', { name: 'Connected sources' });
     const crawlRow = connected.getByRole('listitem').filter({ hasText: crawlUrl });
@@ -651,7 +652,11 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
       },
       pending: crawl.getByRole('button', { name: 'Crawling…' }),
       error: () => expect(crawl.getByText('Internal Server Error')).toBeVisible(),
-      success: () => expect(pillar.getByText(`Crawled ${crawlUrl} —`)).toBeVisible(),
+      // Live crawls the real site inside the request: every page is fetched, embedded
+      // and run through the graph extractor before the call returns (30 s+ for the
+      // marketing site on 2026-10-19). The mock answers at once.
+      success: () =>
+        expect(pillar.getByText(`Crawled ${crawlUrl} —`)).toBeVisible({ timeout: crawlWait }),
       reload: async () => {
         await expect(crawlRow).toBeVisible();
         await expect(crawlRow.getByRole('button', { name: 'Remove crawl' })).toBeVisible();
@@ -663,7 +668,9 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
       act: () => crawlRow.getByRole('button', { name: 'Re-sync' }).click(),
       error: () => expect(pillar.getByText('Internal Server Error')).toBeVisible(),
       success: () =>
-        expect(pillar.getByText(/^Synced .* — \d+ added, \d+ removed\./)).toBeVisible(),
+        expect(pillar.getByText(/^Synced .* — \d+ added, \d+ removed\./)).toBeVisible({
+          timeout: crawlWait,
+        }),
       reload: () => expect(crawlRow.getByText(/last synced (?!never)/)).toBeVisible(),
     });
 
