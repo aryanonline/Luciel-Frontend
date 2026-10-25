@@ -97,7 +97,10 @@ describe('transcript polling during a human takeover', () => {
       await screen.findByText('still there? my number is on file', {}, { timeout: 5000 }),
     ).toBeInTheDocument();
     expect(getMessages).toHaveBeenCalledTimes(2);
-  });
+    // The whole test, not only the second wait, must outlast a slow runner: the
+    // page's dynamic import plus two real-timer waits blew vitest's default 5 s
+    // (nightly 2026-10-24, push CI 2026-10-25) with the poll itself working.
+  }, 20_000);
 
   it('stays quiet while Luciel has the conversation', async () => {
     openParam = QUIET_ID;
