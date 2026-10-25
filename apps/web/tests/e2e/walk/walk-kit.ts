@@ -74,6 +74,13 @@ export class Walk {
     readonly target: WalkTarget,
   ) {
     this.control = mockControl(page);
+    // A client-side exception leaves Next's 'Application error' page and nothing
+    // else: no trace on live, no console in the report. Say what the page threw
+    // (live walk run 5, 2026-10-25, failed on exactly that with no diagnosis).
+    page.on('pageerror', (err) => this.note('pageerror', `${err.name}: ${err.message}`));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') this.note('console-error', msg.text().slice(0, 500));
+    });
   }
 
   get live() {
