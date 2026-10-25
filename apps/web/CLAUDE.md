@@ -134,6 +134,10 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
   the API refuses sends the owner to `/login?reason=session_expired&next=…`, and the login
   page says why. After first-run's create the session is re-read (`refreshSession`) — the
   cached `first_run` answer used to bounce the owner straight back to first-run.
+- Closing the account SIGNS THE OWNER OUT (the server bumps the session epoch; live walk run 7,
+  2026-10-25): the account page goes to `/login?reason=account_closed` (never `/`), and
+  `markSignedOutByClosure()` makes the guard send a racing 401 there too instead of
+  `session_expired`; signing in again (which clears the mark) lands on `/account-closed`.
 - Conversations page: rows carry `#<first-8-of-sessionId>` matching the escalation
   email's ref; `?open=<sessionId>` deep-opens a transcript (useSearchParams under
   Suspense); escalation badges ride `useEscalations` and degrade to a note on

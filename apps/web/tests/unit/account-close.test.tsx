@@ -1,7 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
+import { LucielApiError } from '@luciel/api-client';
 import AccountPage from '@/app/(app)/dashboard/account/page';
+import LoginPage from '@/app/(auth)/login/page';
+import { AuthGuard } from '@/components/auth-guard';
+import { api } from '@/lib/api';
+import {
+  clearSignedOutByClosure,
+  markSignedOutByClosure,
+  signedOutByClosure,
+} from '@/lib/account-closed';
 
 /**
  * Round 7 WP-10, item 13 — closing the account subsumes deleting the Luciel.
@@ -32,9 +41,21 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
+const replace = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace, push: vi.fn(), back: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/dashboard/account',
+  useParams: () => ({}),
+}));
+
 beforeEach(() => {
   closeAccount.mockReset().mockResolvedValue(undefined);
+  replace.mockReset();
+  clearSignedOutByClosure();
+  window.history.replaceState(null, '', '/');
 });
+afterEach(() => vi.restoreAllMocks());
 
 /** Render, wait for the served (ACTIVE) Luciel, and open the close confirmation. */
 async function openCloseDialog() {
@@ -85,5 +106,87 @@ describe('close account with a Luciel still running (subsumed delete)', () => {
     );
     expect(await within(dialog).findByText(/Your Luciel is still active/)).toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'Close your account?' })).toBeInTheDocument();
+    // A refused close signed nobody out and navigated nowhere.
+    expect(replace).not.toHaveBeenCalled();
+    expect(signedOutByClosure()).toBe(false);
+  });
+});
+
+/**
+ * Live walk run 7 (2026-10-25): closing bumps the session epoch, so the next call
+ * answers 401. The page used to `router.replace('/')`, the guard read that 401 as an
+ * expired session, and the owner who had just closed the account was told "your
+ * session expired". Closing now signs the owner out to the login page with the
+ * closure's own reason; a 401 that races that navigation goes to the same place.
+ */
+describe('closing signs the owner out', () => {
+  it('a successful close goes to /login?reason=account_closed, not /', async () => {
+    const dialog = await openCloseDialog();
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Delete my Luciel and close account' }),
+    );
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/login?reason=account_closed'));
+    expect(replace).not.toHaveBeenCalledWith('/');
+    expect(signedOutByClosure()).toBe(true);
+  });
+
+  it('the guard sends a 401 after a closure to the closed-account login, never session_expired', async () => {
+    const dialog = await openCloseDialog();
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Delete my Luciel and close account' }),
+    );
+    await waitFor(() => expect(signedOutByClosure()).toBe(true));
+    replace.mockReset();
+
+    // The session read that lands after the closure: the epoch was bumped.
+    window.history.replaceState(null, '', '/dashboard/account');
+    vi.spyOn(api.auth, 'me').mockRejectedValue(
+      new LucielApiError({ code: 'unauthorized', message: 'Session revoked.' }),
+    );
+    renderWithQuery(
+      <AuthGuard>
+        <p>gated</p>
+      </AuthGuard>,
+    );
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/login?reason=account_closed'));
+    expect(replace).not.toHaveBeenCalledWith(expect.stringContaining('session_expired'));
+  });
+
+  it('the login page says the account is closed and what the 30 days allow', async () => {
+    window.history.replaceState(null, '', '/login?reason=account_closed');
+    renderWithQuery(<LoginPage />);
+    const reason = await screen.findByTestId('login-reason');
+    expect(reason).toHaveTextContent('Your account is closed, and closing it signed you out.');
+    expect(reason).toHaveTextContent(
+      'For 30 days you can still log in here to download your data again or reopen the account',
+    );
+    expect(reason).toHaveTextContent('after that, everything is permanently deleted.');
+    expect(reason).not.toHaveTextContent(/session/i);
+  });
+
+  it('signing in again ends the closure sign-out: a later 401 is an expired session again', async () => {
+    markSignedOutByClosure(); // what a confirmed close did (pinned above)
+    window.history.replaceState(null, '', '/login?reason=account_closed');
+    vi.spyOn(api.auth, 'login').mockResolvedValue({
+      account: {
+        adminId: '11111111-1111-4111-8111-111111111111',
+        userId: '22222222-2222-4222-8222-222222222222',
+        email: 'owner@example.com',
+        state: 'closed',
+        createdAt: '2026-01-15T14:00:00Z',
+        emailVerified: true,
+        hasCompletedFirstRun: true,
+        hasLuciel: true,
+      },
+      nextRoute: 'dashboard',
+      notices: [],
+    });
+    renderWithQuery(<LoginPage />);
+    fireEvent.change(screen.getByLabelText(/Email/), { target: { value: 'owner@example.com' } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: 'pw-123456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+    // A closed account signs in to the reduced page (D5).
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/account-closed'));
+    expect(signedOutByClosure()).toBe(false);
   });
 });

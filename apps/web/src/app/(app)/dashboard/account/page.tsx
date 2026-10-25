@@ -7,6 +7,7 @@ import type { AccountExportResult } from '@luciel/api-client';
 import { useLuciel, useLucielMutations } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { ExportReady } from '@/components/export-ready';
+import { ACCOUNT_CLOSED_LOGIN_PATH, markSignedOutByClosure } from '@/lib/account-closed';
 
 /**
  * Manage account — the lifecycle (Vision §6; Arch §3.6). THREE distinct, nested
@@ -241,8 +242,15 @@ export default function AccountPage() {
           // This dialog IS the confirmation the server requires before it deletes a
           // Luciel that is still running as part of the closure (F156).
           await api.account.close({ confirmDeleteLuciel: true });
+          // Closing signs the owner out: the server bumps the session epoch, so the
+          // next call with this cookie answers 401. Mark that FIRST, synchronously,
+          // so a session read already in flight (or a refetch before the navigation
+          // lands) is routed by the guard to this same closed-account login and
+          // never to "your session expired"; then go there. Signing in again lands
+          // on /account-closed (re-export, reopen) for the next 30 days.
+          markSignedOutByClosure();
           close();
-          router.replace('/');
+          router.replace(ACCOUNT_CLOSED_LOGIN_PATH);
         }}
       >
         <Banner tone="warning">

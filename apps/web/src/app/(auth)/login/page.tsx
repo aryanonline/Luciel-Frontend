@@ -11,7 +11,12 @@ import { Button, Card, CardTitle, CardDescription, Field, Input, Banner } from '
 import { LucielApiError } from '@luciel/api-client';
 import { api } from '@/lib/api';
 import { qk } from '@/lib/hooks';
-import { ACCOUNT_CLOSED_PATH, sessionIsClosed } from '@/lib/account-closed';
+import {
+  ACCOUNT_CLOSED_PATH,
+  ACCOUNT_CLOSED_REASON,
+  clearSignedOutByClosure,
+  sessionIsClosed,
+} from '@/lib/account-closed';
 
 /**
  * Login (Arch §3.7.1a): email + password. Login never involves a magic link —
@@ -56,11 +61,15 @@ const loginErrorMessage = (err: unknown): string => {
 /**
  * Why the owner is here, when a guard sent them (round 7 WP-12): the dashboard
  * guard adds `reason=session_expired` when the API refused a session the browser
- * still held. Read after mount (no Suspense boundary needed for a static page).
+ * still held, and closing the account (which signs the owner out) arrives with
+ * `reason=account_closed`. Read after mount (no Suspense boundary needed for a
+ * static page).
  */
 const REASON_COPY: Record<string, string> = {
   session_expired:
     'Your session has ended — it expired or was signed out elsewhere. Log in again to pick up where you left off.',
+  [ACCOUNT_CLOSED_REASON]:
+    'Your account is closed, and closing it signed you out. For 30 days you can still log in here to download your data again or reopen the account; after that, everything is permanently deleted.',
 };
 
 export default function LoginPage() {
@@ -82,6 +91,8 @@ export default function LoginPage() {
     setServerError(null);
     try {
       const session = await api.auth.login(values);
+      // A new session: a later 401 is no longer the closure's sign-out.
+      clearSignedOutByClosure();
       qc.setQueryData(qk.session, session);
       // The wall and first-run outrank `next`: both are states the admin has to
       // clear before any dashboard page would work for them anyway. A CLOSED account
