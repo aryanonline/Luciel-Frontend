@@ -20,7 +20,7 @@
     "@luciel/ui": "workspace:*",
     "@radix-ui/react-dialog": "^1.2.0",
     "@tanstack/react-query": "^5.104.1",
-    "next": "^15.5.27",
+    "next": "^15.5.28",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hook-form": "^7.89.0",
