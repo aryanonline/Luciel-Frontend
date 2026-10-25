@@ -207,6 +207,8 @@ describe('mock: the closed account (D5)', () => {
 
     const calls = [
       () => api.auth.me(),
+      // auth.py logout depends on current_session_subject: refused like the rest.
+      () => api.auth.logout(),
       () => api.luciel.get(),
       () => api.account.status(),
       () => api.account.requestExport(),

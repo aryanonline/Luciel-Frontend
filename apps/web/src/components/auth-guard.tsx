@@ -8,6 +8,7 @@ import { useSession } from '@/lib/hooks';
 import {
   ACCOUNT_CLOSED_LOGIN_PATH,
   ACCOUNT_CLOSED_PATH,
+  clearSignedOutByClosure,
   isAccountClosedError,
   sessionIsClosed,
   signedOutByClosure,
@@ -68,6 +69,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       else if (error.code === 'unauthorized') router.replace(sessionExpiredLogin());
       else if (error.code === 'verification_required') router.replace('/verify');
     } else if (data) {
+      // A served session (any 200 from me) proves the session the closure revoked is
+      // no longer the one in use — the owner signed in again, here or in another
+      // tab — so a later 401 is an ordinary expiry again. The racing 401 the mark
+      // exists for comes from a read that never succeeds, and the close handler drops
+      // the cached session (cancelling a read in flight), so it cannot reach here.
+      clearSignedOutByClosure();
       // The served account state outranks nextRoute: a closed account still has a
       // Luciel row in its grace window, so the server may say "dashboard".
       if (sessionIsClosed(data)) router.replace(ACCOUNT_CLOSED_PATH);

@@ -60,4 +60,19 @@ describe('session expired', () => {
     await screen.findByRole('button', { name: 'Log in' });
     expect(screen.queryByTestId('login-reason')).not.toBeInTheDocument();
   });
+
+  // The copy map is a plain object: an inherited key is not a reason. `__proto__`
+  // used to hand React Object.prototype as a child (the page crashed) and
+  // `constructor` rendered an empty banner.
+  it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty'])(
+    'an inherited key (?reason=%s) is not a reason: no banner, and the page renders',
+    async (key) => {
+      window.history.replaceState(null, '', `/login?reason=${key}`);
+      renderWithQuery(<LoginPage />);
+      // render() flushes the after-mount reason read, so the form being there means
+      // the page survived it.
+      await screen.findByRole('button', { name: 'Log in' });
+      expect(screen.queryByTestId('login-reason')).not.toBeInTheDocument();
+    },
+  );
 });

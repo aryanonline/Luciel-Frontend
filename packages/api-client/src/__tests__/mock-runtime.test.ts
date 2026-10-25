@@ -211,19 +211,23 @@ describe('the session cookie', () => {
     expect(tab.cookies.has('luciel_session')).toBe(false);
   });
 
-  it('closing revokes the session across reloads; the presence cookie stays; a sign-in lands closed', async () => {
+  it('closing clears the presence cookie and revokes the session across reloads; a sign-in lands closed', async () => {
     const tab = fakeTab();
     await tab.load().auth.login({ email: 'owner@example.com', password: 'x' });
-    await tab.load().account.close({ confirmDeleteLuciel: true });
-    // The live close answers 204 with no Set-Cookie: the browser still holds the
-    // cookie (so the middleware lets a page through) but the API refuses it.
     expect(tab.cookies.get('luciel_session')).toBe('mock-session');
+    await tab.load().account.close({ confirmDeleteLuciel: true });
+    // The live close's 204 deletes the cookie (auth.clear_session_cookie), so a page
+    // load before signing in again goes to the plain login, not "session expired".
+    expect(tab.cookies.has('luciel_session')).toBe(false);
     await expect(tab.load().auth.me()).rejects.toMatchObject({
       code: 'unauthorized',
       message: 'Session revoked.',
     });
+    // Logout refuses the revoked session too (current_session_subject), as live does.
+    await expect(tab.load().auth.logout()).rejects.toMatchObject({ code: 'unauthorized' });
     const session = await tab.load().auth.login({ email: 'owner@example.com', password: 'x' });
     expect(session.account.state).toBe('closed');
+    expect(tab.cookies.get('luciel_session')).toBe('mock-session');
     await expect(tab.load().account.status()).resolves.toMatchObject({ state: 'closed' });
   });
 });

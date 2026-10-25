@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardTitle, CardDescription, Button, Modal, Banner, PageHeader } from '@luciel/ui';
 import type { AccountExportResult } from '@luciel/api-client';
 import { useLuciel, useLucielMutations } from '@/lib/hooks';
@@ -32,6 +33,7 @@ type Dialog = null | 'pause' | 'delete' | 'close' | 'export';
 
 export default function AccountPage() {
   const router = useRouter();
+  const qc = useQueryClient();
   const { data: luciel } = useLuciel();
   const m = useLucielMutations();
   const [dialog, setDialog] = React.useState<Dialog>(null);
@@ -249,6 +251,11 @@ export default function AccountPage() {
           // never to "your session expired"; then go there. Signing in again lands
           // on /account-closed (re-export, reopen) for the next 30 days.
           markSignedOutByClosure();
+          // Drop what this tab cached for the session that just ended, as logging
+          // out does: Back must not paint a dashboard from cache (whose Log out would
+          // then 401). Removing a query also cancels its read in flight, so a 200
+          // that left before the closure can never land and clear the mark above.
+          qc.clear();
           close();
           router.replace(ACCOUNT_CLOSED_LOGIN_PATH);
         }}
