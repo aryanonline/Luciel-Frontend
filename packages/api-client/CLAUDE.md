@@ -58,6 +58,10 @@ rules. Test adapters through their public client behavior where possible.
   offering an impossible owner action or showing a false Connected chip.
 - The widget bundle gate checks emitted output, not just TypeScript exports.
   Keep both the source-level separation test and `apps/widget` build gate green.
+- The transport retries a request that never got a response (fetch threw: a reset
+  keep-alive socket, a network blip) ONCE for GET/HEAD/PUT/DELETE — idempotent by
+  contract — and never for POST. Live walk run 4 (2026-10-25) lost one DELETE in six
+  to exactly that; a second attempt is what a person would do.
 - A widget `widget_poll_only` delivery result is not an error; it means a
   persisted takeover reply will arrive on a later poll, not a push.
 - Mock scenarios must exercise loading/failure/honesty paths but do not grant

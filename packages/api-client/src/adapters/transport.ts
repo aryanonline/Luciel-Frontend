@@ -103,21 +103,35 @@ export function createTransport(opts: TransportOptions) {
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
     let res: Response;
     const form = body instanceof FormData ? body : null;
-    try {
-      // For multipart the browser must set content-type itself so the boundary
-      // is included; setting it by hand produces an unparseable body.
-      const headers: Record<string, string> = form
-        ? authHeaders()
-        : { 'content-type': 'application/json', ...authHeaders() };
-      res = await fetch(`${opts.baseUrl}${path}`, {
-        method,
-        headers,
-        // Carry the httpOnly session cookie; never touch localStorage.
-        credentials,
-        body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
-      });
-    } catch {
-      throw new LucielApiError({ code: 'network_error', message: 'Network request failed.' });
+    // For multipart the browser must set content-type itself so the boundary
+    // is included; setting it by hand produces an unparseable body.
+    const headers: Record<string, string> = form
+      ? authHeaders()
+      : { 'content-type': 'application/json', ...authHeaders() };
+    // A fetch that never got a response (a keep-alive socket the far side had
+    // closed, a network blip) is retried ONCE for the idempotent methods. The
+    // browser does that by itself for a GET on a reset socket but never for a
+    // DELETE or a PUT, and both are idempotent by contract here (a repeated DELETE
+    // answers 404, a repeated PUT writes the same row), so one more attempt turns
+    // a one-off blip into a served answer instead of 'Network request failed.'
+    // (live walk run 4, 2026-10-25: the sixth delete in a row never reached the
+    // API; the five before it had). A POST is never repeated: it may not be safe.
+    const idempotent = method === 'GET' || method === 'HEAD' || method === 'PUT' || method === 'DELETE';
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        res = await fetch(`${opts.baseUrl}${path}`, {
+          method,
+          headers,
+          // Carry the httpOnly session cookie; never touch localStorage.
+          credentials,
+          body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
+        });
+        break;
+      } catch {
+        if (!idempotent || attempt >= 1) {
+          throw new LucielApiError({ code: 'network_error', message: 'Network request failed.' });
+        }
+      }
     }
 
     if (!res.ok) await failure(res);
