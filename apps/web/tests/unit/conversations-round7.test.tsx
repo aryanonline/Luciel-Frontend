@@ -238,10 +238,14 @@ describe('persisted delivery outcomes on reopen (4b)', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send reply' }));
     await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(LIVE_ID, 'new one'));
-    expect(
-      (await screen.findAllByText('Sent — awaiting delivery confirmation from the carrier.'))
-        .length,
-    ).toBeGreaterThanOrEqual(2);
+    // findAllByText resolves on the FIRST match (the reply already on the row), so on a
+    // slow runner the new reply's line was not rendered yet (push CI 2026-10-25): wait
+    // for the count itself.
+    await waitFor(() =>
+      expect(
+        screen.getAllByText('Sent — awaiting delivery confirmation from the carrier.').length,
+      ).toBeGreaterThanOrEqual(2),
+    );
   });
 });
 
