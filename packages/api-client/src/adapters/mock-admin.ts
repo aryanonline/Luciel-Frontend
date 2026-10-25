@@ -288,7 +288,7 @@ function browserRuntime(): MockRuntime | undefined {
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 /** Bumped whenever the persisted state's shape changes; an older store is ignored. */
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 
 /** The persisted store, or null when absent, unreadable or from another version. */
 function readStore(storage: MockStorage): { seededScenario: MockScenario; state: object } | null {
@@ -494,6 +494,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
      * that deletion stays the owner's and reopening does not undo it).
      */
     closure: null as null | { closedAt: string; lucielBefore: Luciel | null },
+    /**
+     * The closure bumped the session epoch (cascade.close_account): the session the
+     * owner closed with is revoked, so every call answers 401 until a new sign-in.
+     */
+    sessionRevoked: false,
     /** SMS escalation-contact confirmations by normalized number (round 7 WP-4b). */
     smsConfirmations: {} as Record<string, SmsConfirmationRow>,
     /** Recent code entries — the per-tenant rate limit on the confirm route. */
@@ -757,6 +762,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
   const guardSession = () => {
     if (state.scenario === 'expired_session') {
       throw new LucielApiError({ code: 'unauthorized', message: 'Session expired.' });
+    }
+    // deps.current_session_subject: the cookie's epoch no longer matches the
+    // account's — the plain 401 the http adapter maps, not the closed-account 403.
+    if (state.sessionRevoked) {
+      throw new LucielApiError({ code: 'unauthorized', message: 'Session revoked.' });
     }
   };
   /** The closure's reopen deadline (null when no closure instant is on record). */
@@ -1121,6 +1131,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // A sign-in is a NEW session: whatever expired before (a stale cookie, a
         // password reset that revoked every session) no longer applies.
         if (state.scenario === 'expired_session') state.scenario = 'verified';
+        // ...and a session a closure revoked: the new one carries the bumped epoch.
+        // A closed account signs in (D5); the session says closed and the login
+        // page routes it to the reduced page.
+        state.sessionRevoked = false;
         // The backend's Set-Cookie, modelled: the presence cookie the middleware
         // gates the dashboard on (browser runtime only — it has no httpOnly flag).
         runtime?.writeCookie(`${SESSION_COOKIE}=mock-session; path=/; SameSite=Lax`);
@@ -3138,6 +3152,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         }
         state.account.state = 'closed';
         audit('account_closure_initiated');
+        // Closing signs the owner out (cascade.close_account bumps the session
+        // epoch): from here every call made with this session answers the typed
+        // 401, exactly as the http adapter would see it, until the owner signs in
+        // again. The live 204 sends no Set-Cookie, so the presence cookie stays.
+        state.sessionRevoked = true;
         await delay();
       },
     },

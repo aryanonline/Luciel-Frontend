@@ -5,14 +5,21 @@ import { useRouter } from 'next/navigation';
 import { Banner } from '@luciel/ui';
 import { LucielApiError } from '@luciel/api-client';
 import { useSession } from '@/lib/hooks';
-import { ACCOUNT_CLOSED_PATH, isAccountClosedError, sessionIsClosed } from '@/lib/account-closed';
+import {
+  ACCOUNT_CLOSED_LOGIN_PATH,
+  ACCOUNT_CLOSED_PATH,
+  isAccountClosedError,
+  sessionIsClosed,
+  signedOutByClosure,
+} from '@/lib/account-closed';
 
 /**
  * Client-side session guard for the dashboard surfaces. HONEST NOTE
  * (Space Instructions §3.7): real enforcement belongs in middleware against the
  * httpOnly session cookie (Arch §3.7.1a), and that is what runs first. On top of
  * it this guard calls api.auth.me() against the backend and routes:
- *   - 401 / no session  → /login
+ *   - 401 / no session  → /login (reason=account_closed right after a closure made
+ *     in this page — the closure signs the owner out — otherwise session_expired)
  *   - unverified        → /verify
  *   - verified, no Luciel → /first-run (handled where needed)
  *   - CLOSED account      → /account-closed (round 7 WP-5 / D5): the session is
@@ -54,6 +61,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (error instanceof LucielApiError) {
       // A typed account_closed outranks the 403 → unauthorized mapping (D5).
       if (isAccountClosedError(error)) router.replace(ACCOUNT_CLOSED_PATH);
+      // The owner just closed the account here: the 401 is the closure's sign-out
+      // (the server bumped the session epoch), never "your session expired".
+      else if (error.code === 'unauthorized' && signedOutByClosure())
+        router.replace(ACCOUNT_CLOSED_LOGIN_PATH);
       else if (error.code === 'unauthorized') router.replace(sessionExpiredLogin());
       else if (error.code === 'verification_required') router.replace('/verify');
     } else if (data) {

@@ -42,6 +42,23 @@ const card = (page: Page, title: string) =>
     .last();
 
 /**
+ * Type the walk account's credentials into the login form. Live: through the DOM
+ * (`fillSecret`), never a titled `fill` — a fill step is titled with its value and
+ * would put the secret in the report. Mock: a plain `fill` of the test values.
+ */
+async function enterCredentials(w: Walk) {
+  const email = w.page.getByLabel('Email');
+  const password = w.page.getByLabel('Password');
+  if (w.live) {
+    await fillSecret(email, target.email);
+    await fillSecret(password, target.password);
+  } else {
+    await email.fill(target.email);
+    await password.fill(target.password);
+  }
+}
+
+/**
  * Live only: a walk cut short (a failure, a cancelled run) can leave the walk account
  * closed, its Luciel paused or deleted. Put it back to an open account with an active
  * Luciel before walking — each repair is recorded in the report — so one bad run does
@@ -103,14 +120,8 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
   // ── Sign in ──────────────────────────────────────────────────────────────────
   await w.pillar('Sign in', async () => {
     await page.goto('/login');
-    const email = page.getByLabel('Email');
-    const password = page.getByLabel('Password');
-    if (w.live) {
-      await fillSecret(email, target.email);
-      await fillSecret(password, target.password);
-    } else {
-      await email.fill(target.email);
-      await password.fill(target.password);
+    await enterCredentials(w);
+    if (!w.live) {
       // The error leg: a failure that is not a wrong password says what it is.
       await w.control.failNext('auth.login');
       await page.getByRole('button', { name: 'Log in' }).click();
@@ -1500,10 +1511,27 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
         await expect(close.getByText('Internal Server Error')).toBeVisible();
         await expect(close).toBeVisible();
       },
+      // Closing signs the owner out — the server bumps the session epoch, so the old
+      // session answers 401 (live walk run 7 waited 30 minutes on a "session expired"
+      // login here). The login page says why; for 30 days signing in again lands on
+      // the reduced page. The reason banner renders after mount, so seeing it also
+      // proves the form is hydrated before any credential goes into it.
       success: async () => {
-        await page.waitForURL((url) => url.pathname === '/');
-        await page.goto('/dashboard');
-        await page.waitForURL(/\/account-closed$/);
+        await page.waitForURL(/\/login\?reason=account_closed$/, { timeout: 45_000 });
+        const reason = page.getByTestId('login-reason');
+        await expect(reason).toContainText('Your account is closed');
+        await expect(reason).toContainText(
+          'For 30 days you can still log in here to download your data again or reopen the account',
+        );
+        try {
+          await enterCredentials(w);
+          await page.getByRole('button', { name: 'Log in' }).click();
+          await page.waitForURL(/\/account-closed$/, { timeout: 45_000 });
+        } catch (err) {
+          await clearSecrets(page);
+          throw err;
+        }
+        await expect(page.getByRole('heading', { name: 'Your account is closed' })).toBeVisible();
       },
       reload: () =>
         expect(page.getByRole('heading', { name: 'Your account is closed' })).toBeVisible(),

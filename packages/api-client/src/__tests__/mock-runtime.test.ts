@@ -210,6 +210,22 @@ describe('the session cookie', () => {
     await tab.load().auth.logout();
     expect(tab.cookies.has('luciel_session')).toBe(false);
   });
+
+  it('closing revokes the session across reloads; the presence cookie stays; a sign-in lands closed', async () => {
+    const tab = fakeTab();
+    await tab.load().auth.login({ email: 'owner@example.com', password: 'x' });
+    await tab.load().account.close({ confirmDeleteLuciel: true });
+    // The live close answers 204 with no Set-Cookie: the browser still holds the
+    // cookie (so the middleware lets a page through) but the API refuses it.
+    expect(tab.cookies.get('luciel_session')).toBe('mock-session');
+    await expect(tab.load().auth.me()).rejects.toMatchObject({
+      code: 'unauthorized',
+      message: 'Session revoked.',
+    });
+    const session = await tab.load().auth.login({ email: 'owner@example.com', password: 'x' });
+    expect(session.account.state).toBe('closed');
+    await expect(tab.load().account.status()).resolves.toMatchObject({ state: 'closed' });
+  });
 });
 
 describe('scenario shapes the walk relies on', () => {

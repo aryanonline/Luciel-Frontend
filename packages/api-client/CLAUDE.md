@@ -62,6 +62,9 @@ rules. Test adapters through their public client behavior where possible.
   keep-alive socket, a network blip) ONCE for GET/HEAD/PUT/DELETE — idempotent by
   contract — and never for POST. Live walk run 4 (2026-10-25) lost one DELETE in six
   to exactly that; a second attempt is what a person would do.
+- `account.close` revokes the mock session (`state.sessionRevoked`, STORE_VERSION 2) the way
+  the live closure bumps the session epoch: every call answers 401 `Session revoked.` (not the
+  `account_closed` 403) until `auth.login`, which lands closed; the presence cookie stays.
 - A widget `widget_poll_only` delivery result is not an error; it means a
   persisted takeover reply will arrive on a later poll, not a push.
 - Mock scenarios must exercise loading/failure/honesty paths but do not grant

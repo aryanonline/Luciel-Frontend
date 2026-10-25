@@ -183,6 +183,8 @@ describe('mock: the closed account (D5)', () => {
   it('closing a live account puts its Luciel in the grace window that a reopen restores', async () => {
     const api = createLucielClient({ adapter: 'mock' });
     await api.account.close({ confirmDeleteLuciel: true });
+    // The closure signed the owner out (below); they sign in again to the reduced surface.
+    await api.auth.login({ email: 'owner@example.com', password: 'pw-123456' });
     expect(accountClosedDetail(await api.luciel.get().catch((e: unknown) => e))).not.toBeNull();
     const status = await api.account.status();
     expect(status).toMatchObject({
@@ -191,5 +193,37 @@ describe('mock: the closed account (D5)', () => {
       lucielRestoredOnReopen: true,
     });
     expect(await api.account.reopen()).toMatchObject({ lucielRestored: true });
+  });
+
+  /**
+   * Live walk run 7 (2026-10-25): the closure bumps the session epoch
+   * (cascade.close_account; SeedTest M8 "old_session_revoked=401"), so the session
+   * the owner closed with is dead. The mock used to keep answering with it, which is
+   * why the walk passed on the mock and waited 30 minutes on live.
+   */
+  it('closing signs the owner out: the old session answers 401, and a new sign-in lands closed', async () => {
+    const api = createLucielClient({ adapter: 'mock' });
+    await api.account.close({ confirmDeleteLuciel: true });
+
+    const calls = [
+      () => api.auth.me(),
+      () => api.luciel.get(),
+      () => api.account.status(),
+      () => api.account.requestExport(),
+      () => api.account.reopen(),
+    ];
+    for (const call of calls) {
+      const err = await call().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(LucielApiError);
+      // The plain 401 the http adapter maps — a revoked session, NOT the typed
+      // closed-account 403 (that one belongs to a session signed in after closing).
+      expect(err).toMatchObject({ code: 'unauthorized', message: 'Session revoked.' });
+      expect(accountClosedDetail(err)).toBeNull();
+    }
+
+    const session = await api.auth.login({ email: 'owner@example.com', password: 'pw-123456' });
+    expect(session.account.state).toBe('closed');
+    expect((await api.auth.me()).account.state).toBe('closed');
+    expect(await api.account.status()).toMatchObject({ state: 'closed', canReopen: true });
   });
 });
