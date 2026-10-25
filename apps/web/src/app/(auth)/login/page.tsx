@@ -79,7 +79,9 @@ export default function LoginPage() {
   const [reason, setReason] = React.useState<string | null>(null);
   React.useEffect(() => {
     const value = new URLSearchParams(window.location.search).get('reason');
-    setReason(value && REASON_COPY[value] ? REASON_COPY[value] : null);
+    // Own keys only: `?reason=__proto__` would otherwise hand React Object.prototype
+    // as a child (the page crashed) and `?reason=constructor` an empty banner.
+    setReason(value && Object.hasOwn(REASON_COPY, value) ? (REASON_COPY[value] ?? null) : null);
   }, []);
   const {
     register,

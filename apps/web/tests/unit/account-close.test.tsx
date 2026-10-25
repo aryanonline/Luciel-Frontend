@@ -1,11 +1,14 @@
+import * as React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderWithQuery } from './test-utils';
-import { LucielApiError } from '@luciel/api-client';
+import { LucielApiError, type Session } from '@luciel/api-client';
 import AccountPage from '@/app/(app)/dashboard/account/page';
 import LoginPage from '@/app/(auth)/login/page';
 import { AuthGuard } from '@/components/auth-guard';
 import { api } from '@/lib/api';
+import { qk } from '@/lib/hooks';
 import {
   clearSignedOutByClosure,
   markSignedOutByClosure,
@@ -57,9 +60,30 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+/** A served, open session (what `me` answers before a closure, or after a reopen). */
+const openSession: Session = {
+  account: {
+    adminId: '11111111-1111-4111-8111-111111111111',
+    userId: '22222222-2222-4222-8222-222222222222',
+    email: 'owner@example.com',
+    state: 'verified',
+    createdAt: '2026-01-15T14:00:00Z',
+    emailVerified: true,
+    hasCompletedFirstRun: true,
+    hasLuciel: true,
+  },
+  nextRoute: 'dashboard',
+  notices: [],
+};
+
+const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const renderIn = (client: QueryClient, ui: React.ReactElement) =>
+  render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+
 /** Render, wait for the served (ACTIVE) Luciel, and open the close confirmation. */
-async function openCloseDialog() {
-  renderWithQuery(<AccountPage />);
+async function openCloseDialog(client?: QueryClient) {
+  if (client) renderIn(client, <AccountPage />);
+  else renderWithQuery(<AccountPage />);
   // The mock's verified scenario serves an ACTIVE Luciel; the note below the button
   // renders only once that read has landed, so the dialog opens on the live copy.
   await screen.findByText(/let closing do it/i);
@@ -168,18 +192,8 @@ describe('closing signs the owner out', () => {
     markSignedOutByClosure(); // what a confirmed close did (pinned above)
     window.history.replaceState(null, '', '/login?reason=account_closed');
     vi.spyOn(api.auth, 'login').mockResolvedValue({
-      account: {
-        adminId: '11111111-1111-4111-8111-111111111111',
-        userId: '22222222-2222-4222-8222-222222222222',
-        email: 'owner@example.com',
-        state: 'closed',
-        createdAt: '2026-01-15T14:00:00Z',
-        emailVerified: true,
-        hasCompletedFirstRun: true,
-        hasLuciel: true,
-      },
-      nextRoute: 'dashboard',
-      notices: [],
+      ...openSession,
+      account: { ...openSession.account, state: 'closed' },
     });
     renderWithQuery(<LoginPage />);
     fireEvent.change(screen.getByLabelText(/Email/), { target: { value: 'owner@example.com' } });
@@ -188,5 +202,64 @@ describe('closing signs the owner out', () => {
     // A closed account signs in to the reduced page (D5).
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/account-closed'));
     expect(signedOutByClosure()).toBe(false);
+  });
+
+  /**
+   * Review follow-up: the mark used to be cleared only by a sign-in through THIS
+   * tab's form, so after the owner signed in again elsewhere (another tab, another
+   * person) a genuine expiry here was reported as "your account is closed". Any 200
+   * from `me` proves the revoked session is no longer the one in use.
+   */
+  it('a served session clears the mark: a later 401 is an ordinary expiry again', async () => {
+    markSignedOutByClosure();
+    window.history.replaceState(null, '', '/dashboard/leads');
+    const me = vi.spyOn(api.auth, 'me').mockResolvedValue(openSession);
+    const client = newClient();
+    renderIn(
+      client,
+      <AuthGuard>
+        <p>gated</p>
+      </AuthGuard>,
+    );
+    expect(await screen.findByText('gated')).toBeInTheDocument();
+    expect(signedOutByClosure()).toBe(false);
+
+    // The session then expires for real; the guard's next read is refused.
+    me.mockRejectedValue(new LucielApiError({ code: 'unauthorized', message: 'Session expired.' }));
+    await act(() => client.refetchQueries({ queryKey: qk.session }));
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        '/login?reason=session_expired&next=%2Fdashboard%2Fleads',
+      ),
+    );
+    expect(replace).not.toHaveBeenCalledWith('/login?reason=account_closed');
+  });
+
+  /**
+   * Review follow-up: closing left the closed account's data in this tab's cache, so
+   * Back painted a dashboard from it (and on live its Log out then 401'd). The close
+   * drops the cache the way logging out does.
+   */
+  it('a successful close drops the cached session from the tab', async () => {
+    const client = newClient();
+    client.setQueryData(qk.session, openSession);
+    const dialog = await openCloseDialog(client);
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Delete my Luciel and close account' }),
+    );
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/login?reason=account_closed'));
+    expect(client.getQueryData(qk.session)).toBeUndefined();
+  });
+
+  it('a refused close keeps the cached session (nothing ended)', async () => {
+    closeAccount.mockRejectedValue(new Error('Internal Server Error'));
+    const client = newClient();
+    client.setQueryData(qk.session, openSession);
+    const dialog = await openCloseDialog(client);
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Delete my Luciel and close account' }),
+    );
+    expect(await within(dialog).findByText('Internal Server Error')).toBeInTheDocument();
+    expect(client.getQueryData(qk.session)).toEqual(openSession);
   });
 });

@@ -769,6 +769,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       throw new LucielApiError({ code: 'unauthorized', message: 'Session revoked.' });
     }
   };
+  /** The backend's cookie deletion, modelled on the presence cookie (browser runtime). */
+  const clearSessionCookie = () =>
+    runtime?.writeCookie(
+      `${SESSION_COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`,
+    );
   /** The closure's reopen deadline (null when no closure instant is on record). */
   const reopenUntil = (): string | null =>
     state.closure
@@ -1147,10 +1152,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         return { account: clone(state.account), nextRoute: next };
       },
       async logout() {
+        // auth.py logout depends on current_session_subject: an expired or revoked
+        // session is refused (401) before anything is cleared.
+        guardSession();
         await delay();
-        runtime?.writeCookie(
-          `${SESSION_COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`,
-        );
+        clearSessionCookie();
       },
       async me() {
         guardSession();
@@ -3155,8 +3161,11 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         // Closing signs the owner out (cascade.close_account bumps the session
         // epoch): from here every call made with this session answers the typed
         // 401, exactly as the http adapter would see it, until the owner signs in
-        // again. The live 204 sends no Set-Cookie, so the presence cookie stays.
+        // again. The 204 also clears the session cookie (auth.clear_session_cookie,
+        // as logout and a password reset do), so a later page load before signing in
+        // reaches the plain login rather than a "session expired" claim.
         state.sessionRevoked = true;
+        clearSessionCookie();
         await delay();
       },
     },

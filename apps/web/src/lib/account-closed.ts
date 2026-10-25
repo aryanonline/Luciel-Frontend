@@ -20,8 +20,10 @@ export const ACCOUNT_CLOSED_REASON = 'account_closed';
 export const ACCOUNT_CLOSED_LOGIN_PATH = `/login?reason=${ACCOUNT_CLOSED_REASON}`;
 
 /**
- * Set the moment the server confirms a closure made in THIS page, cleared by the next
- * successful sign-in. While it is set, a 401 is the closure's own sign-out, not an
+ * Set the moment the server confirms a closure made in THIS page; cleared by the next
+ * successful sign-in here, or by the guard as soon as it reads a served session (any
+ * 200 from `me` — e.g. a sign-in from another tab). While it is set, a 401 is the
+ * closure's own sign-out, not an
  * expired session: the dashboard guard then sends the owner to the same
  * {@link ACCOUNT_CLOSED_LOGIN_PATH} the account page navigates to, so a session read
  * that lands between the close and that navigation can never win with "your session
