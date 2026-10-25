@@ -2,13 +2,6 @@
   "_comment": "Waivers for `scripts/audit-gate.mjs` (pnpm audit, high+ blocks). Each entry needs a reason and an expiry; an expired entry fails the build. Rationale in audit-allowlist.md. A new entry is a reviewed commit, never a quiet renewal.",
   "waivers": [
     {
-      "ghsa": "GHSA-vfj7-8cjw-p6xm",
-      "package": "braces",
-      "reason": "Stack-exhaustion DoS on deeply nested brace patterns; every release (<=3.0.3) is affected and NO patched version exists (advisory lists patched <0.0.0). braces reaches this repo only through build- and lint-time tooling — tailwindcss 3 (chokidar / fast-glob / micromatch) and eslint-config-next (fast-glob) — where the patterns are the repository's own content globs; it is in no production dependency path (pnpm why braces --prod is empty), is not in the web image's runtime bundle or the widget bundle, and no request can supply a pattern.",
-      "added": "2026-10-04",
-      "expires": "2026-11-03"
-    },
-    {
       "ghsa": "GHSA-5gmw-xhrv-c9v3",
       "package": "tinypool",
       "reason": "Prototype-pollution gadgets in tinypool's worker/run() options (<2.1.2; every 1.x is in range and 1.x gets no patch). tinypool is the worker pool of the vitest test runner only: a dev dependency reached by nothing that ships (pnpm why tinypool --prod is empty), absent from the web image's runtime bundle and the widget bundle, and its options are set by vitest's own config in this repo, never by input. Exit is vitest 4 (ships tinypool 2.1.2+), a major the steward triages like Dependabot's other major-update PRs.",
@@ -21,6 +14,13 @@
       "reason": "Prototype-pollution gadgets in tinypool's worker/run() options (<2.1.2; every 1.x is in range and 1.x gets no patch). tinypool is the worker pool of the vitest test runner only: a dev dependency reached by nothing that ships (pnpm why tinypool --prod is empty), absent from the web image's runtime bundle and the widget bundle, and its options are set by vitest's own config in this repo, never by input. Exit is vitest 4 (ships tinypool 2.1.2+), a major the steward triages like Dependabot's other major-update PRs.",
       "added": "2026-10-11",
       "expires": "2026-11-03"
+    },
+    {
+      "ghsa": "GHSA-mrhx-c7xc-m3w5",
+      "package": "zod",
+      "reason": "Memory exhaustion while validating oversized constrained collections; patched only in zod 4.6.6, no 3.x release carries the fix (3.25.76 is the last 3.x). In this repository zod parses the control-plane and widget data-plane responses of Luciel's own authenticated backend and one owner-typed form (contact-health confirm code: a phone number and a 6-digit string) - no attacker-sized collection reaches a zod schema in the browser, and the public widget bundle validates only the backend's replies. Exit is the zod 4 migration (apps/web + packages/api-client import `zod`; 25 modules, schema introspection is not used so the classic API carries over), a major for the steward's triage.",
+      "added": "2026-10-25",
+      "expires": "2026-11-24"
     }
   ]
 }

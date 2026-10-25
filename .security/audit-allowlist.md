@@ -10,8 +10,10 @@ an expired entry is a failing build, not a silent pass. `scripts/allowlist-expir
 
 | Advisory | Package | Why it is waived | Expires | Exit |
 |---|---|---|---|---|
-| GHSA-vfj7-8cjw-p6xm | braces <=3.0.3 | Stack-exhaustion DoS on nested brace patterns; no patched release exists. Build/lint-time only (tailwindcss 3 and eslint-config-next tooling), patterns are this repo's own globs, not in any production path (`pnpm why braces --prod` is empty) or shipped bundle. | 2026-11-03 | A patched `braces`, or the Tailwind 4 migration (Dependabot #30, `major-update`), which drops the chokidar/micromatch path. |
+| GHSA-mrhx-c7xc-m3w5 | zod <4.6.6 (3.25.76 installed) | Memory exhaustion validating oversized constrained collections; patched only in zod 4.6.6, no 3.x fix. zod here parses Luciel's own backend responses (control plane, widget data plane) and one owner-typed confirm-code form; no attacker-sized collection reaches a schema in the browser. | 2026-11-24 | The zod 4 migration (apps/web + packages/api-client, 25 modules, no schema introspection), a major for the steward's triage. |
 | GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr | tinypool <2.1.2 (1.1.1 installed) | Prototype-pollution gadgets in the worker/run() options. tinypool is vitest's worker pool: a dev dependency only (`pnpm why tinypool --prod` is empty), not in the web image or the widget bundle, and its options come from this repo's vitest config, never from input. | 2026-11-03 | vitest 4 (ships tinypool 2.1.2+), a major for the steward's triage. |
+
+Round 7 (2026-10-25): the nightly audit went red on 2026-10-24 for four advisories. Three had in-range fixes and were taken: `next` 15.5.27 → 15.5.28 (GHSA-2464-fhr4-w9xw, an unauthenticated RCE in the Image Optimization API with SVG input, and GHSA-p3m5-59mp-jv5r), `vite` 6.4.3 → 6.4.4+ (GHSA-587h-7wmj-h5pm, launch-editor). `zod` has no 3.x fix and is waived above. The `braces` waiver was retired the same day: the advisory is no longer reported.
 
 Round 7 (2026-10-11): the nightly audit went red on 2026-10-06 for four advisories. Three had in-range fixes and were taken, not waived: `next` 15.5.25 → 15.5.27 (two moderates), `sharp` 0.35.5 (GHSA-wq5f-xc86-pv6w) and `source-map-js` 1.2.2 (GHSA-68fv-2mgg-jv7q) by refreshing the lockfile. The two `tinypool` criticals have no fix inside vitest 3 and are waived above.
 

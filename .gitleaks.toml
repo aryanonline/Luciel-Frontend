@@ -16,12 +16,21 @@ description = "Public-by-design values and test fixtures the default rules read 
 # (round 7 WP-0, 2026-09-14) flagged them in commits f865921 and 711b765; the push
 # scan never saw them because it diffs only the pushed range. Waived by value AND by
 # fixture path so a real key pasted into those files would still trip the scan.
+#
+# 2026-10-25 (nightly scan): `vm_live_abc123` is the widget-channel-off test's fake
+# embed key, and `eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee` is the mock admin adapter's
+# obviously-synthetic HubSpot connection id (the hubspot-api-key rule matches the
+# UUID shape). Same rule: by value AND by fixture path.
 regexes = [
   "6f66ccc8-ae5a-4d20-90f6-e49adfa8c10e",
   "vm_live_test123456",
   "vm_live_a8f3c2",
+  "vm_live_abc123",
+  "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
 ]
 paths = [
   "apps/web/tests/unit/widget-preview-session[.]test[.]tsx",
+  "apps/web/tests/unit/widget-channel-off[.]test[.]tsx",
   "packages/api-client/src/adapters/mock-data[.]ts",
+  "packages/api-client/src/adapters/mock-admin[.]ts",
 ]
