@@ -151,7 +151,8 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
   then — a second "Crawl this site" would only reuse the row. The walk's mock-only step "a
   crawl in progress survives a reload" uses `mockControl(page).deferSync(4000)`; on live the
   Knowledge pillar first removes a crawl a cut-short walk left CONNECTED (the same URL
-  reuses one row, so a finished walk leaves it not-connected).
+  reuses one row, so a finished walk leaves it not-connected) and deletes a leftover
+  `walk-services-<epoch>.csv` the skipped "Knowledge cleanup" never reached.
 - Conversations page: rows carry `#<first-8-of-sessionId>` matching the escalation
   email's ref; `?open=<sessionId>` deep-opens a transcript (useSearchParams under
   Suspense); escalation badges ride `useEscalations` and degrade to a note on
