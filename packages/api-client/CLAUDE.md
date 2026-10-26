@@ -17,6 +17,8 @@ client, with mock and HTTP adapters behind stable interfaces.
 - `src/widget-factory.ts` — widget adapter selection.
 - `src/adapters/http-admin.ts` — authenticated control-plane HTTP transport.
 - `src/adapters/widget-adapters.ts` — public widget transport and mock behavior.
+- `src/adapters/sync-job.ts` — `awaitSyncJob`, the poll that turns a 202 "still syncing"
+  knowledge sync back into the SyncResult (shared by the http and mock adapters).
 - `src/adapters/mock-admin.ts` and `src/adapters/mock-data.ts` — deterministic
   control-plane states for UI development and tests.
 - `src/chips.ts` — raw connection-status to customer-chip mapping.
@@ -79,3 +81,23 @@ rules. Test adapters through their public client behavior where possible.
   `mock_stripe=portal_card_updated`), and `window.__lucielMock` is the e2e control surface.
   Anything new in `state` must be JSON-serialisable; bump `STORE_VERSION` when its shape
   changes. Without `runtime` (every unit test) nothing of this applies.
+- The asynchronous crawl (round 7; live walk run 8, 2026-10-25 — an 8-page crawl ran inside
+  the request past the ALB's 60 s idle timeout, whose CORS-less 504 the browser reports as
+  `network_error`): POST `…/sync-connections/{id}/sync` answers 200 + SyncResult when the
+  sync finishes inside the server's 20 s wait, the same 409s as before for a fast refusal,
+  and **202 `{connectionId, state: 'syncing', startedAt}`** when it is still running. Every
+  knowledge_source row (GET `/connections` and GET `/knowledge/sync-connections`) carries
+  `syncJob` (`knowledgeSyncJob`, passthrough). `knowledge.syncConnection` still returns
+  `Promise<KnowledgeSyncResult>`: on a 202 the http adapter polls GET
+  `/knowledge/sync-connections` through `adapters/sync-job.ts` `awaitSyncJob` (2 s, 10 min
+  max; a job that started before the 202's `startedAt` is ignored) — synced → the result
+  (arrays default `[]`), shrink_pending → `conflict` with the server's sentence (the
+  confirm-shrink path keys on it), failed → `conflict` for "Sync unavailable…" else
+  `server_error`, past the limit → `service_unavailable` "Still syncing — it will finish on
+  its own…". The POST is sent once (the transport never repeats a POST).
+- Mock `deferSync(ms)` (control surface; `state.syncJobs` / `deferredSyncs`, STORE_VERSION
+  3): the NEXT syncConnection stamps `syncing` (persisted at once, so a reload serves it),
+  completes `ms` later with exactly the synchronous result (`runSync`) — settled lazily on
+  any read that serves `syncJob` — and resolves through the SAME `awaitSyncJob`. Without it
+  the mock answers as before; a fast success also records a `synced` job, a fast refusal
+  throws as before and records nothing.

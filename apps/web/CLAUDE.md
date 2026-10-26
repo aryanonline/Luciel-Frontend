@@ -139,6 +139,19 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
   (never `/`); `markSignedOutByClosure()` makes the guard send a racing 401 there too instead of
   `session_expired`, until a sign-in or any served session clears it; signing in again lands
   on `/account-closed`.
+- Knowledge syncs can be asynchronous (round 7; the server answers 202 past its 20 s inline
+  wait and the client polls — see packages/api-client CLAUDE.md). "Connected sources" reads
+  the SERVED `syncJob`: `syncing` → "Crawling…" (website_crawl) / "Syncing…" + "started
+  <time>", Re-sync disabled (+ aria-disabled), and `useConnections` with
+  `refetchInterval: knowledgeSyncRefetchInterval` re-reads every 2 s while any row syncs; a row leaving
+  `syncing` invalidates knowledge + quota. `failed` → "Last sync failed: <error>" beside a
+  last-synced time that is never erased; `shrink_pending` → the served sentence + "Yes,
+  remove them and sync". The success toasts are unchanged; a poll that gives up
+  (`service_unavailable`) is said as "Still syncing…" (info), and the crawl dialog closes
+  then — a second "Crawl this site" would only reuse the row. The walk's mock-only step "a
+  crawl in progress survives a reload" uses `mockControl(page).deferSync(4000)`; on live the
+  Knowledge pillar first removes a crawl a cut-short walk left CONNECTED (the same URL
+  reuses one row, so a finished walk leaves it not-connected).
 - Conversations page: rows carry `#<first-8-of-sessionId>` matching the escalation
   email's ref; `?open=<sessionId>` deep-opens a transcript (useSearchParams under
   Suspense); escalation badges ride `useEscalations` and degrade to a note on

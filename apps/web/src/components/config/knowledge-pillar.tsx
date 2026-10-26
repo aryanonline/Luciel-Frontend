@@ -260,7 +260,24 @@ export function KnowledgePillar() {
     // Creating the connection only registers the target; the first crawl is
     // what actually produces sources (Arch §3.2.3 — manual pull, no poller).
     const connection = await api.knowledge.startCrawl([url]);
-    const result = await api.knowledge.syncConnection(connection.connectionId);
+    // A crawl that outlives the server's inline wait is answered "still running" and
+    // polled (round 7 — the asynchronous crawl), so the dialog's "Crawling…" spans the
+    // whole crawl. If even the poll's limit passes, the crawl is still running on the
+    // server: the dialog closes (there is nothing left to submit — the same site asked
+    // again only reuses its row), the notice says so — never "Crawled" — and the row
+    // reads "Crawling…".
+    let result;
+    try {
+      result = await api.knowledge.syncConnection(connection.connectionId);
+    } catch (err) {
+      if (!(err instanceof LucielApiError && err.code === 'service_unavailable')) throw err;
+      setCrawlOpen(false);
+      setCrawlUrl('');
+      setCrawlRights(false);
+      setNotice({ tone: 'info', text: err.message });
+      qc.invalidateQueries({ queryKey: qk.connections });
+      return;
+    }
     setCrawlOpen(false);
     setCrawlUrl('');
     setCrawlRights(false);
@@ -298,7 +315,17 @@ export function KnowledgePillar() {
   /** A refused shrink (F107) becomes a decision, not a dead end. */
   const confirmShrink = (connectionId: string) =>
     run(async () => {
-      const result = await api.knowledge.syncConnection(connectionId, { confirmShrink: true });
+      let result;
+      try {
+        result = await api.knowledge.syncConnection(connectionId, { confirmShrink: true });
+      } catch (err) {
+        // Still running on the server past the poll's limit: said as it is.
+        if (err instanceof LucielApiError && err.code === 'service_unavailable') {
+          void qc.invalidateQueries({ queryKey: qk.connections });
+          return err.message;
+        }
+        throw err;
+      }
       return `Synced — ${result.removed.length} source(s) removed to match the source, ${result.added.length} added.`;
     });
 

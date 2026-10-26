@@ -18,7 +18,9 @@ import type {
   EmailProvisioning,
   KnowledgeSource,
   KnowledgeSyncConnection,
+  KnowledgeSyncJob,
   KnowledgeSyncProvider,
+  KnowledgeSyncResult,
   KnowledgeScope,
   KnowledgeScopeKind,
   MetaChannel,
@@ -30,6 +32,7 @@ import type {
   NeverAttemptedReason,
 } from '../schemas';
 import * as seed from './mock-data';
+import { awaitSyncJob } from './sync-job';
 
 /**
  * In-memory, deterministic mockAdapter for the admin client (Space Instructions
@@ -188,6 +191,13 @@ export interface MockControl {
   endSession: (sessionId: string) => void;
   /** The provider revoked this knowledge grant; the row still says connected until a sync. */
   revokeKnowledgeGrant: (connectionId: string) => void;
+  /**
+   * The NEXT `knowledge.syncConnection` outlives the server's inline wait: it is
+   * answered "still running" (the 202), its connection serves `syncJob.state:
+   * 'syncing'` — across reloads — and it completes `ms` later with the result a
+   * synchronous sync computes, resolved through the same poll the http adapter uses.
+   */
+  deferSync: (ms: number) => void;
   /** Drop the persisted store; the next page load starts from the scenario's seed. */
   reset: () => void;
 }
@@ -288,7 +298,7 @@ function browserRuntime(): MockRuntime | undefined {
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 /** Bumped whenever the persisted state's shape changes; an older store is ignored. */
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 
 /** The persisted store, or null when absent, unreadable or from another version. */
 function readStore(storage: MockStorage): { seededScenario: MockScenario; state: object } | null {
@@ -509,6 +519,12 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     revokedGrants: [] as string[],
     /** Synced sources whose item is gone at the origin (the next sync tombstones them). */
     removedAtOrigin: [] as string[],
+    /** The last sync job per knowledge connection — served as the row's `syncJob`. */
+    syncJobs: {} as Record<string, KnowledgeSyncJob>,
+    /** Deferred syncs still running: when each completes (epoch ms) and how it was asked. */
+    deferredSyncs: {} as Record<string, { completeAt: number; confirmShrink: boolean }>,
+    /** Set by the e2e control: the next sync is deferred by this many ms (0 = not). */
+    deferNextSyncMs: 0,
     /** The deterministic id counter — part of the store so a reload never reuses an id. */
     seq: 0,
     /** Drives the mock contact form's anti-spam rate limit. */
@@ -1116,6 +1132,141 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       return conn.provider as KnowledgeSyncProvider;
     }
     throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+  };
+
+  /**
+   * One sync of a knowledge connection, as the backend's sync.sync_connection runs it:
+   * the result, or the typed refusal (the F107 shrink refusal, a revoked grant, a
+   * connection not authorized yet). Shared by the synchronous answer and the deferred
+   * job (deferSync), so both compute exactly the same thing.
+   */
+  const runSync = (
+    connectionId: string,
+    opts?: { confirmShrink?: boolean },
+  ): KnowledgeSyncResult => {
+    const c = state.syncConnections.find((x) => x.connectionId === connectionId);
+    // The mock models the shrink refusal (F107) so the UI's confirm path is
+    // exercisable: a crawl re-synced after its pages were removed at the source.
+    if (c && c.nonSecretConfig?.mockShrink && !opts?.confirmShrink) {
+      throw new LucielApiError({
+        code: 'conflict',
+        message:
+          'The source now reports 1 item(s) where 4 are synced, so nothing was removed. If you did remove them at the source, sync again and confirm the shrink.',
+      });
+    }
+    if (!c) {
+      // A knowledge connection listed under /connections (the seeded Drive, or
+      // a row the scenario adds) syncs too — with the same round-7 truths.
+      const row = state.connections.find(
+        (x) => x.connectionId === connectionId && x.connectionType === 'knowledge_source',
+      );
+      if (!row) {
+        throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
+      }
+      if (state.revokedGrants.includes(connectionId) || row.status !== 'connected') {
+        flagDeadCredential(connectionId);
+        throw syncUnavailable();
+      }
+      const removed = state.knowledge
+        .filter(
+          (k) => k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId),
+        )
+        .map((k) => k.name);
+      for (const k of [...state.knowledge]) {
+        if (k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId)) {
+          tombstoneAtOrigin(k.sourceId);
+        }
+      }
+      const now = new Date().toISOString();
+      for (const k of state.knowledge) {
+        if (k.connectionId === connectionId) {
+          k.lastSyncedAt = now;
+          k.syncStatus = 'synced';
+        }
+      }
+      return { added: [], updated: [], removed };
+    }
+    if (state.revokedGrants.includes(connectionId) && c.status === 'connected') {
+      flagDeadCredential(connectionId);
+      setKnowledgeStatus(connectionId, 'error');
+      throw syncUnavailable();
+    }
+    if (c.status !== 'connected') {
+      throw new LucielApiError({
+        code: 'conflict',
+        message: 'Sync unavailable: this connection is not authorized yet.',
+      });
+    }
+    // A re-sync is idempotent: a page already synced is refreshed, never added twice.
+    const urls = (c.nonSecretConfig?.crawlUrls as string[] | undefined) ?? [];
+    const now = new Date().toISOString();
+    const added: string[] = [];
+    const updated: string[] = [];
+    for (const u of urls) {
+      const existing = state.knowledge.find((k) => k.connectionId === connectionId && k.name === u);
+      if (existing) {
+        existing.lastSyncedAt = now;
+        existing.syncStatus = 'synced';
+        updated.push(u);
+      } else {
+        addSource(u, 'website_crawl', 40_000, 'synced', connectionId);
+        added.push(u);
+      }
+    }
+    return { added, updated, removed: [] };
+  };
+  /** The served row of a knowledge connection, with its last sync job. */
+  const withSyncJob = <T extends { connectionId: string }>(
+    row: T,
+  ): T & { syncJob: KnowledgeSyncJob | null } => ({
+    ...row,
+    syncJob: state.syncJobs[row.connectionId] ?? null,
+  });
+  /**
+   * A deferred sync whose time has come completes now, with the result (or refusal)
+   * a synchronous sync computes: synced, shrink_pending (the 409's sentence) or failed.
+   * Runs on every read that serves a `syncJob`, so a page loaded after the click (a
+   * reload) sees the job finish too.
+   */
+  const settleDueSyncs = () => {
+    const now = Date.now();
+    for (const [connectionId, due] of Object.entries(state.deferredSyncs)) {
+      if (due.completeAt > now) continue;
+      delete state.deferredSyncs[connectionId];
+      const startedAt = state.syncJobs[connectionId]?.startedAt ?? new Date(now).toISOString();
+      const finishedAt = new Date(now).toISOString();
+      try {
+        const result = runSync(connectionId, { confirmShrink: due.confirmShrink });
+        state.syncJobs[connectionId] = {
+          state: 'synced',
+          startedAt,
+          finishedAt,
+          result,
+          error: null,
+          trigger: 'manual',
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'The sync failed.';
+        const shrink =
+          err instanceof LucielApiError &&
+          err.code === 'conflict' &&
+          /confirm the shrink/i.test(message);
+        state.syncJobs[connectionId] = {
+          state: shrink ? 'shrink_pending' : 'failed',
+          startedAt,
+          finishedAt,
+          error: message,
+          trigger: 'manual',
+        };
+      }
+    }
+  };
+  /** The connection's served row (either list), or undefined when it is gone. */
+  const servedKnowledgeRow = (connectionId: string) => {
+    const row =
+      state.connections.find((x) => x.connectionId === connectionId) ??
+      state.syncConnections.find((x) => x.connectionId === connectionId);
+    return row ? withSyncJob(row) : undefined;
   };
 
   const client: LucielApiClient = {
@@ -1887,78 +2038,48 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       async syncConnection(connectionId, opts) {
         guardVerified();
-        const c = state.syncConnections.find((x) => x.connectionId === connectionId);
-        // The mock models the shrink refusal (F107) so the UI's confirm path is
-        // exercisable: a crawl re-synced after its pages were removed at the source.
-        if (c && c.nonSecretConfig?.mockShrink && !opts?.confirmShrink) {
-          throw new LucielApiError({
-            code: 'conflict',
-            message:
-              'The source now reports 1 item(s) where 4 are synced, so nothing was removed. If you did remove them at the source, sync again and confirm the shrink.',
-          });
-        }
-        if (!c) {
-          // A knowledge connection listed under /connections (the seeded Drive, or
-          // a row the scenario adds) syncs too — with the same round-7 truths.
-          const row = state.connections.find(
-            (x) => x.connectionId === connectionId && x.connectionType === 'knowledge_source',
-          );
-          if (!row) {
+        const running = state.deferredSyncs[connectionId];
+        if (state.deferNextSyncMs > 0 || running) {
+          // The 202 path: the connection must exist (a 404 is still immediate).
+          if (!servedKnowledgeRow(connectionId)) {
             throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
           }
-          if (state.revokedGrants.includes(connectionId) || row.status !== 'connected') {
-            flagDeadCredential(connectionId);
-            throw syncUnavailable();
+          let startedAt = state.syncJobs[connectionId]?.startedAt ?? new Date().toISOString();
+          if (!running) {
+            startedAt = new Date().toISOString();
+            state.syncJobs[connectionId] = { state: 'syncing', startedAt, trigger: 'manual' };
+            state.deferredSyncs[connectionId] = {
+              completeAt: Date.now() + state.deferNextSyncMs,
+              confirmShrink: Boolean(opts?.confirmShrink),
+            };
+            state.deferNextSyncMs = 0;
+            // Written now, not when the call settles: a reload while it runs must
+            // read the served "syncing".
+            persist();
           }
-          const removed = state.knowledge
-            .filter(
-              (k) => k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId),
-            )
-            .map((k) => k.name);
-          for (const k of [...state.knowledge]) {
-            if (k.connectionId === connectionId && state.removedAtOrigin.includes(k.sourceId)) {
-              tombstoneAtOrigin(k.sourceId);
-            }
-          }
-          const now = new Date().toISOString();
-          for (const k of state.knowledge) {
-            if (k.connectionId === connectionId) {
-              k.lastSyncedAt = now;
-              k.syncStatus = 'synced';
-            }
-          }
-          return ok({ added: [], updated: [], removed });
-        }
-        if (state.revokedGrants.includes(connectionId) && c.status === 'connected') {
-          flagDeadCredential(connectionId);
-          setKnowledgeStatus(connectionId, 'error');
-          throw syncUnavailable();
-        }
-        if (c.status !== 'connected') {
-          throw new LucielApiError({
-            code: 'conflict',
-            message: 'Sync unavailable: this connection is not authorized yet.',
+          await delay();
+          return awaitSyncJob({
+            connectionId,
+            startedAt,
+            intervalMs: 250,
+            read: async () => {
+              settleDueSyncs();
+              persist();
+              return servedKnowledgeRow(connectionId);
+            },
           });
         }
-        // A re-sync is idempotent: a page already synced is refreshed, never added twice.
-        const urls = (c.nonSecretConfig?.crawlUrls as string[] | undefined) ?? [];
-        const now = new Date().toISOString();
-        const added: string[] = [];
-        const updated: string[] = [];
-        for (const u of urls) {
-          const existing = state.knowledge.find(
-            (k) => k.connectionId === connectionId && k.name === u,
-          );
-          if (existing) {
-            existing.lastSyncedAt = now;
-            existing.syncStatus = 'synced';
-            updated.push(u);
-          } else {
-            addSource(u, 'website_crawl', 40_000, 'synced', connectionId);
-            added.push(u);
-          }
-        }
-        return ok({ added, updated, removed: [] });
+        const startedAt = new Date().toISOString();
+        const result = runSync(connectionId, opts);
+        state.syncJobs[connectionId] = {
+          state: 'synced',
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          result,
+          error: null,
+          trigger: 'manual',
+        };
+        return ok(result);
       },
       async getScope(connectionId) {
         guardVerified();
@@ -2012,7 +2133,12 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     connections: {
       async list() {
         guardVerified();
-        return ok(state.connections);
+        settleDueSyncs();
+        return ok(
+          state.connections.map((c) =>
+            c.connectionType === 'knowledge_source' ? withSyncJob(c) : c,
+          ),
+        );
       },
       async listProviders(connectionType) {
         guardVerified();
@@ -3314,6 +3440,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     },
     revokeKnowledgeGrant: (connectionId) => {
       if (!state.revokedGrants.includes(connectionId)) state.revokedGrants.push(connectionId);
+      persist();
+    },
+    deferSync: (ms) => {
+      state.deferNextSyncMs = Math.max(0, ms);
       persist();
     },
     reset: () => {

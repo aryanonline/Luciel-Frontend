@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Banner, Button, Modal, StatusChip } from '@luciel/ui';
-import { chipForConnection, type Connection } from '@luciel/api-client';
+import { chipForConnection, LucielApiError, type Connection } from '@luciel/api-client';
 import { api } from '@/lib/api';
 import {
   qk,
@@ -23,6 +23,32 @@ import { useQueryClient } from '@tanstack/react-query';
  * owner had no list to take one away from.
  */
 
+/** How often the rows are re-read while a knowledge sync is still running. */
+export const SYNC_POLL_MS = 2000;
+
+const isKnowledgeRow = (c: Connection) =>
+  c.connectionType === 'knowledge_source' && c.status !== 'revoked';
+
+/**
+ * Round 7 — the asynchronous crawl: while any knowledge row's served job is still
+ * `syncing`, the rows are re-read every {@link SYNC_POLL_MS}; otherwise not at all.
+ */
+export const knowledgeSyncRefetchInterval = (rows: Connection[] | undefined): number | false =>
+  (rows ?? []).some((c) => isKnowledgeRow(c) && c.syncJob?.state === 'syncing')
+    ? SYNC_POLL_MS
+    : false;
+
+const clock = (iso: string) => {
+  const t = new Date(iso);
+  return Number.isNaN(t.getTime())
+    ? null
+    : t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+};
+
+/** A poll that gave up (the job runs on server-side) is said as it is — not a failure. */
+const stillSyncing = (err: unknown): err is LucielApiError =>
+  err instanceof LucielApiError && err.code === 'service_unavailable';
+
 const crawlUrls = (c: Connection): string[] => {
   const raw = c.nonSecretConfig?.crawl_urls;
   return Array.isArray(raw) ? raw.filter((u): u is string => typeof u === 'string') : [];
@@ -30,16 +56,32 @@ const crawlUrls = (c: Connection): string[] => {
 
 export function KnowledgeConnections() {
   const qc = useQueryClient();
-  const connections = useConnections();
+  const connections = useConnections({ refetchInterval: knowledgeSyncRefetchInterval });
   const sources = useKnowledge();
   const providers = useConnectionProviders('knowledge_source');
   const { reconnect, disconnect } = useConnectionLifecycle();
   const { busy, notice, run } = useActionNotice();
   const [toDisconnect, setToDisconnect] = React.useState<Connection | null>(null);
 
-  const rows = (connections.data ?? []).filter(
-    (c) => c.connectionType === 'knowledge_source' && c.status !== 'revoked',
-  );
+  const rows = (connections.data ?? []).filter(isKnowledgeRow);
+
+  // A job that leaves `syncing` changed what is synced: the sources and the quota are
+  // re-read from the server (the row's own state already came with this read).
+  const syncingIds = rows
+    .filter((c) => c.syncJob?.state === 'syncing')
+    .map((c) => c.connectionId)
+    .join(',');
+  const wasSyncing = React.useRef<string[]>([]);
+  React.useEffect(() => {
+    const now = syncingIds ? syncingIds.split(',') : [];
+    const finished = wasSyncing.current.some((id) => !now.includes(id));
+    wasSyncing.current = now;
+    if (finished) {
+      void qc.invalidateQueries({ queryKey: qk.knowledge });
+      void qc.invalidateQueries({ queryKey: qk.quota });
+    }
+  }, [syncingIds, qc]);
+
   if (connections.isPending || rows.length === 0) return null;
 
   const nameOf = (c: Connection) => {
@@ -84,6 +126,25 @@ export function KnowledgeConnections() {
       try {
         const result = await api.knowledge.syncConnection(c.connectionId);
         return `Synced ${nameOf(c)} — ${result.added.length} added, ${result.removed.length} removed.`;
+      } catch (err) {
+        // Still running server-side after the poll's limit: said as it is, and the row
+        // keeps reading "Syncing…" from the server until it finishes.
+        if (stillSyncing(err)) return err.message;
+        throw err;
+      } finally {
+        await refreshServed();
+      }
+    }, 'We could not sync that source. Nothing was changed — please try again.');
+
+  /** A served shrink_pending job (F107): the owner confirms the removals are real. */
+  const confirmShrink = (c: Connection) =>
+    void run(async () => {
+      try {
+        const result = await api.knowledge.syncConnection(c.connectionId, { confirmShrink: true });
+        return `Synced — ${result.removed.length} source(s) removed to match the source, ${result.added.length} added.`;
+      } catch (err) {
+        if (stillSyncing(err)) return err.message;
+        throw err;
       } finally {
         await refreshServed();
       }
@@ -131,6 +192,9 @@ export function KnowledgeConnections() {
         {rows.map((c) => {
           const chip = chipForConnection(c.status);
           const canReconnect = c.status === 'expired' || c.status === 'error';
+          const job = c.syncJob;
+          const syncing = job?.state === 'syncing';
+          const started = syncing && job ? clock(job.startedAt) : null;
           return (
             <li key={c.connectionId} className="flex flex-wrap items-center gap-vm-3 py-vm-3">
               <div className="min-w-0 flex-1">
@@ -141,10 +205,43 @@ export function KnowledgeConnections() {
                     ? ' · scope below'
                     : ''}
                 </div>
+                {/* The served job (round 7 — the asynchronous crawl). The last-synced
+                    time above is never erased by a running or failed job. */}
+                {syncing && (
+                  <div className="text-vm-0" role="status">
+                    {c.provider === 'website_crawl' ? 'Crawling…' : 'Syncing…'}
+                    {started ? ` started ${started}` : ''}
+                  </div>
+                )}
+                {job?.state === 'failed' && (
+                  <div className="text-vm-0 text-vm-danger">
+                    Last sync failed: {job.error || 'it did not finish.'}
+                  </div>
+                )}
+                {job?.state === 'shrink_pending' && (
+                  <div className="text-vm-0 text-vm-danger">
+                    {job.error}{' '}
+                    <button
+                      type="button"
+                      className="underline"
+                      disabled={busy}
+                      onClick={() => confirmShrink(c)}
+                    >
+                      Yes, remove them and sync
+                    </button>
+                  </div>
+                )}
               </div>
               <StatusChip kind={chip} />
               {c.status === 'connected' && (
-                <Button variant="ghost" disabled={busy} onClick={() => resync(c)}>
+                <Button
+                  variant="ghost"
+                  disabled={busy || syncing}
+                  aria-disabled={busy || syncing ? true : undefined}
+                  onClick={() => {
+                    if (!syncing) resync(c);
+                  }}
+                >
                   Re-sync
                 </Button>
               )}
