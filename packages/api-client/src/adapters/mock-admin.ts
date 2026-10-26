@@ -1223,6 +1223,50 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
     syncJob: state.syncJobs[row.connectionId] ?? null,
   });
   /**
+   * One sync run to its end, its terminal job recorded on the row as the backend
+   * records EVERY job (fast or deferred, success or refusal): synced with the result,
+   * shrink_pending with the 409's sentence, or failed with the refusal's text. The
+   * refusal is rethrown so the caller answers as it always did. A connection that is
+   * not there (the 404) has no row to record on.
+   */
+  const runAndRecordSync = (
+    connectionId: string,
+    startedAt: string,
+    opts?: { confirmShrink?: boolean },
+  ): KnowledgeSyncResult => {
+    try {
+      const result = runSync(connectionId, opts);
+      state.syncJobs[connectionId] = {
+        state: 'synced',
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        result,
+        error: null,
+        trigger: 'manual',
+      };
+      return result;
+    } catch (err) {
+      const known =
+        state.connections.some((x) => x.connectionId === connectionId) ||
+        state.syncConnections.some((x) => x.connectionId === connectionId);
+      if (known) {
+        const message = err instanceof Error ? err.message : 'The sync failed.';
+        const shrink =
+          err instanceof LucielApiError &&
+          err.code === 'conflict' &&
+          /confirm the shrink/i.test(message);
+        state.syncJobs[connectionId] = {
+          state: shrink ? 'shrink_pending' : 'failed',
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          error: message,
+          trigger: 'manual',
+        };
+      }
+      throw err;
+    }
+  };
+  /**
    * A deferred sync whose time has come completes now, with the result (or refusal)
    * a synchronous sync computes: synced, shrink_pending (the 409's sentence) or failed.
    * Runs on every read that serves a `syncJob`, so a page loaded after the click (a
@@ -1234,30 +1278,10 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       if (due.completeAt > now) continue;
       delete state.deferredSyncs[connectionId];
       const startedAt = state.syncJobs[connectionId]?.startedAt ?? new Date(now).toISOString();
-      const finishedAt = new Date(now).toISOString();
       try {
-        const result = runSync(connectionId, { confirmShrink: due.confirmShrink });
-        state.syncJobs[connectionId] = {
-          state: 'synced',
-          startedAt,
-          finishedAt,
-          result,
-          error: null,
-          trigger: 'manual',
-        };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'The sync failed.';
-        const shrink =
-          err instanceof LucielApiError &&
-          err.code === 'conflict' &&
-          /confirm the shrink/i.test(message);
-        state.syncJobs[connectionId] = {
-          state: shrink ? 'shrink_pending' : 'failed',
-          startedAt,
-          finishedAt,
-          error: message,
-          trigger: 'manual',
-        };
+        runAndRecordSync(connectionId, startedAt, { confirmShrink: due.confirmShrink });
+      } catch {
+        /* the refusal is on the row: the poll reads it from there */
       }
     }
   };
@@ -2069,17 +2093,9 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
             },
           });
         }
-        const startedAt = new Date().toISOString();
-        const result = runSync(connectionId, opts);
-        state.syncJobs[connectionId] = {
-          state: 'synced',
-          startedAt,
-          finishedAt: new Date().toISOString(),
-          result,
-          error: null,
-          trigger: 'manual',
-        };
-        return ok(result);
+        // The fast path (the 200, or the same immediate 409): the terminal job is on
+        // the row either way, as the backend serves it.
+        return ok(runAndRecordSync(connectionId, new Date().toISOString(), opts));
       },
       async getScope(connectionId) {
         guardVerified();

@@ -99,5 +99,8 @@ rules. Test adapters through their public client behavior where possible.
   3): the NEXT syncConnection stamps `syncing` (persisted at once, so a reload serves it),
   completes `ms` later with exactly the synchronous result (`runSync`) — settled lazily on
   any read that serves `syncJob` — and resolves through the SAME `awaitSyncJob`. Without it
-  the mock answers as before; a fast success also records a `synced` job, a fast refusal
-  throws as before and records nothing.
+  the mock answers as before, and like the backend it records the terminal job of EVERY
+  run (`runAndRecordSync`): a fast success `synced`, a fast 409 refusal throws as before
+  AND leaves the row `failed` ("Sync unavailable: …") or `shrink_pending` (the shrink
+  sentence) — so the row's "Last sync failed: …" sits beside the pillar banner, as live.
+  A 404 (no row) records nothing.

@@ -109,6 +109,40 @@ describe('mock deferSync', () => {
     });
   });
 
+  it('a FAST refusal (no deferSync) still throws the 409 AND leaves the row failed, as the server records it', async () => {
+    const tab = fakeTab();
+    const page = tab.load();
+    tab.control().revokeKnowledgeGrant(DRIVE);
+    const err = (await page.knowledge
+      .syncConnection(DRIVE)
+      .catch((e: unknown) => e)) as LucielApiError;
+    expect(err).toBeInstanceOf(LucielApiError);
+    expect(err.code).toBe('conflict');
+    expect(err.message).toBe(
+      'Sync unavailable: the provider refused the stored credential — reconnect it.',
+    );
+    // Served on both knowledge lists, and across a reload — never left on "syncing".
+    const job = jobOf(await page.connections.list(), DRIVE);
+    expect(job).toMatchObject({ state: 'failed', error: err.message, trigger: 'manual' });
+    expect(typeof job?.startedAt).toBe('string');
+    expect(typeof job?.finishedAt).toBe('string');
+    expect(jobOf(await tab.load().connections.list(), DRIVE)).toMatchObject({
+      state: 'failed',
+      error: err.message,
+    });
+  });
+
+  it('a sync of a connection that is not there is a 404 with nothing recorded', async () => {
+    const tab = fakeTab();
+    const page = tab.load();
+    const missing = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const err = (await page.knowledge
+      .syncConnection(missing)
+      .catch((e: unknown) => e)) as LucielApiError;
+    expect(err.code).toBe('not_found');
+    expect(jobOf(await page.connections.list(), missing)).toBeUndefined();
+  });
+
   it('a deferred sync on a revoked grant fails with the served "Sync unavailable" text', async () => {
     const tab = fakeTab();
     const page = tab.load();
