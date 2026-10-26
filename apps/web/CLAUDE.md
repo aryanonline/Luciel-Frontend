@@ -152,7 +152,10 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
   crawl in progress survives a reload" uses `mockControl(page).deferSync(4000)`; on live the
   Knowledge pillar first removes a crawl a cut-short walk left CONNECTED (the same URL
   reuses one row, so a finished walk leaves it not-connected) and deletes a leftover
-  `walk-services-<epoch>.csv` the skipped "Knowledge cleanup" never reached.
+  `walk-services-<epoch>.csv` the skipped "Knowledge cleanup" never reached. A refused
+  sync's sentence appears TWICE (the action banner and the row's "Last sync failed: …"),
+  so a spec locates the banner by role (`getByRole('status').filter({ hasText })`), never
+  by a bare `getByText` of the sentence.
 - Conversations page: rows carry `#<first-8-of-sessionId>` matching the escalation
   email's ref; `?open=<sessionId>` deep-opens a transcript (useSearchParams under
   Suspense); escalation badges ride `useEscalations` and degrade to a note on

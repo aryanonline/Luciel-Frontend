@@ -768,11 +768,13 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
         await expect(drive.getByText('Connected', { exact: true })).toBeVisible();
         await w.control.revokeKnowledgeGrant('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
         await drive.getByRole('button', { name: 'Re-sync' }).click();
-        await expect(
-          pillar.getByText(
-            'Sync unavailable: the provider refused the stored credential — reconnect it.',
-          ),
-        ).toBeVisible();
+        const refused =
+          'Sync unavailable: the provider refused the stored credential — reconnect it.';
+        // The refusal reads twice, as the server serves it: the action's banner (located
+        // by its role, not by a text match that would find both) and the row's recorded
+        // job beside its last-synced time.
+        await expect(pillar.getByRole('status').filter({ hasText: refused })).toBeVisible();
+        await expect(drive.getByText(`Last sync failed: ${refused}`)).toBeVisible();
         // The chip follows the SERVED status: no false Connected after the refusal.
         await expect(drive.getByText('Connected', { exact: true })).toHaveCount(0);
         await page.reload();
