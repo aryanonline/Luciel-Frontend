@@ -572,6 +572,37 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
   await w.pillar('Configure: Knowledge', async () => {
     const pillar = card(page, 'Knowledge base');
     const sources = pillar.locator('ul').first();
+
+    // Live repair: a walk cut short inside this pillar (run 8, 2026-10-25: the crawl's
+    // request outlived the load balancer) leaves its crawl CONNECTED. The same site
+    // crawled again reuses that row, so remove it the way "remove the crawl" below does
+    // — back to the not-connected row a finished walk leaves — before walking.
+    if (w.live) {
+      await test.step('live: remove a crawl an earlier walk left behind', async () => {
+        await expect(
+          sources
+            .getByRole('listitem')
+            .filter({ hasNotText: /Loading your sources…|We could not load/ })
+            .first(),
+        ).toBeVisible({ timeout: 30_000 });
+        const leftList = pillar.getByRole('list', { name: 'Connected sources' });
+        const leftRow = leftList.getByRole('listitem').filter({ hasText: `${origin}/` });
+        const leftStop = page.getByRole('dialog', { name: /^Stop crawling/ });
+        // The list renders only once connections are served and one exists.
+        await leftList.waitFor({ timeout: 10_000 }).catch(() => undefined);
+        for (let i = 0; i < 3; i += 1) {
+          const left = leftRow.filter({ has: page.getByRole('button', { name: 'Re-sync' }) });
+          if ((await left.count()) === 0) break;
+          await left.first().getByRole('button', { name: 'Remove crawl' }).click();
+          await leftStop.getByRole('button', { name: 'Remove crawl' }).click();
+          await expect(
+            pillar.getByText(/is no longer crawled\. Its pages stay in your knowledge/),
+          ).toBeVisible({ timeout: 30_000 });
+          await expect(leftStop).toHaveCount(0);
+          w.note('recovered', 'an earlier walk left its crawl behind — removed it');
+        }
+      });
+    }
     const upload = async (button: string, name: string, body: string, mimeType: string) => {
       const chooser = page.waitForEvent('filechooser');
       await pillar.getByRole('button', { name: button }).click();
@@ -673,6 +704,27 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
         await expect(crawlRow.getByRole('button', { name: 'Remove crawl' })).toBeVisible();
       },
     });
+
+    // The asynchronous crawl (round 7): a sync that outlives the server's inline wait
+    // keeps running server-side, and its row says so from the SERVED job — a reload in
+    // the middle shows "Crawling…" with Re-sync held, then the finished sync.
+    await w.step(
+      'a crawl in progress survives a reload',
+      async () => {
+        await w.control.deferSync(4000);
+        const resync = crawlRow.getByRole('button', { name: 'Re-sync' });
+        await resync.click();
+        // The click took (the row's actions are held while the sync runs).
+        await expect(resync).toBeDisabled();
+        await page.reload();
+        await expect(crawlRow.getByText(/^Crawling…/)).toBeVisible();
+        await expect(resync).toBeDisabled();
+        await expect(crawlRow.getByText(/^Crawling…/)).toHaveCount(0, { timeout: 10_000 });
+        await expect(crawlRow.getByText(/last synced (?!never)/)).toBeVisible();
+        await expect(resync).toBeEnabled();
+      },
+      NEEDS.mockControl,
+    );
 
     await w.mutate('re-sync the crawl', {
       method: 'knowledge.syncConnection',

@@ -1,6 +1,14 @@
 import type { LucielApiClient, PageOptions } from '../client';
 import { personalityForWrite } from '../schemas';
-import type { BillingInfo, KnowledgeChunk, KnowledgeChunkPage } from '../schemas';
+import type {
+  BillingInfo,
+  KnowledgeChunk,
+  KnowledgeChunkPage,
+  KnowledgeSyncConnection,
+  KnowledgeSyncResult,
+  KnowledgeSyncStarted,
+} from '../schemas';
+import { awaitSyncJob, isSyncStarted } from './sync-job';
 import { createTransport, type TransportOptions } from './transport';
 
 /** POST /admin/account/export as served: camelCase or the endpoint's snake_case. */
@@ -131,10 +139,24 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
           provider: 'website_crawl',
           crawlUrls,
         }),
-      syncConnection: (connectionId, opts) =>
-        t.post(
+      // 200 = the SyncResult (finished inside the server's 20 s wait); 202 = still
+      // running: poll the served `syncJob` until it finishes, so the caller keeps the
+      // same Promise<KnowledgeSyncResult> and the same typed errors. The POST itself
+      // is sent once — the transport never repeats a POST.
+      syncConnection: async (connectionId, opts) => {
+        const answer = await t.post<KnowledgeSyncResult | KnowledgeSyncStarted>(
           `/api/v1/admin/knowledge/sync-connections/${connectionId}/sync${opts?.confirmShrink ? '?confirmShrink=true' : ''}`,
-        ),
+        );
+        if (!isSyncStarted(answer)) return answer;
+        return awaitSyncJob({
+          connectionId,
+          startedAt: answer.startedAt,
+          read: async () =>
+            (
+              await t.get<KnowledgeSyncConnection[]>('/api/v1/admin/knowledge/sync-connections')
+            ).find((c) => c.connectionId === connectionId),
+        });
+      },
       getScope: (connectionId) =>
         t.get(`/api/v1/admin/knowledge/sync-connections/${connectionId}/scope`),
       listScopeCandidates: (connectionId) =>
