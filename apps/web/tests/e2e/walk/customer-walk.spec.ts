@@ -601,6 +601,28 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
           await expect(leftStop).toHaveCount(0);
           w.note('recovered', 'an earlier walk left its crawl behind — removed it');
         }
+        // The same cut-short walk never reached "Knowledge cleanup", so its imported CSV
+        // (a walk-only name, walk-services-<epoch>.csv) still counts against the quota.
+        // Only that exact walk-created name is ever deleted here; the cleanup pillar
+        // already sweeps every crawled page under the product's own origin.
+        const leftDel = page.getByRole('dialog', { name: 'Delete this knowledge source?' });
+        for (let i = 0; i < 5; i += 1) {
+          const leftCsv = (await sources.getByRole('listitem').allInnerTexts())
+            .map((text) => text.split('\n')[0]?.trim() ?? '')
+            .find((name) => /^walk-services-\d+\.csv$/.test(name));
+          if (!leftCsv) break;
+          await sources
+            .getByRole('listitem')
+            .filter({ has: page.getByText(leftCsv, { exact: true }) })
+            .getByRole('button', { name: 'Delete' })
+            .click();
+          await leftDel.getByRole('button', { name: 'Delete source' }).click();
+          await expect(
+            pillar.getByText(`Deleted “${leftCsv}” — Luciel no longer answers from it.`),
+          ).toBeVisible({ timeout: 30_000 });
+          await expect(sources.getByText(leftCsv, { exact: true })).toHaveCount(0);
+          w.note('recovered', `an earlier walk left ${leftCsv} behind — deleted it`);
+        }
       });
     }
     const upload = async (button: string, name: string, body: string, mimeType: string) => {
@@ -694,9 +716,11 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
       },
       pending: crawl.getByRole('button', { name: 'Crawling…' }),
       error: () => expect(crawl.getByText('Internal Server Error')).toBeVisible(),
-      // Live crawls the real site inside the request: every page is fetched, embedded
-      // and run through the graph extractor before the call returns (30 s+ for the
-      // marketing site on 2026-10-19). The mock answers at once.
+      // Live crawls the real site: every page is fetched, embedded and run through the
+      // graph extractor (30 s+ for the marketing site on 2026-10-19, past the ALB's
+      // 60 s on 2026-10-25). Past the server's 20 s inline wait the POST answers 202
+      // and the client polls the served syncJob, so "Crawling…" spans the whole crawl
+      // and the toast still waits for the served result. The mock answers at once.
       success: () =>
         expect(pillar.getByText(`Crawled ${crawlUrl} —`)).toBeVisible({ timeout: crawlWait }),
       reload: async () => {
