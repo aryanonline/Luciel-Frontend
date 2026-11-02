@@ -13,6 +13,7 @@ import { useQuota } from '@/lib/hooks';
 import { KnowledgePillar } from '@/components/config/knowledge-pillar';
 import { LucielApiError } from '@luciel/api-client';
 import { KnowledgeScopeSections } from '@/components/config/knowledge-scope';
+import { SYNC_HALTED_NOTICE, syncUntilAnswered } from '@/lib/sync-action';
 import type {
   Connection,
   KnowledgeSource,
@@ -913,5 +914,42 @@ describe('the scope panel’s "Sync now"', () => {
       await screen.findByText('Synced — Luciel now reads exactly what you picked.'),
     ).toBeInTheDocument();
     await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(reads));
+  });
+});
+
+describe('a sync the Luciel stopped serving under', () => {
+  const halted = { added: [], updated: [], removed: [], halted: 'instance_not_serving' };
+
+  it('answered inline: the notice says nothing changed, never "0 added"', async () => {
+    const success = vi.fn(() => 'Synced — 0 added, 0 removed.');
+    await expect(
+      syncUntilAnswered({
+        start: () => Promise.resolve(halted),
+        success,
+        refresh: () => undefined,
+        report: () => undefined,
+      }),
+    ).resolves.toBe(SYNC_HALTED_NOTICE);
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('after a 202: the report says the same, in the info tone', async () => {
+    const report = vi.fn();
+    let finish: (value: typeof halted) => void = () => undefined;
+    const answered = syncUntilAnswered({
+      start: (onStarted) =>
+        new Promise<typeof halted>((resolve) => {
+          finish = resolve;
+          onStarted();
+        }),
+      success: () => 'Synced.',
+      refresh: () => undefined,
+      report,
+    });
+    await expect(answered).resolves.toBe('');
+    finish(halted);
+    await waitFor(() =>
+      expect(report).toHaveBeenCalledWith({ tone: 'info', text: SYNC_HALTED_NOTICE }),
+    );
   });
 });

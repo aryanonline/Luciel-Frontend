@@ -33,7 +33,8 @@ export type ConnectionType = z.infer<typeof connectionType>;
  * The last sync job of a knowledge connection (round 7 — the asynchronous crawl,
  * Arch §3.2.3 follow-up). A sync that outlives the server's inline wait (20 s) is
  * answered 202 and keeps running in the background; this record is how its outcome
- * reaches the owner. `syncing` older than 15 minutes is already served as `failed`.
+ * reaches the owner. The server judges a running job by its database lock: `syncing`
+ * with no live lock past a 60 s start grace is already served as `failed`.
  * `shrink_pending` carries the same sentence the 409 shrink refusal used to carry.
  * Unknown extra keys are tolerated (passthrough), so an additive server field never
  * breaks a read.

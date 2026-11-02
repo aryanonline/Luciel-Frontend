@@ -286,6 +286,8 @@ export const knowledgeSyncResult = z.object({
   added: z.array(z.string()),
   updated: z.array(z.string()),
   removed: z.array(z.string()),
+  /** Set when the run wrote nothing because the Luciel stopped serving while it ran. */
+  halted: z.string().nullable().optional(),
 });
 export type KnowledgeSyncResult = z.infer<typeof knowledgeSyncResult>;
 
