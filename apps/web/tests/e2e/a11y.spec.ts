@@ -1,7 +1,9 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
+import type { Page } from '@playwright/test';
 import { test, expect, type ScenarioName } from './support/fixtures';
+import { MOCK_SESSION_COOKIE } from './mock-session';
 
 /**
  * Accessibility gate (Space Instructions §3, §8; Arch §5.16). WCAG 2.1 AA is
@@ -90,6 +92,66 @@ for (const r of ROUTES) {
     });
   });
 }
+
+// The crash page has no route. It is reached the way it was reached live: the page's
+// chunk is gone when the owner navigates to it (one deploy's page, another's chunks).
+test.describe('the crash page', () => {
+  const ACCOUNT_CHUNK = /\/_next\/static\/chunks\/app\/.*dashboard\/account\/page.*\.js/;
+  const CRASH_HEADING = 'This page didn’t load';
+
+  const openDashboard = async (page: Page) => {
+    await page.goto('/dashboard');
+    await expect(page.getByRole('heading', { name: LUCIEL }).first()).toBeVisible({
+      timeout: 20_000,
+    });
+  };
+
+  test('reloads by itself once and lands signed in on the page asked for', async ({ page }) => {
+    // Gone once, there on the reload: a roll that finished in between.
+    let aborted = 0;
+    await page.route(ACCOUNT_CHUNK, async (route) => {
+      if (aborted++ === 0) await route.abort();
+      else await route.continue();
+    });
+    await openDashboard(page);
+
+    await page.getByRole('link', { name: 'Manage account' }).click();
+    await expect(page).toHaveURL(/\/dashboard\/account$/);
+    await expect(page.getByRole('heading', { name: 'Manage account' })).toBeVisible({
+      timeout: 20_000,
+    });
+    expect(await page.evaluate(() => sessionStorage.getItem('vm-chunk-reload-at'))).not.toBeNull();
+  });
+
+  test('has no WCAG 2.1 AA violations, and Reload keeps the session', async ({ page, context }) => {
+    await page.route(ACCOUNT_CHUNK, (route) => route.abort());
+    await openDashboard(page);
+    // This tab already reloaded moments ago: the failure recurred, so the copy stays.
+    await page.evaluate(() => sessionStorage.setItem('vm-chunk-reload-at', String(Date.now())));
+
+    await page.getByRole('link', { name: 'Manage account' }).click();
+    await expect(page.getByRole('heading', { name: CRASH_HEADING })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByText(/info@vantagemind\.ai/)).toBeVisible();
+
+    // nextjs-portal is the dev server's own error overlay, not the page.
+    const results = await new AxeBuilder({ page })
+      .withTags(TAGS)
+      .exclude('nextjs-portal')
+      .analyze();
+    expect(results.violations).toEqual([]);
+
+    // Still signed in: the chunk is back and the page asked for loads, not /login.
+    expect((await context.cookies()).map((c) => c.name)).toContain(MOCK_SESSION_COOKIE);
+    await page.unroute(ACCOUNT_CHUNK);
+    await page.reload();
+    await expect(page).toHaveURL(/\/dashboard\/account$/);
+    await expect(page.getByRole('heading', { name: 'Manage account' })).toBeVisible({
+      timeout: 20_000,
+    });
+  });
+});
 
 /** Every page.tsx under src/app, as the route it serves (route groups dropped). */
 function appRoutes(testDir: string): string[] {
