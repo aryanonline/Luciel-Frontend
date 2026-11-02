@@ -151,7 +151,13 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
   sentence (or one built from `job.shrink`), + "Yes, remove them and sync" on a connected row
   only; a not_connected row shows no job line. "Remove crawl" / "Disconnect" stays ENABLED on
   a syncing row: removing a source stops its sync and keeps nothing from it, so "Nothing new
-  is pulled…" is true. A per-source Re-sync in "Your sources" is held, with its reason, while
+  is pulled…" is true. The stopped sync's "removed while it was syncing" sentence is an outcome,
+  never red (`isSyncRemoved` → info tone), and a list whose own tab removed the source keeps its
+  "no longer crawled" notice over it. A row that leaves the list mid-sync (a Luciel delete from
+  another tab, a Log out's `qc.clear()` racing the 2 s poll) counts as having left `syncing`; the
+  app has no error.tsx, so a throw in that effect is Next's permanent "Application error". A
+  test of it needs the poll's read in flight or refused (an instant mock hides the bug) and an
+  error boundary. A per-source Re-sync in "Your sources" is held, with its reason, while
   its connection serves `syncing`. **Nobody is held behind a 202** (`lib/sync-action.ts`
   `syncUntilAnswered`, used by the crawl dialog, row Re-sync, both confirm-shrinks, per-source
   Re-sync and the scope panel's Sync now): pending lasts until the POST answers. A fast
@@ -159,7 +165,8 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
   included). On a 202 the dialog closes with "Crawling <url> — this can take a few minutes…",
   `qk.connections` is re-read so the row serves "Crawling…" in the same tab, and the
   byte-identical success toast, a danger notice with the served text, or the still-running
-  info notice (`isSyncStillRunning`, never the code alone) follows when the poll settles.
+  info notice (`isSyncStillRunning`, never the code alone) follows when the poll settles. A
+  source that sync removed at its origin never reads "Re-synced".
   The walk's mock-only step "a crawl in progress survives a reload" uses
   `mockControl(page).holdNextSync()` + `releaseSync()`; on live the Knowledge pillar first
   waits up to 7 min for a crawl a cut-short walk left running, removes it if it is still

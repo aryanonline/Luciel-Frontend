@@ -347,34 +347,38 @@ describe('a syncing row that leaves the list', () => {
       () =>
         Promise.reject(new LucielApiError({ code: 'unauthorized', message: 'Session revoked.' })),
     ],
-  ])('Log out clears the cache while a row syncs, the next read %s: no throw', async (_l, read) => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      const list = vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(syncing)]);
-      vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
-      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      render(
-        <QueryClientProvider client={client}>
-          <CrashWatch>
-            <KnowledgeConnections />
-          </CrashWatch>
-        </QueryClientProvider>,
-      );
-      await rowOf('https://vantagemind.ai/');
-      const reads = list.mock.calls.length;
-      list.mockImplementation(read);
-      // What LogoutButton does before router.replace('/'): the tree stays mounted until
-      // the navigation commits, and the observer's refetch interval keeps running.
-      client.clear();
-      await act(() => vi.advanceTimersByTimeAsync(SYNC_POLL_MS));
-      await act(() => vi.advanceTimersByTimeAsync(SYNC_POLL_MS));
-      expect(list.mock.calls.length).toBeGreaterThan(reads);
-      expect(screen.queryByTestId('crashed')).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  }, 10_000);
+  ])(
+    'Log out clears the cache while a row syncs, the next read %s: no throw',
+    async (_l, read) => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const list = vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(syncing)]);
+        vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        render(
+          <QueryClientProvider client={client}>
+            <CrashWatch>
+              <KnowledgeConnections />
+            </CrashWatch>
+          </QueryClientProvider>,
+        );
+        await rowOf('https://vantagemind.ai/');
+        const reads = list.mock.calls.length;
+        list.mockImplementation(read);
+        // What LogoutButton does before router.replace('/'): the tree stays mounted until
+        // the navigation commits, and the observer's refetch interval keeps running.
+        client.clear();
+        await act(() => vi.advanceTimersByTimeAsync(SYNC_POLL_MS));
+        await act(() => vi.advanceTimersByTimeAsync(SYNC_POLL_MS));
+        expect(list.mock.calls.length).toBeGreaterThan(reads);
+        expect(screen.queryByTestId('crashed')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+    10_000,
+  );
 });
 
 describe('a Re-sync the server answers 202 (nobody is held behind it)', () => {
