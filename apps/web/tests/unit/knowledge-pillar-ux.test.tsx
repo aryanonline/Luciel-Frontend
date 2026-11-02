@@ -58,13 +58,11 @@ const source = (over: Partial<KnowledgeSource> = {}): KnowledgeSource => ({
 
 beforeEach(() => {
   listSources.mockReset().mockResolvedValue([source()]);
-  quota
-    .mockReset()
-    .mockResolvedValue({
-      usedBytes: 120_000,
-      totalBytes: 5_000_000_000,
-      perFileMaxBytes: 50_000_000,
-    });
+  quota.mockReset().mockResolvedValue({
+    usedBytes: 120_000,
+    totalBytes: 5_000_000_000,
+    perFileMaxBytes: 50_000_000,
+  });
   pasteText.mockReset().mockResolvedValue(source({ name: 'Cancellation policy', origin: 'paste' }));
   renameSource
     .mockReset()
@@ -210,9 +208,10 @@ describe('a refused shrink becomes a decision (F107)', () => {
     expect(screen.getByText(/nothing was removed/)).toBeInTheDocument();
     fireEvent.click(confirm);
     await waitFor(() =>
-      expect(syncConnection).toHaveBeenCalledWith('44444444-4444-4444-8444-444444444444', {
-        confirmShrink: true,
-      }),
+      expect(syncConnection).toHaveBeenCalledWith(
+        '44444444-4444-4444-8444-444444444444',
+        expect.objectContaining({ confirmShrink: true }),
+      ),
     );
     expect(
       await screen.findByText(/3 source\(s\) removed to match the source/),

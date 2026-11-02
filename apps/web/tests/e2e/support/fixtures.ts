@@ -94,9 +94,10 @@ export function mockControl(page: Page) {
     revokeKnowledgeGrant: (connectionId: string) => call('revokeKnowledgeGrant', connectionId),
     /**
      * The NEXT knowledge sync outlives the server's inline wait (the 202): its row serves
-     * "syncing" — across reloads — and it completes `ms` later with the usual result.
+     * "syncing" — across reloads — until `releaseSync` finishes it with the usual result.
      */
-    deferSync: (ms: number) => call('deferSync', ms),
+    holdNextSync: () => call('holdNextSync'),
+    releaseSync: () => call('releaseSync'),
   };
 }
 

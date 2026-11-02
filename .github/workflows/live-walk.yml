@@ -45,7 +45,7 @@ concurrency:
 jobs:
   walk:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - name: Guard — explicit confirmation and an https origin
         env:

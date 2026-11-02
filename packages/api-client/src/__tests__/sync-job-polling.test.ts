@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createLucielClient } from '../index';
 import { LucielApiError } from '../schemas';
-import { STILL_SYNCING_MESSAGE } from '../adapters/sync-job';
+import {
+  STILL_SYNCING_MESSAGE,
+  SYNC_RECONNECTED_MESSAGE,
+  SYNC_REMOVED_MESSAGE,
+  SYNC_TAKEN_OVER_MESSAGE,
+  awaitSyncJob,
+  isSyncStillRunning,
+} from '../adapters/sync-job';
 
 /**
  * The asynchronous crawl (round 7; Arch §3.2.3 "making it asynchronous is a tracked
@@ -23,7 +30,7 @@ const SHRINK =
 type Job = Record<string, unknown> | null;
 
 /** A server: the POST answers `post`; each GET serves the next job (the last repeats). */
-function stubServer(post: { status: number; body: unknown }, jobs: Job[]) {
+function stubServer(post: { status: number; body: unknown }, jobs: Job[], status = 'connected') {
   const calls: { method: string; url: string }[] = [];
   let reads = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -40,7 +47,7 @@ function stubServer(post: { status: number; body: unknown }, jobs: Job[]) {
     reads += 1;
     const rows = [
       { connectionId: OTHER, provider: 'notion', status: 'connected', syncJob: null },
-      { connectionId: CONN, provider: 'website_crawl', status: 'connected', syncJob: job },
+      { connectionId: CONN, provider: 'website_crawl', status, syncJob: job },
     ];
     return new Response(JSON.stringify(rows), {
       status: 200,
@@ -206,10 +213,253 @@ describe('a sync still running (202)', () => {
       (e: unknown) => e as LucielApiError,
     );
     expect(err).toBeInstanceOf(LucielApiError);
-    expect(err).toMatchObject({ code: 'service_unavailable', message: STILL_SYNCING_MESSAGE });
+    expect(err).toMatchObject({
+      code: 'service_unavailable',
+      reason: 'sync_still_running',
+      message: STILL_SYNCING_MESSAGE,
+    });
+    expect(isSyncStillRunning(err)).toBe(true);
     expect(STILL_SYNCING_MESSAGE).toBe(
       'Still syncing — it will finish on its own. Check this source in a minute.',
     );
     expect(server.posts()).toHaveLength(1);
+  });
+
+  it('fires onStarted once, on the 202', async () => {
+    stubServer(accepted, [
+      { state: 'synced', startedAt: STARTED, result: { added: [], updated: [], removed: [] } },
+    ]);
+    const onStarted = vi.fn();
+    await settle(client().knowledge.syncConnection(CONN, { onStarted }));
+    expect(onStarted).toHaveBeenCalledTimes(1);
+  });
+
+  it('a later job is not this call’s outcome: it stops, reason-tagged', async () => {
+    stubServer(accepted, [
+      syncing,
+      {
+        state: 'synced',
+        startedAt: '2026-10-25T22:29:00.000Z',
+        result: { added: ['someone-elses'], updated: [], removed: [] },
+      },
+    ]);
+    const err = await settle(client().knowledge.syncConnection(CONN)).catch(
+      (e: unknown) => e as LucielApiError,
+    );
+    expect(err).toMatchObject({
+      code: 'service_unavailable',
+      reason: 'sync_still_running',
+      message: SYNC_TAKEN_OVER_MESSAGE,
+    });
+    expect(SYNC_TAKEN_OVER_MESSAGE).toBe(
+      'Another sync of this source took over — Connected sources shows how it ends.',
+    );
+  });
+
+  it('a later job still running stops it just the same', async () => {
+    stubServer(accepted, [{ state: 'syncing', startedAt: '2026-10-25T22:29:00.000Z' }]);
+    const err = await settle(client().knowledge.syncConnection(CONN)).catch(
+      (e: unknown) => e as LucielApiError,
+    );
+    expect(isSyncStillRunning(err)).toBe(true);
+  });
+
+  it('a source removed mid-sync (no job on a not_connected row) says so, not "Still syncing"', async () => {
+    const server = stubServer(accepted, [syncing, null], 'not_connected');
+    const err = await settle(client().knowledge.syncConnection(CONN)).catch(
+      (e: unknown) => e as LucielApiError,
+    );
+    expect(err).toMatchObject({ code: 'conflict', message: SYNC_REMOVED_MESSAGE });
+    expect(isSyncStillRunning(err)).toBe(false);
+    expect(server.posts()).toHaveLength(1);
+  });
+
+  it('a job cleared on a connected row (a reconnect) stops the poll, reason-tagged', async () => {
+    stubServer(accepted, [syncing, null]);
+    const err = await settle(client().knowledge.syncConnection(CONN)).catch(
+      (e: unknown) => e as LucielApiError,
+    );
+    expect(isSyncStillRunning(err)).toBe(true);
+    expect(err).toMatchObject({ message: SYNC_RECONNECTED_MESSAGE });
+  });
+
+  it('a synced job passes its refused list through', async () => {
+    stubServer(accepted, [
+      {
+        state: 'synced',
+        startedAt: STARTED,
+        result: { added: ['a'], updated: [], removed: [], refused: ['too-big.pdf'] },
+      },
+    ]);
+    await expect(settle(client().knowledge.syncConnection(CONN))).resolves.toEqual({
+      added: ['a'],
+      updated: [],
+      removed: [],
+      refused: ['too-big.pdf'],
+    });
+  });
+
+  it('falls back to its own sentence when a finished job carries no error text', async () => {
+    stubServer(accepted, [{ state: 'shrink_pending', startedAt: STARTED, error: null }]);
+    const shrink = await settle(client().knowledge.syncConnection(CONN)).catch(
+      (e: unknown) => e as LucielApiError,
+    );
+    expect(shrink).toMatchObject({
+      code: 'conflict',
+      message: 'The source shrank, so nothing was removed. Sync again to confirm.',
+    });
+
+    vi.unstubAllGlobals();
+    stubServer(accepted, [{ state: 'failed', startedAt: STARTED, error: null }]);
+    const failed = await settle(client().knowledge.syncConnection(CONN)).catch(
+      (e: unknown) => e as LucielApiError,
+    );
+    expect(failed).toMatchObject({
+      code: 'server_error',
+      message: 'The sync failed. Nothing was changed — please try again.',
+    });
+    expect(isSyncStillRunning(failed)).toBe(false);
+  });
+});
+
+describe('a real 503 from the POST', () => {
+  it('is a failure, never the poll’s give-up', async () => {
+    stubServer(
+      {
+        status: 503,
+        body: { message: 'The sync failed before it finished — nothing was changed; try again.' },
+      },
+      [],
+    );
+    const err = await client()
+      .knowledge.syncConnection(CONN)
+      .catch((e: unknown) => e as LucielApiError);
+    expect(err).toBeInstanceOf(LucielApiError);
+    expect(err).toMatchObject({
+      code: 'service_unavailable',
+      message: 'The sync failed before it finished — nothing was changed; try again.',
+    });
+    expect(isSyncStillRunning(err)).toBe(false);
+  });
+});
+
+describe('POST /knowledge/sources/{id}/resync (the same contract)', () => {
+  const SOURCE = '44444444-4444-4444-8444-444444444444';
+  const refreshed = { sourceId: SOURCE, name: 'Home', lastSyncedAt: '2026-10-25T22:30:00.000Z' };
+
+  /** The sources list answers the refreshed source; the rest is as stubServer does. */
+  function stubResync(post: { status: number; body: unknown }, jobs: Job[], sources: unknown[]) {
+    const server = stubServer(post, jobs);
+    const inner = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith('/knowledge/sources') && (init?.method ?? 'GET') === 'GET'
+        ? new Response(JSON.stringify(sources), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        : inner(input, init),
+    );
+    return server;
+  }
+
+  it('200: the source as served, no poll, onStarted not fired', async () => {
+    const server = stubResync({ status: 200, body: refreshed }, [], []);
+    const onStarted = vi.fn();
+    await expect(client().knowledge.resyncSource(SOURCE, { onStarted })).resolves.toEqual(
+      refreshed,
+    );
+    expect(onStarted).not.toHaveBeenCalled();
+    expect(server.calls).toHaveLength(1);
+  });
+
+  it('202: polls the job on the answer’s connection, then returns the refreshed source', async () => {
+    const server = stubResync(
+      accepted,
+      [
+        syncing,
+        { state: 'synced', startedAt: STARTED, result: { added: [], updated: [], removed: [] } },
+      ],
+      [refreshed],
+    );
+    const onStarted = vi.fn();
+    await expect(settle(client().knowledge.resyncSource(SOURCE, { onStarted }))).resolves.toEqual(
+      refreshed,
+    );
+    expect(onStarted).toHaveBeenCalledTimes(1);
+    expect(server.posts()).toHaveLength(1);
+    expect(server.posts()[0]?.url).toBe(
+      `${BASE_URL}/api/v1/admin/knowledge/sources/${SOURCE}/resync`,
+    );
+  });
+
+  it('202 and a job that fails: the job’s error, not a source', async () => {
+    stubResync(
+      accepted,
+      [{ state: 'failed', startedAt: STARTED, error: 'Sync unavailable: gone.' }],
+      [refreshed],
+    );
+    const err = await settle(client().knowledge.resyncSource(SOURCE)).catch(
+      (e: unknown) => e as LucielApiError,
+    );
+    expect(err).toMatchObject({ code: 'conflict', message: 'Sync unavailable: gone.' });
+  });
+
+  it('202 and the source gone at its origin afterwards: not_found', async () => {
+    stubResync(
+      accepted,
+      [{ state: 'synced', startedAt: STARTED, result: { added: [], updated: [], removed: [] } }],
+      [],
+    );
+    const err = await settle(client().knowledge.resyncSource(SOURCE)).catch(
+      (e: unknown) => e as LucielApiError,
+    );
+    expect(err).toMatchObject({ code: 'not_found' });
+  });
+});
+
+describe('awaitSyncJob reading the row', () => {
+  const synced = {
+    state: 'synced' as const,
+    startedAt: STARTED,
+    result: { added: ['a'], updated: [], removed: [] },
+  };
+  const run = <T>(p: Promise<T>) => settle(p).catch((e: unknown) => e as LucielApiError);
+
+  it('a failed read is not the outcome: it keeps polling', async () => {
+    const read = vi
+      .fn()
+      .mockRejectedValueOnce(new LucielApiError({ code: 'server_error', message: 'Bad gateway' }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue({ syncJob: synced });
+    await expect(
+      run(awaitSyncJob({ connectionId: CONN, startedAt: STARTED, read })),
+    ).resolves.toEqual({ added: ['a'], updated: [], removed: [] });
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it('a session that ended mid-poll rethrows at once', async () => {
+    const read = vi
+      .fn()
+      .mockRejectedValue(new LucielApiError({ code: 'unauthorized', message: 'Session revoked.' }));
+    const err = await run(awaitSyncJob({ connectionId: CONN, startedAt: STARTED, read }));
+    expect(err).toMatchObject({ code: 'unauthorized', message: 'Session revoked.' });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('a row that is gone is not_found', async () => {
+    const read = vi.fn().mockResolvedValue(undefined);
+    const err = await run(awaitSyncJob({ connectionId: CONN, startedAt: STARTED, read }));
+    expect(err).toMatchObject({ code: 'not_found', message: 'Connection not found.' });
+  });
+
+  it('with no startedAt to compare, an empty row is not yet visible: it keeps polling', async () => {
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 'connected', syncJob: null })
+      .mockResolvedValue({ status: 'connected', syncJob: synced });
+    await expect(run(awaitSyncJob({ connectionId: CONN, read }))).resolves.toMatchObject({
+      added: ['a'],
+    });
+    expect(read).toHaveBeenCalledTimes(2);
   });
 });

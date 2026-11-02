@@ -18,6 +18,7 @@ import type { KnowledgeSyncJob, KnowledgeSyncResult, KnowledgeSyncStarted } from
 
 /** A row the poll reads: a connection (either list) carrying its last sync job. */
 export interface SyncJobRow {
+  status?: string;
   syncJob?: KnowledgeSyncJob | null;
 }
 
@@ -27,8 +28,10 @@ export interface AwaitSyncJobOptions {
   /** Read the connection's served row; undefined = the connection is gone. */
   read: () => Promise<SyncJobRow | undefined>;
   /**
-   * The job this call started (the 202's `startedAt`). A job on the row that started
-   * EARLIER is a previous run's record, never this one's outcome — keep polling.
+   * The job this call started (the 202's `startedAt`, which the row's job carries
+   * exactly). A job that started EARLIER is a previous run's record — keep polling. A
+   * LATER one means this job ended and its record was replaced — stop: its outcome is
+   * no longer on the row, and the later job's outcome is not this call's.
    */
   startedAt?: string;
   intervalMs?: number;
@@ -38,6 +41,36 @@ export interface AwaitSyncJobOptions {
 /** The copy when the poll gives up: the job is still running server-side. */
 export const STILL_SYNCING_MESSAGE =
   'Still syncing — it will finish on its own. Check this source in a minute.';
+
+/** Our job's record was replaced by a later job's. */
+export const SYNC_TAKEN_OVER_MESSAGE =
+  'Another sync of this source took over — Connected sources shows how it ends.';
+
+/** The server's own words when a source goes during its sync (the 409 of the same fact). */
+export const SYNC_REMOVED_MESSAGE =
+  'This source was removed while it was syncing — nothing from that sync was kept.';
+
+/** Our job's record was cleared because the source went back to connected. */
+export const SYNC_RECONNECTED_MESSAGE =
+  'This source was reconnected while it was syncing — Connected sources shows where it stands.';
+
+/** The marker no server answer carries: this client stopped watching, nothing failed. */
+const SYNC_STILL_RUNNING_REASON = 'sync_still_running';
+
+const stoppedWatching = (message: string) =>
+  new LucielApiError({
+    code: 'service_unavailable',
+    reason: SYNC_STILL_RUNNING_REASON,
+    message,
+  });
+
+/**
+ * True only for the poll's own give-up. A real 503 from the server has the same code
+ * (embedding outage, "The sync failed before it finished…") and IS a failure, so the
+ * code alone must never be read as "still running".
+ */
+export const isSyncStillRunning = (err: unknown): err is LucielApiError =>
+  err instanceof LucielApiError && err.reason === SYNC_STILL_RUNNING_REASON;
 
 /** True when a sync answer is the 202 "still running" body rather than a SyncResult. */
 export const isSyncStarted = (body: unknown): body is KnowledgeSyncStarted =>
@@ -110,13 +143,21 @@ export async function awaitSyncJob({
       throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
     }
     const job = row?.syncJob;
-    const current =
-      job &&
-      (Number.isNaN(since) || Number.isNaN(time(job.startedAt)) || time(job.startedAt) >= since);
-    if (job && current && FINISHED.has(job.state)) return settle(job);
-    if (Date.now() + intervalMs > deadline) {
-      throw new LucielApiError({ code: 'service_unavailable', message: STILL_SYNCING_MESSAGE });
+    if (job) {
+      const at = time(job.startedAt);
+      const comparable = !Number.isNaN(since) && !Number.isNaN(at);
+      if (comparable && at > since) throw stoppedWatching(SYNC_TAKEN_OVER_MESSAGE);
+      if ((!comparable || at === since) && FINISHED.has(job.state)) return settle(job);
+    } else if (row && !Number.isNaN(since)) {
+      // The 202 was answered after the job was on the row, so an empty row means the
+      // record was cleared: the source was removed (the sync stopped, nothing kept) or
+      // went back to connected. Waiting on would only end in a false "Still syncing".
+      if (row.status === 'not_connected' || row.status === 'revoked') {
+        throw new LucielApiError({ code: 'conflict', message: SYNC_REMOVED_MESSAGE });
+      }
+      throw stoppedWatching(SYNC_RECONNECTED_MESSAGE);
     }
+    if (Date.now() + intervalMs > deadline) throw stoppedWatching(STILL_SYNCING_MESSAGE);
     await sleep(intervalMs);
   }
 }
