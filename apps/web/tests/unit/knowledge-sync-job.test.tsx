@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -291,6 +292,17 @@ describe('a row whose job is syncing', () => {
   }, 10_000);
 });
 
+/** Next's default screen stands in here: an uncaught throw in the list lands on it. */
+class CrashWatch extends React.Component<{ children: React.ReactNode }, { crashed: boolean }> {
+  override state = { crashed: false };
+  static getDerivedStateFromError() {
+    return { crashed: true };
+  }
+  override render() {
+    return this.state.crashed ? <div data-testid="crashed" /> : this.props.children;
+  }
+}
+
 describe('a syncing row that leaves the list', () => {
   it('the next read no longer serves it (a Luciel delete, a revoke): the others stay', async () => {
     const list = vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(syncing), drive(null)]);
@@ -311,32 +323,54 @@ describe('a syncing row that leaves the list', () => {
   it('the only row goes: the list renders nothing and nothing throws', async () => {
     const list = vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(syncing)]);
     vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
-    renderWithQuery(<KnowledgeConnections />);
+    renderWithQuery(
+      <CrashWatch>
+        <KnowledgeConnections />
+      </CrashWatch>,
+    );
     await rowOf('https://vantagemind.ai/');
     list.mockResolvedValue([]);
     await waitFor(
       () => expect(screen.queryByRole('list', { name: 'Connected sources' })).toBeNull(),
       { timeout: 5000 },
     );
+    // A throw would empty the list too: only the boundary tells the two apart.
+    expect(screen.queryByTestId('crashed')).toBeNull();
   }, 10_000);
 
-  it('Log out clears the cache while a row syncs: the next 2 s tick does not throw', async () => {
+  // The poll's read has not landed when the tree re-renders, so the observer's rebuilt
+  // query serves no data at all. A read that answered at once would hide this.
+  it.each([
+    ['still in flight', () => new Promise<Connection[]>(() => {})],
+    [
+      'refused (the session just ended)',
+      () =>
+        Promise.reject(new LucielApiError({ code: 'unauthorized', message: 'Session revoked.' })),
+    ],
+  ])('Log out clears the cache while a row syncs, the next read %s: no throw', async (_l, read) => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(syncing)]);
+      const list = vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(syncing)]);
       vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       render(
         <QueryClientProvider client={client}>
-          <KnowledgeConnections />
+          <CrashWatch>
+            <KnowledgeConnections />
+          </CrashWatch>
         </QueryClientProvider>,
       );
       await rowOf('https://vantagemind.ai/');
+      const reads = list.mock.calls.length;
+      list.mockImplementation(read);
       // What LogoutButton does before router.replace('/'): the tree stays mounted until
       // the navigation commits, and the observer's refetch interval keeps running.
       client.clear();
       await act(() => vi.advanceTimersByTimeAsync(SYNC_POLL_MS));
       await act(() => vi.advanceTimersByTimeAsync(SYNC_POLL_MS));
+      expect(list.mock.calls.length).toBeGreaterThan(reads);
+      expect(screen.queryByTestId('crashed')).toBeNull();
     } finally {
       vi.useRealTimers();
     }
