@@ -293,9 +293,7 @@ describe('a row whose job is syncing', () => {
 
 describe('a syncing row that leaves the list', () => {
   it('the next read no longer serves it (a Luciel delete, a revoke): the others stay', async () => {
-    const list = vi
-      .spyOn(api.connections, 'list')
-      .mockResolvedValue([crawl(syncing), drive(null)]);
+    const list = vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(syncing), drive(null)]);
     const sources = vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
     renderWithQuery(<KnowledgeConnections />);
     await rowOf('https://vantagemind.ai/');
@@ -408,6 +406,80 @@ describe('a Re-sync the server answers 202 (nobody is held behind it)', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Re-sync' }));
     const banner = await screen.findByText(REAL_503);
     expect(banner.closest('[class*="danger"]')).not.toBeNull();
+  });
+});
+
+describe('a sync stopped by removing its source', () => {
+  const REMOVED = 'This source was removed while it was syncing — nothing from that sync was kept.';
+  const removedMidSync = () =>
+    new LucielApiError({ code: 'conflict', reason: 'sync_removed', message: REMOVED });
+  const NO_LONGER = /is no longer crawled/;
+
+  /** Re-sync answers 202 and the row serves "Crawling…", with the disconnect stubbed. */
+  async function syncingRow() {
+    const list = vi.spyOn(api.connections, 'list').mockResolvedValueOnce([crawl(null)]);
+    vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
+    const disconnect = vi.spyOn(api.connections, 'disconnect').mockResolvedValue({
+      ...crawl(null),
+      status: 'not_connected',
+    });
+    const running = runningSync();
+    renderWithQuery(<KnowledgeConnections />);
+    const row = await rowOf('https://vantagemind.ai/');
+    list.mockResolvedValue([crawl(syncing)]);
+    fireEvent.click(within(row).getByRole('button', { name: 'Re-sync' }));
+    await within(row).findByText(/^Crawling…/);
+    await waitFor(() =>
+      expect(within(row).getByRole('button', { name: 'Remove crawl' })).toBeEnabled(),
+    );
+    return { ...running, list, disconnect, row };
+  }
+
+  const removeCrawl = async (row: HTMLElement) => {
+    fireEvent.click(within(row).getByRole('button', { name: 'Remove crawl' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove crawl' }));
+  };
+
+  it('this tab removed it: the owner’s own notice stands, no red banner', async () => {
+    const { fail, list, row } = await syncingRow();
+    list.mockResolvedValue([{ ...crawl(null), status: 'not_connected' }]);
+    await removeCrawl(row);
+    const said = await screen.findByText(NO_LONGER);
+    expect(said.closest('[class*="danger"]')).toBeNull();
+
+    await act(async () => fail(removedMidSync()));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText(NO_LONGER)).toBeInTheDocument();
+    expect(screen.queryByText(REMOVED)).not.toBeInTheDocument();
+  });
+
+  it('the poll reads the removal before the disconnect answers: the notice still stands', async () => {
+    const { fail, list, disconnect, row } = await syncingRow();
+    let answer!: (c: Connection) => void;
+    disconnect.mockImplementation(() => new Promise<Connection>((res) => (answer = res)));
+    list.mockResolvedValue([{ ...crawl(null), status: 'not_connected' }]);
+    await removeCrawl(row);
+    await act(async () => fail(removedMidSync()));
+    expect(screen.queryByText(REMOVED)).not.toBeInTheDocument();
+    await act(async () => answer({ ...crawl(null), status: 'not_connected' }));
+    expect(await screen.findByText(NO_LONGER)).toBeInTheDocument();
+  });
+
+  it('removed from elsewhere: the sentence is said, in the info tone', async () => {
+    const { fail } = await syncingRow();
+    await act(async () => fail(removedMidSync()));
+    const banner = await screen.findByText(REMOVED);
+    expect(banner.closest('[class*="danger"]')).toBeNull();
+  });
+
+  it('a failed disconnect keeps watching: the removal, should it come, is said', async () => {
+    const { fail, disconnect, row } = await syncingRow();
+    disconnect.mockRejectedValue(new LucielApiError({ code: 'server_error', message: 'No.' }));
+    await removeCrawl(row);
+    await screen.findByText('No.');
+    await act(async () => fail(removedMidSync()));
+    expect(await screen.findByText(REMOVED)).toBeInTheDocument();
   });
 });
 
@@ -602,6 +674,21 @@ describe('the crawl dialog', () => {
     expect(screen.queryByText(/^Crawled /)).not.toBeInTheDocument();
   });
 
+  it('the source removed after the 202: the served sentence in the info tone, never red', async () => {
+    startCrawl();
+    const { fail } = runningSync();
+    await submit();
+    await closed();
+    const REMOVED =
+      'This source was removed while it was syncing — nothing from that sync was kept.';
+    await act(async () =>
+      fail(new LucielApiError({ code: 'conflict', reason: 'sync_removed', message: REMOVED })),
+    );
+    const banner = await screen.findByText(REMOVED);
+    expect(banner.closest('[class*="danger"]')).toBeNull();
+    expect(screen.queryByText(/^Crawled /)).not.toBeInTheDocument();
+  });
+
   it('a fast real 503 stays in the dialog with the URL and the rights box kept (F169)', async () => {
     startCrawl();
     vi.spyOn(api.knowledge, 'syncConnection').mockRejectedValue(real503());
@@ -653,6 +740,45 @@ describe('the pillar’s own re-syncs', () => {
     list.mockResolvedValue([crawl(finished)]);
     await act(async () => finish(page));
     expect(await screen.findByText(`Re-synced “${page.name}”.`)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['removed at its origin by that sync: danger, never "Re-synced"', 'danger'],
+    ['finished but the read stayed down: info saying it finished, never "Re-synced"', 'info'],
+  ])('per-source Re-sync after the 202, %s', async (_label, tone) => {
+    vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(null)]);
+    vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
+    const said =
+      tone === 'danger'
+        ? 'Source no longer exists at the sync origin.'
+        : 'The sync finished, but we could not read the result just now. Reload this page to see it.';
+    let fail!: (e: unknown) => void;
+    vi.spyOn(api.knowledge, 'resyncSource').mockImplementation(
+      async (_id: string, opts?: KnowledgeSyncOptions) => {
+        opts?.onStarted?.();
+        return new Promise<KnowledgeSource>((_res, rej) => (fail = rej));
+      },
+    );
+    renderWithQuery(<KnowledgePillar />);
+    const item = (
+      await screen.findByText(page.name, { selector: 'div.truncate.text-vm-2' })
+    ).closest('li') as HTMLElement;
+    fireEvent.click(within(item).getByRole('button', { name: 'Re-sync' }));
+    await screen.findByText(/^Syncing — this can take a few minutes/);
+    await act(async () =>
+      fail(
+        tone === 'danger'
+          ? new LucielApiError({ code: 'not_found', message: said })
+          : new LucielApiError({
+              code: 'service_unavailable',
+              reason: 'sync_still_running',
+              message: said,
+            }),
+      ),
+    );
+    const banner = await screen.findByText(said);
+    expect(banner.closest('[class*="danger"]') !== null).toBe(tone === 'danger');
+    expect(screen.queryByText(/^Re-synced /)).not.toBeInTheDocument();
   });
 
   it('per-source Re-sync whose job shrinks after the 202 still offers the decision', async () => {

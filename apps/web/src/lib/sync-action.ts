@@ -1,4 +1,4 @@
-import { isSyncStillRunning } from '@luciel/api-client';
+import { isSyncRemoved, isSyncStillRunning } from '@luciel/api-client';
 
 /** Said by surfaces that do not sit on the source's row, while its sync runs on. */
 export const SYNC_STARTED_NOTICE =
@@ -7,8 +7,10 @@ export const SYNC_STARTED_NOTICE =
 export interface SyncOutcome {
   tone: 'info' | 'danger';
   text: string;
-  /** What a failure threw (absent on a success or on the poll's give-up). */
+  /** What a failure threw (absent on a success, the poll's give-up or a removal). */
   error?: unknown;
+  /** The sync ended because its source was removed. A list that removed it says so itself. */
+  removed?: boolean;
 }
 
 export interface SyncUntilAnswered<R> {
@@ -36,7 +38,8 @@ export interface SyncUntilAnswered<R> {
  *  - It answered 202: `onStarted` runs and it resolves with '' (nothing to say yet). The
  *    served `syncJob` carries the pending state, and `report` gets the outcome later.
  *
- * Only the poll's own give-up counts as "still running". A real 503 is a failure.
+ * Only the poll's own give-up counts as "still running". A real 503 is a failure. A source
+ * removed during its sync is how that sync ended, not a fault: it reads in the info tone.
  */
 export function syncUntilAnswered<R>(flow: SyncUntilAnswered<R>): Promise<string> {
   const describe =
@@ -56,10 +59,11 @@ export function syncUntilAnswered<R>(flow: SyncUntilAnswered<R>): Promise<string
       })
       .then(
         (result): SyncOutcome => ({ tone: 'info', text: flow.success(result) }),
-        (err: unknown): SyncOutcome =>
-          isSyncStillRunning(err)
-            ? { tone: 'info', text: err.message }
-            : { tone: 'danger', text: describe(err), error: err },
+        (err: unknown): SyncOutcome => {
+          if (isSyncStillRunning(err)) return { tone: 'info', text: err.message };
+          if (isSyncRemoved(err)) return { tone: 'info', text: err.message, removed: true };
+          return { tone: 'danger', text: describe(err), error: err };
+        },
       );
     void outcome.then(async (settled) => {
       try {
