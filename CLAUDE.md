@@ -174,7 +174,10 @@ The web app runs on Next 15 / React 19 (migrated 2026-09-07). The strict CSP adm
 `'unsafe-eval'` for development builds only, because `next dev` cannot hydrate without
 it; production policy is unchanged. Dependencies are kept current by Dependabot on the
 release branch with auto-merge of green minor/patch updates; a major bump is labelled
-`major-update` for a person, and the `dependency-review` workflow files a monthly issue.
+`major-update` for a person, and the `dependency-review` workflow files a monthly issue
+(cron 02:00 UTC on the 1st, because GitHub fires schedules hours late and the steward reads
+at 13:00 UTC; it finds the month's issue by exact title over the REST list, never the search
+index; `scripts/workflow-gates.test.mjs` pins both).
 
 ## Verification lesson from this cycle
 
@@ -196,6 +199,11 @@ gh workflow run deploy.yml --ref feat/docs-conformance-build-20260713-r2 -f envi
 Always pass `--ref`: the workflow's `guard` job refuses any other ref (2026-09-06: a
 bare dispatch shipped stale `main`'s widget to dev), there is no push trigger, and a
 prod dispatch no longer rolls dev first.
+
+A green deploy means the web service finished rolling: each deploy job's last step is
+`aws ecs wait services-stable`, which gives up after 10 minutes and fails the job
+(`scripts/workflow-gates.test.mjs` pins it). Dispatch a live walk after the job ends, not
+while it runs: during a roll two web builds serve at once.
 
 Do not imply that publishing the dashboard alone updates embeds: the widget
 bundle is deployed to the embed CDN as part of the workflow. Use the workflow's
