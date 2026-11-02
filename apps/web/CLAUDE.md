@@ -33,13 +33,17 @@ bundle.
   WP-E): when the HUMAN team is reachable, closures, after-hours contact. Luciel has no
   hours; the copy must keep saying it answers around the clock.
 - `src/components/connection-chip.tsx` — status-chip presentation bridge.
+- `src/app/error.tsx`, `src/app/global-error.tsx` — the crash pages, both rendering
+  `src/components/error-screen.tsx`; `src/lib/chunk-reload.ts` — the one automatic reload;
+  `src/lib/chunk-watchdog.ts` — the same recovery for a file lost during a page load.
 - `src/lib/api.ts` and `src/lib/hooks.ts` — typed control-plane client and queries.
 - `tests/unit/` — focused UI behavior and regression tests.
 - `tests/e2e/a11y.spec.ts` — the WCAG 2.1 AA gate over EVERY route (round 7 WP-12: 23 today).
   Each entry names the page's own heading and waits for it (and for no "Loading…") before
   axe runs; the last test fails when a `page.tsx` is added without an entry. A page that
   exists in one account state runs under that scenario (first-run → fresh, account-closed →
-  closed).
+  closed). The crash page has no route: its tests reach it by aborting a page's chunk, or
+  main-app for the page-load path.
 - `tests/e2e/journey.spec.ts` — the mock-adapter customer walk (overview → configure →
   embed → conversations → leads → billing); `tests/e2e/live-smoke.spec.ts` — the opt-in,
   read-only walk of a deployed environment; `tests/e2e/mock-session.ts` — the planted
@@ -154,8 +158,8 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
   is pulled…" is true. The stopped sync's "removed while it was syncing" sentence is an outcome,
   never red (`isSyncRemoved` → info tone), and a list whose own tab removed the source keeps its
   "no longer crawled" notice over it. A row that leaves the list mid-sync (a Luciel delete from
-  another tab, a Log out's `qc.clear()` racing the 2 s poll) counts as having left `syncing`; the
-  app has no error.tsx, so a throw in that effect is Next's permanent "Application error". A
+  another tab, a Log out's `qc.clear()` racing the 2 s poll) counts as having left `syncing`; a
+  throw in that effect would land the owner on the crash page. A
   test of it needs the poll's read in flight or refused (an instant mock hides the bug) and an
   error boundary. A per-source Re-sync in "Your sources" is held, with its reason, while
   its connection serves `syncing`. **Nobody is held behind a 202** (`lib/sync-action.ts`
@@ -176,6 +180,26 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
   sync's sentence appears TWICE (the action banner and the row's "Last sync failed: …"),
   so a spec locates the banner by role (`getByRole('status').filter({ hasText })`), never
   by a bare `getByText` of the sentence.
+- Crash pages: `app/error.tsx` catches a page or nested layout (it replaces the dashboard's
+  header too, so ErrorScreen carries its own logo and `main`); `global-error.tsx` catches the
+  root layout and sets its own html, body and font variable. A ChunkLoadError or failed
+  dynamic import reloads once (sessionStorage `vm-chunk-reload-at`; a recurrence within five
+  minutes, or storage that throws, shows the copy instead), and starts on the status line so
+  a recovery never announces a failure. Reload on any other error calls the boundary's
+  `reset` first; if the page throws again within 10 s it does a real page load, because
+  `reset` only renders again and the query cache sits above the boundary.
+- A file lost during a FULL page load is a different path. If one of the scripts every page
+  starts from fails (`webpack-*`, `main-app-*`, what main-app waits on), Next neither hydrates
+  nor throws; any other script in the HTML only throws at webpack's 120 s timeout, and a failed
+  chunk that global-error needs clears the page. `src/lib/chunk-watchdog.ts`, an inline nonced
+  script in the root layout's head, catches the failed `/_next/static` script or stylesheet
+  up to the load event, applies the same guard, then draws the same copy (`CRASH_COPY`) as a
+  modal dialog with inline styles, putting it back if React clears the document. ErrorScreen
+  dismisses it on mount. Not covered: a file that hangs instead of failing. Old chunks still
+  vanish during a roll, so an owner in that window can still land on this copy.
+- `Logo` shows one word, "VantageMind": its V mark is an SVG, not text. A typed mark fails
+  WCAG 2.5.3 (axe `label-content-name-mismatch`) on every link wrapping the logo with an
+  aria-label, even under aria-hidden.
 - Conversations page: rows carry `#<first-8-of-sessionId>` matching the escalation
   email's ref; `?open=<sessionId>` deep-opens a transcript (useSearchParams under
   Suspense); escalation badges ride `useEscalations` and degrade to a note on

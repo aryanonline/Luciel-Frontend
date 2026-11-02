@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import localFont from 'next/font/local';
 import './globals.css';
+import { CHUNK_WATCHDOG_SCRIPT } from '@/lib/chunk-watchdog';
 import { QueryProvider } from '@/lib/query-provider';
 
 /**
@@ -38,9 +40,19 @@ export const metadata: Metadata = {
     'Assemble an AI employee for your business in minutes. Start free with 50 conversations a month — no credit card.',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Set per request by the middleware. Browsers hide a script's nonce from the DOM, so
+  // hydration reads it as different; that is expected, hence suppressHydrationWarning.
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
     <html lang="en" className={inter.variable}>
+      <head>
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: CHUNK_WATCHDOG_SCRIPT }}
+        />
+      </head>
       <body>
         <QueryProvider>{children}</QueryProvider>
       </body>
