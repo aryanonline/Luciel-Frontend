@@ -72,9 +72,15 @@ export const CHUNK_WATCHDOG_SCRIPT = `(function () {
       COPY.button,
     );
     button.type = 'button';
-    button.addEventListener('click', function () {
-      location.reload();
-    });
+    // On window in the capture phase: while hydration is held up by a missing chunk, React
+    // stops every click at the document, so a listener on the button never hears it.
+    window.addEventListener(
+      'click',
+      function (event) {
+        if (event.target === button) location.reload();
+      },
+      true,
+    );
     card.appendChild(heading);
     card.appendChild(el('p', muted, COPY.happened));
     card.appendChild(el('p', muted, COPY.next));
