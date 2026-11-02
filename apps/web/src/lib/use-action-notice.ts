@@ -14,13 +14,17 @@ export function useActionNotice() {
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<ActionNotice | null>(null);
 
-  /** Resolves true when the action succeeded, so callers can clear state only then. */
+  /**
+   * Resolves true when the action succeeded, so callers can clear state only then. An
+   * empty string means there is nothing to say yet (a sync the server is still running).
+   */
   const run = React.useCallback(
     async (fn: () => Promise<string>, fallbackError = 'That did not work. Please try again.') => {
       setBusy(true);
       setNotice(null);
       try {
-        setNotice({ tone: 'info', text: await fn() });
+        const text = await fn();
+        if (text) setNotice({ tone: 'info', text });
         return true;
       } catch (err) {
         setNotice({

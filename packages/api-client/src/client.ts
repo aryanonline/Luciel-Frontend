@@ -79,6 +79,14 @@ import type {
  */
 /** Offset paging for the list endpoints (2026-09-05 audit WP7): the server caps
  *  `limit` at 500 and defaults to 200; omit both for the first page. */
+/** Options of a knowledge sync (POST …/sync, POST …/resync). */
+export interface KnowledgeSyncOptions {
+  /** F107: the owner confirmed that a source which shrank really did. */
+  confirmShrink?: boolean;
+  /** Fired once, when the POST answers 202: the sync runs on without this request. */
+  onStarted?: () => void;
+}
+
 export interface PageOptions {
   limit?: number;
   offset?: number;
@@ -193,7 +201,11 @@ export interface LucielApiClient {
     deleteSource(sourceId: string): Promise<void>;
     /** Undo a delete inside its 30-day window. 404 once the window has closed. */
     restoreSource(sourceId: string): Promise<KnowledgeSource>;
-    resyncSource(sourceId: string, opts?: { confirmShrink?: boolean }): Promise<KnowledgeSource>;
+    /**
+     * Same contract as syncConnection (it runs the source's whole connection): settles
+     * with the refreshed source when the sync ends; `onStarted` fires on a 202.
+     */
+    resyncSource(sourceId: string, opts?: KnowledgeSyncOptions): Promise<KnowledgeSource>;
     /** Rename the display name only — chunks and embeddings are untouched (§3.2.2). */
     renameSource(sourceId: string, name: string): Promise<KnowledgeSource>;
     /** Swap the underlying file: same source row, chunks fully replaced (§3.2.2). */
@@ -216,11 +228,12 @@ export interface LucielApiClient {
      * `confirmShrink` (2026-09-05 audit F107): a sync that would retire more than
      * half of what is synced is refused with a `conflict` until the owner confirms
      * the shrink is real — nothing is deleted on a broken read.
+     *
+     * The promise settles with the FINAL outcome, however long that takes. Nobody has
+     * to wait for it: `onStarted` fires once if the server answers "still running" (the
+     * 202), so a dialog can close and the served `syncJob` can carry the pending state.
      */
-    syncConnection(
-      connectionId: string,
-      opts?: { confirmShrink?: boolean },
-    ): Promise<KnowledgeSyncResult>;
+    syncConnection(connectionId: string, opts?: KnowledgeSyncOptions): Promise<KnowledgeSyncResult>;
     /**
      * The scope in force for a sync connection (Decision #9). `wholeAccount:
      * true` is the default and means the WHOLE account is read; `scopeKind: null`

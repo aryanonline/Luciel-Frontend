@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { uuid, isoTimestamp, connectionStatus } from './common';
-import { connectionType } from './connections';
+import { connectionType, knowledgeSyncJob } from './connections';
 
 /**
  * The Luciel instance + the five configuration pillars (Vision §3). Five
@@ -238,6 +238,8 @@ export const knowledgeSyncConnection = z.object({
   nonSecretConfig: z.record(z.unknown()).optional(),
   /** A detail beginning "Action needed:" means do not redirect — show it instead. */
   statusDetail: z.string().nullable().optional(),
+  /** The last sync job (see `knowledgeSyncJob`); null = none on record. */
+  syncJob: knowledgeSyncJob.nullable().optional(),
 });
 export type KnowledgeSyncConnection = z.infer<typeof knowledgeSyncConnection>;
 

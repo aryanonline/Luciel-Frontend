@@ -1,6 +1,15 @@
 import type { LucielApiClient, PageOptions } from '../client';
-import { personalityForWrite } from '../schemas';
-import type { BillingInfo, KnowledgeChunk, KnowledgeChunkPage } from '../schemas';
+import { LucielApiError, personalityForWrite } from '../schemas';
+import type {
+  BillingInfo,
+  KnowledgeChunk,
+  KnowledgeChunkPage,
+  KnowledgeSource,
+  KnowledgeSyncConnection,
+  KnowledgeSyncResult,
+  KnowledgeSyncStarted,
+} from '../schemas';
+import { awaitSyncJob, isSyncStarted, readAfterSync } from './sync-job';
 import { createTransport, type TransportOptions } from './transport';
 
 /** POST /admin/account/export as served: camelCase or the endpoint's snake_case. */
@@ -44,6 +53,28 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     const s = params.toString();
     return s ? `?${s}` : '';
   };
+
+  /**
+   * The sync removed this source at its origin. The sources list keeps origin tombstones on
+   * purpose (the row reads "Removed at its source"), and the route's 200 path can answer
+   * one, so finding the source is not the same as the source still being there.
+   */
+  const sourceGoneAtOrigin = () =>
+    new LucielApiError({
+      code: 'not_found',
+      message: 'Source no longer exists at the sync origin.',
+    });
+
+  /** A 202 answer followed to its end, read from the row's served `syncJob`. */
+  const pollSyncJob = ({ connectionId, startedAt }: KnowledgeSyncStarted) =>
+    awaitSyncJob({
+      connectionId,
+      startedAt,
+      read: async () =>
+        (await t.get<KnowledgeSyncConnection[]>('/api/v1/admin/knowledge/sync-connections')).find(
+          (c) => c.connectionId === connectionId,
+        ),
+    });
 
   return {
     auth: {
@@ -108,10 +139,25 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       quota: () => t.get('/api/v1/admin/knowledge/quota'),
       deleteSource: (sourceId) => t.del(`/api/v1/admin/knowledge/sources/${sourceId}`),
       restoreSource: (sourceId) => t.post(`/api/v1/admin/knowledge/sources/${sourceId}/restore`),
-      resyncSource: (sourceId, opts) =>
-        t.post(
+      // The same contract as syncConnection: 200 = the refreshed source; 202 = still
+      // running, so poll the job and then read the source as it came out of the sync.
+      resyncSource: async (sourceId, opts) => {
+        const answer = await t.post<KnowledgeSource | KnowledgeSyncStarted>(
           `/api/v1/admin/knowledge/sources/${sourceId}/resync${opts?.confirmShrink ? '?confirmShrink=true' : ''}`,
-        ),
+        );
+        if (!isSyncStarted(answer)) {
+          if (answer.deletedBy === 'origin') throw sourceGoneAtOrigin();
+          return answer;
+        }
+        opts?.onStarted?.();
+        await pollSyncJob(answer);
+        const sources = await readAfterSync(() =>
+          t.get<KnowledgeSource[]>('/api/v1/admin/knowledge/sources'),
+        );
+        const refreshed = sources.find((s) => s.sourceId === sourceId);
+        if (!refreshed || refreshed.deletedBy === 'origin') throw sourceGoneAtOrigin();
+        return refreshed;
+      },
       renameSource: (sourceId, name) =>
         t.put(`/api/v1/admin/knowledge/sources/${sourceId}`, { name }),
       replaceSource: (sourceId, file) =>
@@ -131,10 +177,18 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
           provider: 'website_crawl',
           crawlUrls,
         }),
-      syncConnection: (connectionId, opts) =>
-        t.post(
+      // 200 = the SyncResult (finished inside the server's 20 s wait); 202 = still
+      // running: poll the served `syncJob` until it finishes, so the caller keeps the
+      // same Promise<KnowledgeSyncResult> and the same typed errors. The POST itself
+      // is sent once — the transport never repeats a POST.
+      syncConnection: async (connectionId, opts) => {
+        const answer = await t.post<KnowledgeSyncResult | KnowledgeSyncStarted>(
           `/api/v1/admin/knowledge/sync-connections/${connectionId}/sync${opts?.confirmShrink ? '?confirmShrink=true' : ''}`,
-        ),
+        );
+        if (!isSyncStarted(answer)) return answer;
+        opts?.onStarted?.();
+        return pollSyncJob(answer);
+      },
       getScope: (connectionId) =>
         t.get(`/api/v1/admin/knowledge/sync-connections/${connectionId}/scope`),
       listScopeCandidates: (connectionId) =>

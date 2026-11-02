@@ -61,8 +61,24 @@ export const refreshSession = (qc: ReturnType<typeof useQueryClient>) =>
 export const useLuciel = () => useQuery({ queryKey: qk.luciel, queryFn: () => api.luciel.get() });
 export const useBilling = () =>
   useQuery({ queryKey: qk.billing, queryFn: () => api.billing.get() });
-export const useConnections = () =>
-  useQuery({ queryKey: qk.connections, queryFn: () => api.connections.list() });
+/**
+ * `refetchInterval` (round 7 — the asynchronous crawl): a caller that shows a
+ * knowledge sync still running re-reads the served rows on an interval (a number, or
+ * a function of the served rows — `false` stops it) until the job finishes.
+ */
+export const useConnections = (opts?: {
+  refetchInterval?: number | false | ((rows: Connection[] | undefined) => number | false);
+}) => {
+  const every = opts?.refetchInterval;
+  return useQuery({
+    queryKey: qk.connections,
+    queryFn: () => api.connections.list(),
+    refetchInterval:
+      typeof every === 'function'
+        ? (query: { state: { data: Connection[] | undefined } }) => every(query.state.data)
+        : every,
+  });
+};
 /**
  * The provider CHOICES for a connection type (Decision #6). Served, not
  * hardcoded, so a customer on a different CRM is never stuck with our default.

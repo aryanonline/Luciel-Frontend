@@ -109,7 +109,9 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
   );
   // The mock walk takes ~7 minutes locally (every mutation is failed once, slowed
   // once and reloaded); a slow CI runner gets headroom.
-  test.setTimeout(target.live ? 30 * 60_000 : 15 * 60_000);
+  // Live: a crawl and its re-sync can each take 7 minutes (crawlWait), and the Knowledge
+  // pillar may first wait 7 more on a crawl an earlier walk left running.
+  test.setTimeout(target.live ? 50 * 60_000 : 15 * 60_000);
   const origin = baseURL ?? 'http://localhost:3000';
   const w = new Walk(page, info, target);
   if (!w.live) {
@@ -572,6 +574,65 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
   await w.pillar('Configure: Knowledge', async () => {
     const pillar = card(page, 'Knowledge base');
     const sources = pillar.locator('ul').first();
+
+    // Live repair: a walk cut short inside this pillar (run 8, 2026-10-25: the crawl's
+    // request outlived the load balancer) leaves its crawl CONNECTED. The same site
+    // crawled again reuses that row, so remove it the way "remove the crawl" below does
+    // — back to the not-connected row a finished walk leaves — before walking.
+    if (w.live) {
+      await test.step('live: remove a crawl an earlier walk left behind', async () => {
+        await expect(
+          sources
+            .getByRole('listitem')
+            .filter({ hasNotText: /Loading your sources…|We could not load/ })
+            .first(),
+        ).toBeVisible({ timeout: 30_000 });
+        const leftList = pillar.getByRole('list', { name: 'Connected sources' });
+        // Exactly the walk's own crawl: a crawl of some other page of the site is not ours.
+        const leftRow = leftList
+          .getByRole('listitem')
+          .filter({ has: page.getByText(`${origin}/`, { exact: true }) });
+        const leftStop = page.getByRole('dialog', { name: /^Stop crawling/ });
+        // The list renders only once connections are served and one exists.
+        await leftList.waitFor({ timeout: 10_000 }).catch(() => undefined);
+        // A crawl still running would be thrown away by removing it, and walked again from
+        // nothing — let it finish first.
+        await expect(leftRow.getByText(/^Crawling…/)).toHaveCount(0, { timeout: 420_000 });
+        for (let i = 0; i < 3; i += 1) {
+          const left = leftRow.filter({ has: page.getByRole('button', { name: 'Re-sync' }) });
+          if ((await left.count()) === 0) break;
+          await left.first().getByRole('button', { name: 'Remove crawl' }).click();
+          await leftStop.getByRole('button', { name: 'Remove crawl' }).click();
+          await expect(
+            pillar.getByText(/is no longer crawled\. Its pages stay in your knowledge/),
+          ).toBeVisible({ timeout: 30_000 });
+          await expect(leftStop).toHaveCount(0);
+          w.note('recovered', 'an earlier walk left its crawl behind — removed it');
+        }
+        // The same cut-short walk never reached "Knowledge cleanup", so its imported CSV
+        // (a walk-only name, walk-services-<epoch>.csv) still counts against the quota.
+        // Only that exact walk-created name is ever deleted here; the cleanup pillar
+        // already sweeps every crawled page under the product's own origin.
+        const leftDel = page.getByRole('dialog', { name: 'Delete this knowledge source?' });
+        for (let i = 0; i < 5; i += 1) {
+          const leftCsv = (await sources.getByRole('listitem').allInnerTexts())
+            .map((text) => text.split('\n')[0]?.trim() ?? '')
+            .find((name) => /^walk-services-\d+\.csv$/.test(name));
+          if (!leftCsv) break;
+          await sources
+            .getByRole('listitem')
+            .filter({ has: page.getByText(leftCsv, { exact: true }) })
+            .getByRole('button', { name: 'Delete' })
+            .click();
+          await leftDel.getByRole('button', { name: 'Delete source' }).click();
+          await expect(
+            pillar.getByText(`Deleted “${leftCsv}” — Luciel no longer answers from it.`),
+          ).toBeVisible({ timeout: 30_000 });
+          await expect(sources.getByText(leftCsv, { exact: true })).toHaveCount(0);
+          w.note('recovered', `an earlier walk left ${leftCsv} behind — deleted it`);
+        }
+      });
+    }
     const upload = async (button: string, name: string, body: string, mimeType: string) => {
       const chooser = page.waitForEvent('filechooser');
       await pillar.getByRole('button', { name: button }).click();
@@ -648,7 +709,7 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
 
     // On live the walk crawls the product's own site (never a third party's).
     const crawlUrl = w.live ? `${origin}/` : 'https://sarahchen.com/services';
-    const crawlWait = w.live ? 180_000 : 5_000;
+    const crawlWait = w.live ? 420_000 : 5_000;
     const crawl = page.getByRole('dialog', { name: 'Crawl a website' });
     const connected = pillar.getByRole('list', { name: 'Connected sources' });
     const crawlRow = connected.getByRole('listitem').filter({ hasText: crawlUrl });
@@ -663,9 +724,11 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
       },
       pending: crawl.getByRole('button', { name: 'Crawling…' }),
       error: () => expect(crawl.getByText('Internal Server Error')).toBeVisible(),
-      // Live crawls the real site inside the request: every page is fetched, embedded
-      // and run through the graph extractor before the call returns (30 s+ for the
-      // marketing site on 2026-10-19). The mock answers at once.
+      // Live crawls the real site: every page is fetched, embedded and run through the
+      // graph extractor (30 s+ for the marketing site on 2026-10-19, past the ALB's
+      // 60 s on 2026-10-25). Past the server's 20 s inline wait the POST answers 202, the
+      // dialog closes, the client polls the served syncJob, and the toast still waits for
+      // the served result. The mock answers at once.
       success: () =>
         expect(pillar.getByText(`Crawled ${crawlUrl} —`)).toBeVisible({ timeout: crawlWait }),
       reload: async () => {
@@ -673,6 +736,37 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
         await expect(crawlRow.getByRole('button', { name: 'Remove crawl' })).toBeVisible();
       },
     });
+
+    // The asynchronous crawl (round 7): a sync that outlives the server's inline wait
+    // keeps running server-side, and its row says so from the SERVED job — in the tab
+    // that clicked (no reload needed), after a reload, and until the sync really ran.
+    await w.step(
+      'a crawl in progress survives a reload',
+      async () => {
+        await w.control.holdNextSync();
+        const resync = crawlRow.getByRole('button', { name: 'Re-sync' });
+        await resync.click();
+        await expect(crawlRow.getByText(/^Crawling…/)).toBeVisible();
+        await expect(resync).toHaveAttribute('aria-disabled', 'true');
+        await page.reload();
+        await expect(crawlRow.getByText(/^Crawling…/)).toBeVisible();
+        await expect(resync).toHaveAttribute('aria-disabled', 'true');
+        // The page's own Re-sync waits for the same job, and says why.
+        const pageRow = sources.getByRole('listitem').filter({ hasText: crawlUrl });
+        await expect(pageRow.getByText(/Re-sync is held until that finishes/)).toBeVisible();
+        await w.control.releaseSync();
+        await expect(crawlRow.getByText(/^Crawling…/)).toHaveCount(0, { timeout: 10_000 });
+        await expect(pageRow.getByText(/Re-sync is held/)).toHaveCount(0);
+        await expect(resync).not.toHaveAttribute('aria-disabled', 'true');
+        // The run itself happened: the page already synced was refreshed by THIS job
+        // (a job marked synced without running would report nothing updated).
+        await expect(page.getByTestId('knowledge-sync-announcer')).toHaveText(
+          /^Finished syncing .* — 0 added, 1 updated, 0 removed\.$/,
+        );
+        await expect(crawlRow.getByText(/last synced (?!never)/)).toBeVisible();
+      },
+      NEEDS.mockControl,
+    );
 
     await w.mutate('re-sync the crawl', {
       method: 'knowledge.syncConnection',
@@ -692,11 +786,13 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
         await expect(drive.getByText('Connected', { exact: true })).toBeVisible();
         await w.control.revokeKnowledgeGrant('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
         await drive.getByRole('button', { name: 'Re-sync' }).click();
-        await expect(
-          pillar.getByText(
-            'Sync unavailable: the provider refused the stored credential — reconnect it.',
-          ),
-        ).toBeVisible();
+        const refused =
+          'Sync unavailable: the provider refused the stored credential — reconnect it.';
+        // The refusal reads twice, as the server serves it: the action's banner (located
+        // by its role, not by a text match that would find both) and the row's recorded
+        // job beside its last-synced time.
+        await expect(pillar.getByRole('status').filter({ hasText: refused })).toBeVisible();
+        await expect(drive.getByText(`Last sync failed: ${refused}`)).toBeVisible();
         // The chip follows the SERVED status: no false Connected after the refusal.
         await expect(drive.getByText('Connected', { exact: true })).toHaveCount(0);
         await page.reload();
@@ -708,8 +804,11 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
         await page.waitForURL(/\/dashboard\/configure/);
         await expect(page.getByText('Google Drive is connected.')).toBeVisible();
         await expect(drive.getByText('Connected', { exact: true })).toBeVisible();
+        // The reconnect retired the failure: no green chip beside a stale refusal.
+        await expect(drive.getByText(/Last sync failed/)).toHaveCount(0);
         await page.reload();
         await expect(drive.getByText('Connected', { exact: true })).toBeVisible();
+        await expect(drive.getByText(/Last sync failed/)).toHaveCount(0);
       },
       NEEDS.knowledgeOauth,
     );

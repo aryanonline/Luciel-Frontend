@@ -29,6 +29,55 @@ export const connectionType = z.enum([
 ]);
 export type ConnectionType = z.infer<typeof connectionType>;
 
+/**
+ * The last sync job of a knowledge connection (round 7 — the asynchronous crawl,
+ * Arch §3.2.3 follow-up). A sync that outlives the server's inline wait (20 s) is
+ * answered 202 and keeps running in the background; this record is how its outcome
+ * reaches the owner. `syncing` older than 15 minutes is already served as `failed`.
+ * `shrink_pending` carries the same sentence the 409 shrink refusal used to carry.
+ * Unknown extra keys are tolerated (passthrough), so an additive server field never
+ * breaks a read.
+ */
+export const knowledgeSyncJobState = z.enum(['syncing', 'synced', 'failed', 'shrink_pending']);
+export type KnowledgeSyncJobState = z.infer<typeof knowledgeSyncJobState>;
+
+export const knowledgeSyncJobResult = z
+  .object({
+    added: z.array(z.string()).optional(),
+    updated: z.array(z.string()).optional(),
+    removed: z.array(z.string()).optional(),
+    failed: z.array(z.string()).optional(),
+    unreached: z.array(z.string()).optional(),
+    graphDeferred: z.array(z.string()).optional(),
+    refused: z.array(z.string()).optional(),
+    halted: z.unknown().optional(),
+  })
+  .passthrough();
+export type KnowledgeSyncJobResult = z.infer<typeof knowledgeSyncJobResult>;
+
+export const knowledgeSyncJob = z
+  .object({
+    state: knowledgeSyncJobState,
+    startedAt: isoTimestamp,
+    finishedAt: isoTimestamp.nullable().optional(),
+    result: knowledgeSyncJobResult.nullable().optional(),
+    error: z.string().nullable().optional(),
+    shrink: z.object({ remote: z.number(), existing: z.number() }).nullable().optional(),
+    trigger: z.enum(['manual', 'scheduled']).optional(),
+  })
+  .passthrough();
+export type KnowledgeSyncJob = z.infer<typeof knowledgeSyncJob>;
+
+/** The 202 body of POST /knowledge/sync-connections/{id}/sync: still running. */
+export const knowledgeSyncStarted = z
+  .object({
+    connectionId: uuid,
+    state: z.literal('syncing'),
+    startedAt: isoTimestamp,
+  })
+  .passthrough();
+export type KnowledgeSyncStarted = z.infer<typeof knowledgeSyncStarted>;
+
 export const connection = z.object({
   connectionId: uuid,
   connectionType,
@@ -62,6 +111,8 @@ export const connection = z.object({
   statusDetail: z.string().nullable().optional(),
   lastHealthCheckAt: isoTimestamp.nullable().optional(),
   createdAt: isoTimestamp,
+  /** knowledge_source rows only: the last sync job (null = none on record). */
+  syncJob: knowledgeSyncJob.nullable().optional(),
 });
 export type Connection = z.infer<typeof connection>;
 
