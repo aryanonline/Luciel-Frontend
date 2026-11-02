@@ -1,6 +1,7 @@
 // Two things the workflows promise, read from the files themselves: a deploy does not
 // report success before the web service has finished rolling, and the monthly review
-// posts early enough for the steward and finds the month's issue by its exact title.
+// posts early enough for the steward, and both workflows that post to the month's issue
+// find it by its exact title.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -49,25 +50,33 @@ test('the monthly review fires at 02:00 on the 1st, like the backend', () => {
   assert.match(review(), /- cron: '0 2 1 \* \*'/);
 });
 
-test('the monthly review never reads the eventually consistent search index', () => {
-  // The commands, not the comment that explains why they are not used.
-  const wf = review()
-    .split('\n')
-    .filter((l) => !l.trim().startsWith('#'))
-    .join('\n');
-  assert.doesNotMatch(wf, /gh issue list/);
-  assert.doesNotMatch(wf, /--search/);
-  // gh refuses --slurp together with --jq.
-  assert.doesNotMatch(wf, /--slurp[^\n]*--jq/);
-  assert.match(
-    wf,
-    /gh api --paginate --slurp "repos\/\$REPO\/issues\?state=open&per_page=100" \| jq -r/,
-  );
-});
+// Both workflows post to the month's "Dependency & CVE review" issue.
+const POSTERS = [
+  ['the monthly review', '.github/workflows/dependency-review.yml'],
+  ['the weekly image rebuild', '.github/workflows/image-rebuild.yml'],
+];
 
-/** Run the workflow's own lookup line with a stand-in `gh` that serves these pages. */
-function lookup(pages, title) {
-  const line = review()
+for (const [name, path] of POSTERS) {
+  test(`${name} never reads the eventually consistent search index`, () => {
+    // The commands, not the comment that explains why they are not used.
+    const wf = read(path)
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
+    assert.doesNotMatch(wf, /gh issue list/);
+    assert.doesNotMatch(wf, /--search/);
+    // gh refuses --slurp together with --jq.
+    assert.doesNotMatch(wf, /--slurp[^\n]*--jq/);
+    assert.match(
+      wf,
+      /gh api --paginate --slurp "repos\/\$REPO\/issues\?state=open&per_page=100" \| jq -r/,
+    );
+  });
+}
+
+/** Run a workflow's own lookup line with a stand-in `gh` that serves these pages. */
+function lookup(path, pages, title) {
+  const line = read(path)
     .split('\n')
     .find((l) => l.trim().startsWith('existing=$(gh api'));
   assert.ok(line, 'no lookup line');
@@ -90,24 +99,26 @@ function lookup(pages, title) {
 
 const hasTools = spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' }).status === 0;
 
-test(
-  'the lookup finds the exact title across pages, skipping pull requests',
-  { skip: hasTools ? false : 'needs bash and jq' },
-  () => {
-    const title = 'Dependency & CVE review 2026-11';
-    const pages = [
-      [
-        { number: 1, title: `${title} (copy)` },
-        { number: 2, title, pull_request: { url: 'x' } },
-      ],
-      [{ number: 3, title }],
-    ];
-    const hit = lookup(pages, title);
-    assert.equal(hit.status, 0, hit.stderr);
-    assert.equal(hit.stdout, '3');
+for (const [name, path] of POSTERS) {
+  test(
+    `${name}'s lookup finds the exact title across pages, skipping pull requests`,
+    { skip: hasTools ? false : 'needs bash and jq' },
+    () => {
+      const title = 'Dependency & CVE review 2026-11';
+      const pages = [
+        [
+          { number: 1, title: `${title} (copy)` },
+          { number: 2, title, pull_request: { url: 'x' } },
+        ],
+        [{ number: 3, title }],
+      ];
+      const hit = lookup(path, pages, title);
+      assert.equal(hit.status, 0, hit.stderr);
+      assert.equal(hit.stdout, '3');
 
-    const miss = lookup([[{ number: 1, title: 'Dependency & CVE review 2026-10' }]], title);
-    assert.equal(miss.status, 0, miss.stderr);
-    assert.equal(miss.stdout, '');
-  },
-);
+      const miss = lookup(path, [[{ number: 1, title: 'Dependency & CVE review 2026-10' }]], title);
+      assert.equal(miss.status, 0, miss.stderr);
+      assert.equal(miss.stdout, '');
+    },
+  );
+}

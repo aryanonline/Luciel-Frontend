@@ -110,8 +110,11 @@ jobs:
             echo
             echo "Lines reading \`no longer matches any finding\` are waivers to RETIRE; \`not allowlisted\` lines are new findings a person (or the monthly steward) must review."
           } > comment.md
-          existing=$(gh issue list --repo "$REPO" --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
-          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+          # Same lookup as dependency-review.yml, which posts to the same title: exact match
+          # over the REST list, because the search index could miss an issue that workflow
+          # opened moments ago and the month would get two. The list carries pull requests too.
+          existing=$(gh api --paginate --slurp "repos/$REPO/issues?state=open&per_page=100" | jq -r --arg title "$title" '[.[][] | select(.pull_request == null and .title == $title)][0].number // empty')
+          if [ -n "$existing" ]; then
             gh issue comment "$existing" --repo "$REPO" --body-file comment.md
           else
             gh issue create --repo "$REPO" --title "$title" --label dependencies --body-file comment.md
