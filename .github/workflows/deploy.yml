@@ -104,9 +104,12 @@ jobs:
             --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.vantagemind.ai \
             --build-arg NEXT_PUBLIC_API_ADAPTER=http \
             --build-arg NEXT_PUBLIC_HCAPTCHA_SITE_KEY=6f66ccc8-ae5a-4d20-90f6-e49adfa8c10e \
-            -t "$ECR/$REPO:$TAG" -t "$ECR/$REPO:latest" .
+            -t "$ECR/$REPO:$TAG" .
+          # Only the commit tag is pushed here. `latest` is what the web task definition
+          # runs, so it moves only in the deploy job, AFTER the CVE gate below passed:
+          # pushing it here (until 2026-11-02) made a gate-refused image `latest`, and the
+          # next task restart would have pulled it.
           docker push "$ECR/$REPO:$TAG"
-          docker push "$ECR/$REPO:latest"
 
       - name: Image CVE gate (fails closed; HIGH + CRITICAL; governed, expiring allowlist)
         env:
@@ -162,11 +165,19 @@ jobs:
           aws ecr login >/dev/null 2>&1 || true
           REG=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com
           REPO=luciel-${ENVIRONMENT}-web
-          # re-tag the built image into this env's repo path as :latest
+          set -euo pipefail
+          # Promote the gated commit image to :latest (the tag the web task definition runs).
+          # A missing image or a failed promotion fails the deploy: rolling the service
+          # without it would restart the PREVIOUS image and still report success.
           MANIFEST=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag="$TAG" \
+            --query 'images[0].imageManifest' --output text)
+          if [ -z "$MANIFEST" ] || [ "$MANIFEST" = "None" ]; then
+            echo "::error::image $REPO:$TAG not found; nothing to promote"; exit 1
+          fi
+          CURRENT=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag=latest \
             --query 'images[0].imageManifest' --output text 2>/dev/null || echo "")
-          if [ -n "$MANIFEST" ] && [ "$MANIFEST" != "None" ]; then
-            aws ecr put-image --repository-name "$REPO" --image-tag latest --image-manifest "$MANIFEST" || true
+          if [ "$CURRENT" != "$MANIFEST" ]; then
+            aws ecr put-image --repository-name "$REPO" --image-tag latest --image-manifest "$MANIFEST" >/dev/null
           fi
           CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@,'Luciel-${ENVIRONMENT}-Web')]" --output text)
           for SVC in $(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text); do
@@ -234,7 +245,22 @@ jobs:
         env:
           TAG: ${{ needs.build.outputs.image_tag }}
         run: |
+          set -euo pipefail
           ACCT=$(aws sts get-caller-identity --query Account --output text)
+          REPO=luciel-${ENVIRONMENT}-web
+          # Promote the gated commit image to :latest before the roll, as deploy-dev does:
+          # the build job no longer pushes :latest, so rolling without this would restart
+          # the previous image.
+          MANIFEST=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag="$TAG" \
+            --query 'images[0].imageManifest' --output text)
+          if [ -z "$MANIFEST" ] || [ "$MANIFEST" = "None" ]; then
+            echo "::error::image $REPO:$TAG not found; nothing to promote"; exit 1
+          fi
+          CURRENT=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag=latest \
+            --query 'images[0].imageManifest' --output text 2>/dev/null || echo "")
+          if [ "$CURRENT" != "$MANIFEST" ]; then
+            aws ecr put-image --repository-name "$REPO" --image-tag latest --image-manifest "$MANIFEST" >/dev/null
+          fi
           CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@,'Luciel-${ENVIRONMENT}-Web')]" --output text)
           for SVC in $(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text); do
             aws ecs update-service --cluster "$CLUSTER" --service "$SVC" --force-new-deployment

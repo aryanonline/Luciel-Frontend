@@ -122,3 +122,29 @@ for (const [name, path] of POSTERS) {
     },
   );
 }
+
+// 2026-11-02: the build job pushed :latest before the CVE gate ran, so a gate-refused
+// image became the tag the web task definition runs. Only the commit tag is pushed
+// before the gate; each deploy job promotes the gated image to :latest, and a failed
+// promotion fails the job instead of rolling the previous image.
+test('the build pushes only the commit tag; :latest moves after the gate', () => {
+  const build = job(read('.github/workflows/deploy.yml'), 'build');
+  const all = steps(build);
+  const pushIdx = all.findIndex((s) => /docker push/.test(s));
+  const gateIdx = all.findIndex((s) => /image-scan-gate\.mjs/.test(s));
+  assert.ok(pushIdx !== -1 && gateIdx > pushIdx, 'the gate runs after the push');
+  assert.doesNotMatch(all[pushIdx], /:latest/, 'the build must not push or tag :latest');
+});
+
+for (const name of ['deploy-dev', 'deploy-prod']) {
+  test(`${name} promotes the gated image to :latest before it rolls, and fails if it cannot`, () => {
+    const text = job(read('.github/workflows/deploy.yml'), name);
+    const promote = text.indexOf('--image-tag latest');
+    const roll = text.indexOf('aws ecs update-service');
+    assert.ok(promote !== -1, 'promotes :latest');
+    assert.ok(roll > promote, 'promotes before the roll');
+    const before = text.slice(0, roll);
+    assert.match(before, /set -euo pipefail/);
+    assert.doesNotMatch(before.slice(before.lastIndexOf('put-image')), /\|\| true/, 'a failed promotion must fail the job');
+  });
+}
