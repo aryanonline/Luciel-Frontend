@@ -142,17 +142,30 @@ any fix to a dashboard state, connection label, count, modal, or evidence rule.
 - Knowledge syncs can be asynchronous (round 7; the server answers 202 past its 20 s inline
   wait and the client polls — see packages/api-client CLAUDE.md). "Connected sources" reads
   the SERVED `syncJob`: `syncing` → "Crawling…" (website_crawl) / "Syncing…" + "started
-  <time>", Re-sync disabled (+ aria-disabled), and `useConnections` with
-  `refetchInterval: knowledgeSyncRefetchInterval` re-reads every 2 s while any row syncs; a row leaving
-  `syncing` invalidates knowledge + quota. `failed` → "Last sync failed: <error>" beside a
-  last-synced time that is never erased; `shrink_pending` → the served sentence + "Yes,
-  remove them and sync". The success toasts are unchanged; a poll that gives up
-  (`service_unavailable`) is said as "Still syncing…" (info), and the crawl dialog closes
-  then — a second "Crawl this site" would only reuse the row. The walk's mock-only step "a
-  crawl in progress survives a reload" uses `mockControl(page).deferSync(4000)`; on live the
-  Knowledge pillar first removes a crawl a cut-short walk left CONNECTED (the same URL
-  reuses one row, so a finished walk leaves it not-connected) and deletes a leftover
-  `walk-services-<epoch>.csv` the skipped "Knowledge cleanup" never reached. A refused
+  <time>", Re-sync held by aria-disabled (NEVER native disabled: the guarded click is real and
+  `aria-describedby` points at that line), and `useConnections` with
+  `refetchInterval: knowledgeSyncRefetchInterval` re-reads every 2 s while any row syncs; a row
+  leaving `syncing` invalidates knowledge + quota + employeeStatus and the list's one
+  always-mounted `role="status"` region says how it ended. `failed` → "Last sync failed:
+  <error>" beside a last-synced time that is never erased; `shrink_pending` → the served
+  sentence (or one built from `job.shrink`), + "Yes, remove them and sync" on a connected row
+  only; a not_connected row shows no job line. "Remove crawl" / "Disconnect" stays ENABLED on
+  a syncing row: removing a source stops its sync and keeps nothing from it, so "Nothing new
+  is pulled…" is true. A per-source Re-sync in "Your sources" is held, with its reason, while
+  its connection serves `syncing`. **Nobody is held behind a 202** (`lib/sync-action.ts`
+  `syncUntilAnswered`, used by the crawl dialog, row Re-sync, both confirm-shrinks, per-source
+  Re-sync and the scope panel's Sync now): pending lasts until the POST answers. A fast
+  outcome is as ever (a failure stays in the crawl dialog with its input, F169, a real 503
+  included). On a 202 the dialog closes with "Crawling <url> — this can take a few minutes…",
+  `qk.connections` is re-read so the row serves "Crawling…" in the same tab, and the
+  byte-identical success toast, a danger notice with the served text, or the still-running
+  info notice (`isSyncStillRunning`, never the code alone) follows when the poll settles.
+  The walk's mock-only step "a crawl in progress survives a reload" uses
+  `mockControl(page).holdNextSync()` + `releaseSync()`; on live the Knowledge pillar first
+  waits up to 7 min for a crawl a cut-short walk left running, removes it if it is still
+  CONNECTED (matched by its exact name; the same URL reuses one row, so a finished walk leaves
+  it not-connected) and deletes a leftover `walk-services-<epoch>.csv` the skipped "Knowledge
+  cleanup" never reached. The live crawl and its re-sync each get 420 s. A refused
   sync's sentence appears TWICE (the action banner and the row's "Last sync failed: …"),
   so a spec locates the banner by role (`getByRole('status').filter({ hasText })`), never
   by a bare `getByText` of the sentence.
