@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderWithQuery } from './test-utils';
 import {
   KnowledgeConnections,
@@ -287,6 +288,60 @@ describe('a row whose job is syncing', () => {
         ),
       { timeout: 5000 },
     );
+  }, 10_000);
+});
+
+describe('a syncing row that leaves the list', () => {
+  it('the next read no longer serves it (a Luciel delete, a revoke): the others stay', async () => {
+    const list = vi
+      .spyOn(api.connections, 'list')
+      .mockResolvedValue([crawl(syncing), drive(null)]);
+    const sources = vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
+    renderWithQuery(<KnowledgeConnections />);
+    await rowOf('https://vantagemind.ai/');
+    const sourceReads = sources.mock.calls.length;
+
+    list.mockResolvedValue([drive(null)]);
+    await waitFor(() => expect(screen.queryByText('https://vantagemind.ai/')).toBeNull(), {
+      timeout: 5000,
+    });
+    expect(await rowOf('Google Drive')).toBeInTheDocument();
+    // Leaving `syncing` changed what is synced, whichever way it left.
+    await waitFor(() => expect(sources.mock.calls.length).toBeGreaterThan(sourceReads));
+  }, 10_000);
+
+  it('the only row goes: the list renders nothing and nothing throws', async () => {
+    const list = vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(syncing)]);
+    vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
+    renderWithQuery(<KnowledgeConnections />);
+    await rowOf('https://vantagemind.ai/');
+    list.mockResolvedValue([]);
+    await waitFor(
+      () => expect(screen.queryByRole('list', { name: 'Connected sources' })).toBeNull(),
+      { timeout: 5000 },
+    );
+  }, 10_000);
+
+  it('Log out clears the cache while a row syncs: the next 2 s tick does not throw', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.spyOn(api.connections, 'list').mockResolvedValue([crawl(syncing)]);
+      vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={client}>
+          <KnowledgeConnections />
+        </QueryClientProvider>,
+      );
+      await rowOf('https://vantagemind.ai/');
+      // What LogoutButton does before router.replace('/'): the tree stays mounted until
+      // the navigation commits, and the observer's refetch interval keeps running.
+      client.clear();
+      await act(() => vi.advanceTimersByTimeAsync(SYNC_POLL_MS));
+      await act(() => vi.advanceTimersByTimeAsync(SYNC_POLL_MS));
+    } finally {
+      vi.useRealTimers();
+    }
   }, 10_000);
 });
 

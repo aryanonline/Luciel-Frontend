@@ -118,10 +118,13 @@ export function KnowledgeConnections() {
   const wasSyncing = React.useRef<string[]>([]);
   React.useEffect(() => {
     const knowledge = (served ?? []).filter(isKnowledgeRow);
-    const left = wasSyncing.current.filter(
-      (id) =>
-        servedJob(knowledge.find((c) => c.connectionId === id) as Connection)?.state !== 'syncing',
-    );
+    // A row the list no longer serves left `syncing` too: a revoked or quiescing source
+    // drops out of the list, and a cleared cache (Log out) serves no rows at all while
+    // this tree is still mounted.
+    const left = wasSyncing.current.filter((id) => {
+      const row = knowledge.find((c) => c.connectionId === id);
+      return !row || servedJob(row)?.state !== 'syncing';
+    });
     wasSyncing.current = knowledge
       .filter((c) => servedJob(c)?.state === 'syncing')
       .map((c) => c.connectionId);
