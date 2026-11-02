@@ -3,7 +3,7 @@ name: deploy
 # Frontend CD (mirrors Luciel-Backend §5.8). Build the web image -> push to the
 # luciel-<env>-web ECR repo (owned by the backend CDK app); build the widget
 # bundle -> sync to the widget S3 bucket + invalidate CloudFront; then roll the
-# web ECS service. Dispatch only (no push trigger: `main` is a stale revert and the
+# web ECS service and wait until it is stable. Dispatch only (no push trigger: `main` is a stale revert and the
 # `guard` job refuses any ref but the release branch); dev via environment=dev, prod
 # behind a WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
 # prod is NEVER auto-deployed, and a prod dispatch no longer rolls dev first. (GitHub Environment required-reviewer rules
@@ -198,6 +198,17 @@ jobs:
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
           [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
+      # A deploy must not say success before the roll ends: the update above returns in
+      # seconds while ECS takes minutes to reach steady state (deploy 40239826580: 17 s
+      # against 2.5 minutes), and a walk dispatched after a "green" deploy ran into two
+      # builds serving at once. The waiter gives up after 10 minutes (40 polls, 15 s
+      # apart) with a non-zero exit, which fails this job.
+      - name: Wait for the web service roll to finish
+        run: |
+          set -euo pipefail
+          CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@,'Luciel-${ENVIRONMENT}-Web')]" --output text)
+          SERVICES=$(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text)
+          aws ecs wait services-stable --cluster "$CLUSTER" --services $SERVICES
 
   # ---- prod: MANUAL approval gate. Never auto-deployed. ----------------------
   deploy-prod:
@@ -250,3 +261,14 @@ jobs:
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
           [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
+      # A deploy must not say success before the roll ends: the update above returns in
+      # seconds while ECS takes minutes to reach steady state (deploy 40239826580: 17 s
+      # against 2.5 minutes), and a walk dispatched after a "green" deploy ran into two
+      # builds serving at once. The waiter gives up after 10 minutes (40 polls, 15 s
+      # apart) with a non-zero exit, which fails this job.
+      - name: Wait for the web service roll to finish
+        run: |
+          set -euo pipefail
+          CLUSTER=$(aws ecs list-clusters --query "clusterArns[?contains(@,'Luciel-${ENVIRONMENT}-Web')]" --output text)
+          SERVICES=$(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text)
+          aws ecs wait services-stable --cluster "$CLUSTER" --services $SERVICES
