@@ -18,7 +18,7 @@ import {
   useKnowledge,
 } from '@/lib/hooks';
 import { authorizeOrExplain } from '@/lib/oauth-connect';
-import { syncUntilAnswered } from '@/lib/sync-action';
+import { SYNC_HALTED_NOTICE, syncUntilAnswered } from '@/lib/sync-action';
 import { useActionNotice } from '@/lib/use-action-notice';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -85,6 +85,7 @@ const shrinkSentence = (job: KnowledgeSyncJob) => {
 const announcement = (name: string, job: KnowledgeSyncJob | null | undefined) => {
   if (job?.state === 'synced') {
     const r = job.result;
+    if (r?.halted) return `The sync of ${name} stopped: ${SYNC_HALTED_NOTICE}`;
     return r
       ? `Finished syncing ${name} — ${r.added?.length ?? 0} added, ${r.updated?.length ?? 0} updated, ${r.removed?.length ?? 0} removed.`
       : `Finished syncing ${name}.`;

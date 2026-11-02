@@ -120,6 +120,8 @@ function settle(job: KnowledgeSyncJob): KnowledgeSyncResult {
     };
     // The quota's refusals ride the SyncResult today too (SyncResultOut.refused).
     if (Array.isArray(r.refused)) out.refused = strings(r.refused);
+    // A run the Luciel's pause or delete halted wrote nothing: "0 added" would mislead.
+    if (typeof r.halted === 'string' && r.halted) out.halted = r.halted;
     return out;
   }
   if (job.state === 'shrink_pending') {

@@ -319,6 +319,22 @@ describe('a sync still running (202)', () => {
     });
   });
 
+  it('a run a pause halted says so instead of reading as "0 added"', async () => {
+    stubServer(accepted, [
+      {
+        state: 'synced',
+        startedAt: STARTED,
+        result: { added: [], updated: [], removed: [], halted: 'instance_not_serving' },
+      },
+    ]);
+    await expect(settle(client().knowledge.syncConnection(CONN))).resolves.toEqual({
+      added: [],
+      updated: [],
+      removed: [],
+      halted: 'instance_not_serving',
+    });
+  });
+
   it('falls back to its own sentence when a finished job carries no error text', async () => {
     stubServer(accepted, [{ state: 'shrink_pending', startedAt: STARTED, error: null }]);
     const shrink = await settle(client().knowledge.syncConnection(CONN)).catch(

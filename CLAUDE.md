@@ -151,7 +151,7 @@ pnpm -r test
 pnpm -r build
 ```
 
-The current suite is approximately 631 tests (api-client 141, ui 17, widget 41, web 432;
+The current suite is approximately 675 tests (api-client 142, ui 20, widget 41, web 472;
 counted 2026-11-02).
 Treat an unexpected test-count change as a signal to review, not as a substitute for
 the command exit status. `pnpm --filter @luciel/web test:e2e` runs the Playwright

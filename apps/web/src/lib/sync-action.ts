@@ -4,6 +4,13 @@ import { isSyncRemoved, isSyncStillRunning } from '@luciel/api-client';
 export const SYNC_STARTED_NOTICE =
   'Syncing — this can take a few minutes. Connected sources shows when it finishes.';
 
+/** A run that wrote nothing because the Luciel stopped serving (paused or deleted) under it. */
+export const SYNC_HALTED_NOTICE =
+  'Nothing changed: your Luciel was paused or deleted while this sync ran. It catches up after you resume or restore it.';
+
+const wasHalted = (result: unknown): boolean =>
+  Boolean((result as { halted?: unknown } | null | undefined)?.halted);
+
 export interface SyncOutcome {
   tone: 'info' | 'danger';
   text: string;
@@ -58,7 +65,10 @@ export function syncUntilAnswered<R>(flow: SyncUntilAnswered<R>): Promise<string
         resolve('');
       })
       .then(
-        (result): SyncOutcome => ({ tone: 'info', text: flow.success(result) }),
+        (result): SyncOutcome => ({
+          tone: 'info',
+          text: wasHalted(result) ? SYNC_HALTED_NOTICE : flow.success(result),
+        }),
         (err: unknown): SyncOutcome => {
           if (isSyncStillRunning(err)) return { tone: 'info', text: err.message };
           if (isSyncRemoved(err)) return { tone: 'info', text: err.message, removed: true };
