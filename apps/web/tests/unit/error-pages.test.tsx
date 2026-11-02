@@ -3,10 +3,15 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ErrorPage from '@/app/error';
 import GlobalError from '@/app/global-error';
-import { isChunkLoadError } from '@/lib/chunk-reload';
+import { ErrorBoundaryHandler } from 'next/dist/client/components/error-boundary';
+import { CRASH_SCREEN_EVENT, isChunkLoadError } from '@/lib/chunk-reload';
 
 // next/font is a compiler transform; there is no compiler under vitest.
 vi.mock('next/font/local', () => ({ default: () => ({ variable: 'font-var' }) }));
+
+function Thrower(): never {
+  throw new Error('a later failure');
+}
 
 function chunkError(): Error {
   const error = new Error('Loading chunk 812 failed. (error: /_next/static/chunks/812.js)');
@@ -56,6 +61,77 @@ describe('the crash pages', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
     expect(reset).toHaveBeenCalledTimes(1);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  describe('Reload on an ordinary error, under the real boundary', () => {
+    function inBoundary(child: () => React.ReactNode) {
+      const Child = () => <>{child()}</>;
+      return render(
+        <ErrorBoundaryHandler pathname="/dashboard" errorComponent={ErrorPage}>
+          <Child />
+        </ErrorBoundaryHandler>,
+      );
+    }
+
+    it('keeps the page and does not load it again when rendering again works', () => {
+      let broken = true;
+      inBoundary(() => {
+        if (broken) throw new Error('boom');
+        return 'the page';
+      });
+      broken = false;
+      fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+      expect(screen.getByText('the page')).toBeVisible();
+      expect(reload).not.toHaveBeenCalled();
+    });
+
+    it('loads the page when rendering again throws again', () => {
+      inBoundary(() => {
+        throw new Error('boom');
+      });
+      expect(reload).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('status')).toHaveTextContent('Getting the latest version');
+    });
+
+    it('does not take a failure much later for the retry failing', () => {
+      let broken = true;
+      const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+      const view = inBoundary(() => {
+        if (broken) throw new Error('boom');
+        return 'the page';
+      });
+      broken = false;
+      fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+      now.mockReturnValue(1_000_000 + 11_000);
+      view.rerender(
+        <ErrorBoundaryHandler pathname="/dashboard" errorComponent={ErrorPage}>
+          <Thrower />
+        </ErrorBoundaryHandler>,
+      );
+      expect(screen.getByRole('alert')).toBeVisible();
+      expect(reload).not.toHaveBeenCalled();
+    });
+  });
+
+  it('tells the pre-hydration fallback that this screen has the page', () => {
+    const heard = vi.fn();
+    window.addEventListener(CRASH_SCREEN_EVENT, heard);
+    render(<ErrorPage error={new Error('boom')} reset={vi.fn()} />);
+    window.removeEventListener(CRASH_SCREEN_EVENT, heard);
+    expect(heard).toHaveBeenCalledTimes(1);
+  });
+
+  it('a chunk failure first paints the status line, never the alert', () => {
+    const first = renderToStaticMarkup(<ErrorPage error={chunkError()} reset={vi.fn()} />);
+    expect(first).toContain('role="status"');
+    expect(first).not.toContain('role="alert"');
+  });
+
+  it('an ordinary error first paints the alert', () => {
+    const first = renderToStaticMarkup(<ErrorPage error={new Error('boom')} reset={vi.fn()} />);
+    expect(first).toContain('role="alert"');
   });
 
   it('reloads automatically once on a chunk failure', () => {

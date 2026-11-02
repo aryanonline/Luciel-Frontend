@@ -4,15 +4,31 @@
  * the new build does not have (and the old build's task may already be draining).
  * The fix for the person looking at it is a fresh page load, which gets one build's
  * page and that build's chunks.
+ *
+ * Two places act on it, sharing the guard below: ErrorScreen for a failure React can
+ * see, and the script in chunk-watchdog.ts for a file that fails during a page load,
+ * which React may never get far enough to see.
  */
-const RELOAD_KEY = 'vm-chunk-reload-at';
+export const RELOAD_KEY = 'vm-chunk-reload-at';
 
 /**
  * A second failure inside this window means reloading did not help, so the page
  * stops and shows its copy. It is a window, not a flag held for the tab's life, so a
  * dashboard tab left open still recovers by itself from next week's deploy.
  */
-const RELOAD_WINDOW_MS = 5 * 60 * 1000;
+export const RELOAD_WINDOW_MS = 5 * 60 * 1000;
+
+/** Fired by ErrorScreen when it mounts: React has the page, so the watchdog stands down. */
+export const CRASH_SCREEN_EVENT = 'vm-crash-screen';
+
+/** The crash page's words, the same whichever of the two shows them. */
+export const CRASH_COPY = {
+  heading: 'This page didn’t load',
+  happened:
+    'Something went wrong while opening this page. Nothing was lost: everything you saved is still there.',
+  next: 'Reload to try again. If it keeps happening, email us at info@vantagemind.ai.',
+  button: 'Reload',
+};
 
 const CHUNK_MESSAGE =
   /Loading (CSS )?chunk .* failed|Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|Unable to preload CSS/i;
