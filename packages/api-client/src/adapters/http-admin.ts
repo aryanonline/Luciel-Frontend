@@ -1,9 +1,10 @@
 import type { LucielApiClient, PageOptions } from '../client';
-import { personalityForWrite } from '../schemas';
+import { LucielApiError, personalityForWrite } from '../schemas';
 import type {
   BillingInfo,
   KnowledgeChunk,
   KnowledgeChunkPage,
+  KnowledgeSource,
   KnowledgeSyncConnection,
   KnowledgeSyncResult,
   KnowledgeSyncStarted,
@@ -52,6 +53,17 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     const s = params.toString();
     return s ? `?${s}` : '';
   };
+
+  /** A 202 answer followed to its end, read from the row's served `syncJob`. */
+  const pollSyncJob = ({ connectionId, startedAt }: KnowledgeSyncStarted) =>
+    awaitSyncJob({
+      connectionId,
+      startedAt,
+      read: async () =>
+        (await t.get<KnowledgeSyncConnection[]>('/api/v1/admin/knowledge/sync-connections')).find(
+          (c) => c.connectionId === connectionId,
+        ),
+    });
 
   return {
     auth: {
@@ -116,10 +128,26 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
       quota: () => t.get('/api/v1/admin/knowledge/quota'),
       deleteSource: (sourceId) => t.del(`/api/v1/admin/knowledge/sources/${sourceId}`),
       restoreSource: (sourceId) => t.post(`/api/v1/admin/knowledge/sources/${sourceId}/restore`),
-      resyncSource: (sourceId, opts) =>
-        t.post(
+      // The same contract as syncConnection: 200 = the refreshed source; 202 = still
+      // running, so poll the job and then read the source as it came out of the sync.
+      resyncSource: async (sourceId, opts) => {
+        const answer = await t.post<KnowledgeSource | KnowledgeSyncStarted>(
           `/api/v1/admin/knowledge/sources/${sourceId}/resync${opts?.confirmShrink ? '?confirmShrink=true' : ''}`,
-        ),
+        );
+        if (!isSyncStarted(answer)) return answer;
+        opts?.onStarted?.();
+        await pollSyncJob(answer);
+        const refreshed = (await t.get<KnowledgeSource[]>('/api/v1/admin/knowledge/sources')).find(
+          (s) => s.sourceId === sourceId,
+        );
+        if (!refreshed) {
+          throw new LucielApiError({
+            code: 'not_found',
+            message: 'Source no longer exists at the sync origin.',
+          });
+        }
+        return refreshed;
+      },
       renameSource: (sourceId, name) =>
         t.put(`/api/v1/admin/knowledge/sources/${sourceId}`, { name }),
       replaceSource: (sourceId, file) =>
@@ -148,14 +176,8 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
           `/api/v1/admin/knowledge/sync-connections/${connectionId}/sync${opts?.confirmShrink ? '?confirmShrink=true' : ''}`,
         );
         if (!isSyncStarted(answer)) return answer;
-        return awaitSyncJob({
-          connectionId,
-          startedAt: answer.startedAt,
-          read: async () =>
-            (
-              await t.get<KnowledgeSyncConnection[]>('/api/v1/admin/knowledge/sync-connections')
-            ).find((c) => c.connectionId === connectionId),
-        });
+        opts?.onStarted?.();
+        return pollSyncJob(answer);
       },
       getScope: (connectionId) =>
         t.get(`/api/v1/admin/knowledge/sync-connections/${connectionId}/scope`),
