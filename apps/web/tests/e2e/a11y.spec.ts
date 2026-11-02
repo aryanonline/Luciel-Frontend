@@ -131,8 +131,8 @@ test.describe('the crash page', () => {
 
     const countLoads = (page: Page) => {
       const loads = { count: 0 };
-      page.on('framenavigated', (frame) => {
-        if (frame === page.mainFrame()) loads.count++;
+      page.on('request', (request) => {
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) loads.count++;
       });
       return loads;
     };
@@ -152,6 +152,22 @@ test.describe('the crash page', () => {
       expect(
         await page.evaluate(() => sessionStorage.getItem('vm-chunk-reload-at')),
       ).not.toBeNull();
+    });
+
+    test('a chunk lost on navigation, then a start file lost on the reload, ends on the copy', async ({
+      page,
+    }) => {
+      await openDashboard(page);
+      await page.route(ACCOUNT_CHUNK, (route) => route.abort());
+      await page.route(START_FILE, (route) => route.abort());
+      const loads = countLoads(page);
+
+      await page.getByRole('link', { name: 'Manage account' }).click();
+      await expect(page.getByRole('heading', { name: CRASH_HEADING })).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible();
+      expect(loads.count).toBe(1);
     });
 
     test('still failing, it stops with the copy; no violations; Reload recovers signed in', async ({

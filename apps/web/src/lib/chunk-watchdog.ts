@@ -9,11 +9,10 @@ import { CRASH_COPY, CRASH_SCREEN_EVENT, RELOAD_KEY, RELOAD_WINDOW_MS } from './
  * global-error needs, the page goes blank.
  *
  * So it has to sit outside the bundle (instrumentation-client.ts loads from inside
- * main-app and would be lost with it): an inline script at the top of the root layout's
- * head, under the request's CSP nonce, ahead of the files it watches. On the first failed
- * file it applies reloadOnce's guard; if the guard refuses it shows the crash copy. It
- * stops listening at the window's load event: later chunks are webpack's, whose failure
- * reaches ErrorScreen straight away.
+ * main-app and would be lost with it): an inline script in the root layout's head, under
+ * the request's CSP nonce. On the first failed file it applies reloadOnce's guard; if the
+ * guard refuses it shows the crash copy. It stops listening at the window's load event:
+ * later chunks are webpack's, whose failure reaches ErrorScreen straight away.
  *
  * Inline styles, with token fallbacks, because the stylesheet may be the file that failed,
  * or gone: when React gives up on the root it clears the document, overlay included, so
@@ -108,10 +107,8 @@ export const CHUNK_WATCHDOG_SCRIPT = `(function () {
     return url && url.indexOf('/_next/static/') !== -1 ? url : '';
   }
 
-  function onError(event) {
+  function failed(url) {
     if (settled) return;
-    var url = failedFile(event.target);
-    if (!url) return;
     settled = true;
     console.error('Page error: a file of this page did not load: ' + url);
     if (reloadOnce()) return;
@@ -119,7 +116,21 @@ export const CHUNK_WATCHDOG_SCRIPT = `(function () {
     timer = setInterval(place, 250);
   }
 
+  function onError(event) {
+    var url = failedFile(event.target);
+    if (url) failed(url);
+  }
+
   window.addEventListener('error', onError, true);
+  // React writes this script after the page's own script tags, so one of those could in
+  // principle have failed already, with its error event gone. Resource timing still has it.
+  try {
+    performance.getEntriesByType('resource').forEach(function (entry) {
+      if (entry.initiatorType === 'script' && entry.responseStatus >= 400 && entry.name.indexOf('/_next/static/') !== -1) {
+        failed(entry.name);
+      }
+    });
+  } catch (e) {}
   window.addEventListener('load', function () {
     window.removeEventListener('error', onError, true);
   });

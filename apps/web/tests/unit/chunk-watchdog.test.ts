@@ -111,6 +111,24 @@ describe('the script behind a file that fails during a page load', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('catches a script that had already failed before it ran', () => {
+    const entries = [
+      { name: MAIN_APP, initiatorType: 'script', responseStatus: 200 },
+      { name: '/_next/static/media/font.woff2', initiatorType: 'link', responseStatus: 404 },
+      { name: 'https://js.stripe.com/v3/', initiatorType: 'script', responseStatus: 404 },
+    ];
+    const timing = vi
+      .spyOn(performance, 'getEntriesByType')
+      .mockReturnValue(entries as unknown as PerformanceEntryList);
+    install();
+    expect(reload).not.toHaveBeenCalled();
+
+    entries.push({ name: MAIN_APP, initiatorType: 'script', responseStatus: 404 });
+    timing.mockReturnValue(entries as unknown as PerformanceEntryList);
+    install();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves failures after the load event to webpack and ErrorScreen', () => {
     install();
     window.dispatchEvent(new Event('load'));
