@@ -10,7 +10,9 @@ name: dependency-review
 
 on:
   schedule:
-    - cron: '0 7 1 * *'
+    # 02:00 like the backend's review: GitHub fires schedules 4-9 h late and the
+    # monthly steward reads this issue at 13:00 UTC.
+    - cron: '0 2 1 * *'
   workflow_dispatch: {}
 
 permissions:
@@ -83,8 +85,12 @@ jobs:
             echo
             echo "Minor/patch updates merge themselves once CI is green (Dependabot + auto-merge); majors carry the \`major-update\` label and need a person."
           } > body.md
-          existing=$(gh issue list --repo "$REPO" --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
-          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+          # Exact-title match over the REST list, which is read-after-write consistent;
+          # `gh issue list --search` goes through the eventually consistent search index,
+          # so it could miss an issue opened moments ago and the month would get two. The
+          # list carries pull requests too. Piped to jq: gh refuses --slurp with --jq.
+          existing=$(gh api --paginate --slurp "repos/$REPO/issues?state=open&per_page=100" | jq -r --arg title "$title" '[.[][] | select(.pull_request == null and .title == $title)][0].number // empty')
+          if [ -n "$existing" ]; then
             gh issue comment "$existing" --repo "$REPO" --body-file body.md
             echo "updated issue #$existing"
           else
