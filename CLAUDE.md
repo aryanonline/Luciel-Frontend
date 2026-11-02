@@ -176,8 +176,9 @@ it; production policy is unchanged. Dependencies are kept current by Dependabot 
 release branch with auto-merge of green minor/patch updates; a major bump is labelled
 `major-update` for a person, and the `dependency-review` workflow files a monthly issue
 (cron 02:00 UTC on the 1st, because GitHub fires schedules hours late and the steward reads
-at 13:00 UTC; it finds the month's issue by exact title over the REST list, never the search
-index; `scripts/workflow-gates.test.mjs` pins both).
+at 13:00 UTC). It and the weekly `image-rebuild` workflow, which posts to the same issue, find
+the month's issue by exact title over the REST list, never the search index;
+`scripts/workflow-gates.test.mjs` pins the cron and both lookups.
 
 ## Verification lesson from this cycle
 
