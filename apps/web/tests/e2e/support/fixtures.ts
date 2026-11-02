@@ -92,6 +92,12 @@ export function mockControl(page: Page) {
     endSession: (sessionId: string) => call('endSession', sessionId),
     /** The provider revoked this knowledge grant (the row still says connected). */
     revokeKnowledgeGrant: (connectionId: string) => call('revokeKnowledgeGrant', connectionId),
+    /**
+     * The NEXT knowledge sync outlives the server's inline wait (the 202): its row serves
+     * "syncing" — across reloads — until `releaseSync` finishes it with the usual result.
+     */
+    holdNextSync: () => call('holdNextSync'),
+    releaseSync: () => call('releaseSync'),
   };
 }
 

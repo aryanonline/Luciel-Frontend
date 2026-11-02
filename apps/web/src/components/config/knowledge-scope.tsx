@@ -6,6 +6,7 @@ import type { Connection, KnowledgeScopeKind, ScopeSelection } from '@luciel/api
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { qk, useConnections } from '@/lib/hooks';
+import { SYNC_STARTED_NOTICE, syncUntilAnswered } from '@/lib/sync-action';
 
 /**
  * Knowledge scope picker (Decision #9). Once a Google Drive / Notion sync
@@ -89,9 +90,7 @@ function ScopeSection({ connection }: { connection: Connection }) {
 
   const openPicker = () => {
     setNotice(null);
-    setPicked(
-      Object.fromEntries((current?.selections ?? []).map((s) => [s.id, s.name ?? s.id])),
-    );
+    setPicked(Object.fromEntries((current?.selections ?? []).map((s) => [s.id, s.name ?? s.id])));
     setPickerOpen(true);
   };
 
@@ -118,10 +117,23 @@ function ScopeSection({ connection }: { connection: Connection }) {
     setBusy(true);
     setNotice(null);
     try {
-      await api.knowledge.syncConnection(connectionId);
-      qc.invalidateQueries({ queryKey: qk.knowledge });
-      qc.invalidateQueries({ queryKey: qk.quota });
-      setNotice({ tone: 'info', text: 'Synced — Luciel now reads exactly what you picked.' });
+      const text = await syncUntilAnswered({
+        start: (onStarted) => api.knowledge.syncConnection(connectionId, { onStarted }),
+        onStarted: () => {
+          setNotice({ tone: 'info', text: SYNC_STARTED_NOTICE });
+          void qc.invalidateQueries({ queryKey: qk.connections });
+        },
+        success: () => 'Synced — Luciel now reads exactly what you picked.',
+        describe: message,
+        refresh: () =>
+          Promise.all(
+            [qk.knowledge, qk.quota, qk.connections, qk.employeeStatus].map((queryKey) =>
+              qc.invalidateQueries({ queryKey }),
+            ),
+          ),
+        report: ({ tone, text: said }) => setNotice({ tone, text: said }),
+      });
+      if (text) setNotice({ tone: 'info', text });
     } catch (err) {
       setNotice({ tone: 'danger', text: message(err) });
     } finally {

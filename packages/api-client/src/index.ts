@@ -9,7 +9,7 @@
 export * from './schemas';
 
 // The interface UI codes against.
-export type { LucielApiClient, PageOptions } from './client';
+export type { KnowledgeSyncOptions, LucielApiClient, PageOptions } from './client';
 
 // The selector + adapter options.
 export { createLucielClient, type ApiAdapterKind, type CreateClientConfig } from './factory';
@@ -32,3 +32,4 @@ export {
 // Helpers.
 export { chipForConnection } from './chips';
 export { LucielApiError } from './schemas';
+export { isSyncRemoved, isSyncStillRunning } from './adapters/sync-job';

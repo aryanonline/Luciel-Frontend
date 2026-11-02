@@ -30,6 +30,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { KnowledgeScopeSections } from './knowledge-scope';
 import { KnowledgeConnections } from './knowledge-connections';
 import { pausedServing, pausedServingCopy } from '@/lib/knowledge-pause';
+import { SYNC_STARTED_NOTICE, syncUntilAnswered, type SyncOutcome } from '@/lib/sync-action';
 
 /**
  * Knowledge pillar (Vision §3.3, Arch §3.2.2, Customer Journey §4.3). Ingestion
@@ -142,6 +143,13 @@ export function KnowledgePillar() {
       c.status === 'connected' &&
       (c.provider === 'hubspot' || c.provider === 'salesforce'),
   )?.provider as 'hubspot' | 'salesforce' | undefined;
+  // A source's whole connection is what a per-source Re-sync runs, so it waits for the
+  // connection's served job (the same list "Connected sources" keeps re-reading).
+  const syncingConnections = new Set(
+    (connections.data ?? [])
+      .filter((c) => c.connectionType === 'knowledge_source' && c.syncJob?.state === 'syncing')
+      .map((c) => c.connectionId),
+  );
 
   const uploadRef = React.useRef<HTMLInputElement>(null);
   const csvRef = React.useRef<HTMLInputElement>(null);
@@ -255,25 +263,52 @@ export function KnowledgePillar() {
     qc.invalidateQueries({ queryKey: qk.quota });
   };
 
+  /**
+   * Whatever a sync did, everything it can change is re-read from the server: the
+   * sources, the quota, the connection's row and chip, and the employee's status.
+   */
+  const refreshAfterSync = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: qk.knowledge }),
+      qc.invalidateQueries({ queryKey: qk.quota }),
+      qc.invalidateQueries({ queryKey: qk.connections }),
+      qc.invalidateQueries({ queryKey: qk.employeeStatus }),
+    ]);
+
   const addCrawl = async () => {
     const url = crawlUrl.trim();
+    const closeCrawlDialog = () => {
+      setCrawlOpen(false);
+      setCrawlUrl('');
+      setCrawlRights(false);
+    };
     // Creating the connection only registers the target; the first crawl is
     // what actually produces sources (Arch §3.2.3 — manual pull, no poller).
     const connection = await api.knowledge.startCrawl([url]);
-    const result = await api.knowledge.syncConnection(connection.connectionId);
-    setCrawlOpen(false);
-    setCrawlUrl('');
-    setCrawlRights(false);
-    setNotice({
-      tone: 'info',
-      text: `Crawled ${url} — ${result.added.length} page(s) added. Linked pages on the same site are included, within limits.`,
+    // The dialog's "Crawling…" lasts as long as the server's inline wait, never longer. A
+    // failure in that time stays in the dialog with everything still typed (F169). Past
+    // it the crawl runs on by itself (round 7 — the asynchronous crawl): the dialog
+    // closes, the row reads the served "Crawling…", and the notice follows the crawl to
+    // its end. Without the re-read "Connected sources" did not show a crawl — nor offer
+    // Re-sync / Remove crawl — until a reload (round 7 WP-12, caught by the customer walk).
+    const text = await syncUntilAnswered({
+      start: (onStarted) => api.knowledge.syncConnection(connection.connectionId, { onStarted }),
+      onStarted: () => {
+        closeCrawlDialog();
+        setNotice({
+          tone: 'info',
+          text: `Crawling ${url} — this can take a few minutes. Connected sources shows when it finishes.`,
+        });
+        void qc.invalidateQueries({ queryKey: qk.connections });
+      },
+      success: (result) =>
+        `Crawled ${url} — ${result.added.length} page(s) added. Linked pages on the same site are included, within limits.`,
+      refresh: () => void refreshAfterSync(),
+      report: ({ tone, text: said }) => setNotice({ tone, text: said }),
     });
-    qc.invalidateQueries({ queryKey: qk.knowledge });
-    qc.invalidateQueries({ queryKey: qk.quota });
-    // The crawl IS a connection (GET /connections lists it): without this re-read
-    // "Connected sources" did not show it — nor offer Re-sync / Remove crawl —
-    // until the page was reloaded (round 7 WP-12, caught by the customer walk).
-    qc.invalidateQueries({ queryKey: qk.connections });
+    if (!text) return;
+    closeCrawlDialog();
+    setNotice({ tone: 'info', text });
   };
 
   const renameSource = async () => {
@@ -295,12 +330,34 @@ export function KnowledgePillar() {
       return `Replaced “${source.name}” with ${file.name} — Luciel answers from the new file from now on.`;
     });
 
+  /** A sync the POST left running: the row may be off screen, so this notice says so. */
+  const syncStarted = () => {
+    setNotice({ tone: 'info', text: SYNC_STARTED_NOTICE });
+    void qc.invalidateQueries({ queryKey: qk.connections });
+  };
+  /** How that sync ended. A refused shrink stays a decision, however late it comes. */
+  const reportSync = (connectionId?: string | null) => (outcome: SyncOutcome) =>
+    setNotice({
+      tone: outcome.tone,
+      text: outcome.text,
+      ...(connectionId && isShrinkRefusal(outcome.error)
+        ? { confirmShrink: { connectionId } }
+        : {}),
+    });
+
   /** A refused shrink (F107) becomes a decision, not a dead end. */
   const confirmShrink = (connectionId: string) =>
-    run(async () => {
-      const result = await api.knowledge.syncConnection(connectionId, { confirmShrink: true });
-      return `Synced — ${result.removed.length} source(s) removed to match the source, ${result.added.length} added.`;
-    });
+    run(() =>
+      syncUntilAnswered({
+        start: (onStarted) =>
+          api.knowledge.syncConnection(connectionId, { confirmShrink: true, onStarted }),
+        onStarted: syncStarted,
+        success: (result) =>
+          `Synced — ${result.removed.length} source(s) removed to match the source, ${result.added.length} added.`,
+        refresh: refreshAfterSync,
+        report: reportSync(connectionId),
+      }),
+    );
 
   /**
    * Live-sync connectors (Arch §3.2.3). Creating the connection mints a fresh
@@ -331,22 +388,20 @@ export function KnowledgePillar() {
    * Whatever a re-sync did, the chips must follow the SERVED status afterwards
    * (round 7 WP-4c #7): a revoked grant now pauses the sources and marks the
    * connection broken before the 409, and an item gone at its origin is tombstoned
-   * before the 404 — so success and failure both re-read sources and connections.
+   * before the 404 — so success and failure both re-read (refreshAfterSync).
    * Nothing here paints a local green.
    */
-  const refreshServedKnowledge = () =>
-    Promise.all([
-      qc.invalidateQueries({ queryKey: qk.knowledge }),
-      qc.invalidateQueries({ queryKey: qk.connections }),
-      qc.invalidateQueries({ queryKey: qk.employeeStatus }),
-    ]);
-
   const resync = (source: KnowledgeSource) =>
     run(async () => {
       try {
-        await api.knowledge.resyncSource(source.sourceId);
+        return await syncUntilAnswered({
+          start: (onStarted) => api.knowledge.resyncSource(source.sourceId, { onStarted }),
+          onStarted: syncStarted,
+          success: () => `Re-synced “${source.name}”.`,
+          refresh: refreshAfterSync,
+          report: reportSync(source.connectionId),
+        });
       } catch (err) {
-        void refreshServedKnowledge();
         if (isShrinkRefusal(err) && source.connectionId) {
           setNotice({
             tone: 'danger',
@@ -357,8 +412,6 @@ export function KnowledgePillar() {
         }
         throw err;
       }
-      await refreshServedKnowledge();
-      return `Re-synced “${source.name}”.`;
     });
 
   /**
@@ -571,6 +624,8 @@ export function KnowledgePillar() {
           // site: there is no undo window and nothing to re-sync — say so, offer
           // no Restore (served only if the list ever carries tombstones).
           const removedAtOrigin = s.deletedBy === 'origin';
+          const resyncHeld = Boolean(s.connectionId && syncingConnections.has(s.connectionId));
+          const heldReasonId = `source-resync-held-${s.sourceId}`;
           return (
             <li key={s.sourceId} className="flex items-center justify-between gap-vm-3 py-vm-3">
               <div className="min-w-0">
@@ -591,6 +646,11 @@ export function KnowledgePillar() {
                     </>
                   )}
                 </div>
+                {resyncHeld && s.syncStatus && (
+                  <div className="text-vm-0 text-vm-text-muted" id={heldReasonId}>
+                    Its source is syncing right now — Re-sync is held until that finishes.
+                  </div>
+                )}
                 {paused && (
                   <div className="text-vm-0 text-vm-warning" data-testid="knowledge-paused">
                     {paused}
@@ -626,7 +686,16 @@ export function KnowledgePillar() {
                     />
                   )}
                   {s.syncStatus && (
-                    <Button variant="ghost" disabled={busy} onClick={() => resync(s)}>
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      aria-disabled={resyncHeld ? true : undefined}
+                      aria-describedby={resyncHeld ? heldReasonId : undefined}
+                      className={resyncHeld ? 'cursor-not-allowed opacity-50' : undefined}
+                      onClick={() => {
+                        if (!resyncHeld) void resync(s);
+                      }}
+                    >
                       Re-sync
                     </Button>
                   )}
