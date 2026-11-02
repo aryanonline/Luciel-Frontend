@@ -83,24 +83,40 @@ rules. Test adapters through their public client behavior where possible.
   changes. Without `runtime` (every unit test) nothing of this applies.
 - The asynchronous crawl (round 7; live walk run 8, 2026-10-25 — an 8-page crawl ran inside
   the request past the ALB's 60 s idle timeout, whose CORS-less 504 the browser reports as
-  `network_error`): POST `…/sync-connections/{id}/sync` answers 200 + SyncResult when the
-  sync finishes inside the server's 20 s wait, the same 409s as before for a fast refusal,
-  and **202 `{connectionId, state: 'syncing', startedAt}`** when it is still running. Every
-  knowledge_source row (GET `/connections` and GET `/knowledge/sync-connections`) carries
-  `syncJob` (`knowledgeSyncJob`, passthrough). `knowledge.syncConnection` still returns
-  `Promise<KnowledgeSyncResult>`: on a 202 the http adapter polls GET
-  `/knowledge/sync-connections` through `adapters/sync-job.ts` `awaitSyncJob` (2 s, 10 min
-  max; a job that started before the 202's `startedAt` is ignored) — synced → the result
-  (arrays default `[]`), shrink_pending → `conflict` with the server's sentence (the
-  confirm-shrink path keys on it), failed → `conflict` for "Sync unavailable…" else
-  `server_error`, past the limit → `service_unavailable` "Still syncing — it will finish on
-  its own…". The POST is sent once (the transport never repeats a POST).
-- Mock `deferSync(ms)` (control surface; `state.syncJobs` / `deferredSyncs`, STORE_VERSION
-  3): the NEXT syncConnection stamps `syncing` (persisted at once, so a reload serves it),
-  completes `ms` later with exactly the synchronous result (`runSync`) — settled lazily on
-  any read that serves `syncJob` — and resolves through the SAME `awaitSyncJob`. Without it
-  the mock answers as before, and like the backend it records the terminal job of EVERY
-  run (`runAndRecordSync`): a fast success `synced`, a fast 409 refusal throws as before
-  AND leaves the row `failed` ("Sync unavailable: …") or `shrink_pending` (the shrink
-  sentence) — so the row's "Last sync failed: …" sits beside the pillar banner, as live.
-  A 404 (no row) records nothing.
+  `network_error`): POST `…/sync-connections/{id}/sync` and POST `…/sources/{id}/resync` answer
+  200 (the SyncResult / the refreshed source) when the sync finishes inside the server's 20 s
+  wait; **202 `{connectionId, state: 'syncing', startedAt, finishedAt: null, …}`** when it is
+  still running; 409 for a refused shrink, an unreachable site, a dead credential, a second
+  start, a removed source and a source removed mid-sync; 503 for a real failure (embedding
+  outage, "The sync failed before it finished…"). Every knowledge row (GET `/connections` and
+  GET `/knowledge/sync-connections`) carries `syncJob` (`knowledgeSyncJob`, passthrough): null
+  on not_connected and revoked rows, cleared when the row goes back to connected, and its
+  `startedAt` equals the 202's exactly. Both client methods still settle with the FINAL
+  outcome; `opts.onStarted` fires once on the 202 so a caller need not wait. The http adapter
+  polls GET `/knowledge/sync-connections` through `adapters/sync-job.ts` `awaitSyncJob` (2 s,
+  10 min max), which matches its own job by `startedAt`: earlier → keep polling; synced → the
+  result (arrays default `[]`); shrink_pending → `conflict` with the server's sentence (the
+  confirm-shrink path keys on it); failed → `conflict` for "Sync unavailable…" else
+  `server_error`; a failed read keeps polling, `unauthorized` rethrows, a missing row is
+  `not_found`; no job on a not_connected row → `conflict` "This source was removed while it
+  was syncing…". The POST is sent once (the transport never repeats a POST).
+- **`isSyncStillRunning(err)` is the only test for "the client stopped watching"**: the poll's
+  limit ("Still syncing…"), a LATER job on the row ("Another sync of this source took over…")
+  and a job cleared by a reconnect all throw `service_unavailable` with reason
+  `sync_still_running`. Never test the code alone: the transport maps every server 503 to the
+  same code, and those are failures.
+- Mock `holdNextSync()` / `releaseSync()` (control surface; `state.syncJobs` / `heldSyncs`,
+  STORE_VERSION 4): the NEXT sync (`syncConnection`, or `resyncSource` of a connected source)
+  stamps `syncing` (persisted at once, so a reload serves it), fires `onStarted`, and resolves
+  through the SAME `awaitSyncJob`; release computes exactly the synchronous result (`runSync`).
+  No timer: a wall-clock deferral raced a dev-mode reload. A control call acts on the page's
+  OWN client, and the poll's read writes nothing, so a test that keeps an old client alive
+  across `load()` must release both. As the backend: a second start or a per-source re-sync
+  during a job is the 409 "already running"; disconnect clears the job and stops a held sync
+  with nothing applied; a reconnect / OAuth completion clears a terminal job; not_connected
+  rows serve `syncJob: null`. Without a hold the mock answers at once and records the
+  terminal job of EVERY run (`runAndRecordSync`): a fast success `synced`, a fast 409 refusal
+  throws as before AND leaves the row `failed` ("Sync unavailable: …") or `shrink_pending` (the
+  shrink sentence) — so the row's "Last sync failed: …" sits beside the pillar banner, as live.
+  A 404 (no knowledge row) records nothing. The mock's `startCrawl` still mints a new row for
+  a URL already crawled; the backend reuses the row.
