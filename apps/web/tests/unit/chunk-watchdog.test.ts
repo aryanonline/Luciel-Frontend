@@ -81,6 +81,18 @@ describe('the script behind a file that fails during a page load', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('the button works while React is holding clicks back at the document', () => {
+    // What a root does while hydration waits on a missing chunk.
+    const stop = (event: Event) => event.stopPropagation();
+    document.addEventListener('click', stop, true);
+    window.sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+    install();
+    fail('script', MAIN_APP);
+    dialog()?.querySelector('button')?.click();
+    document.removeEventListener('click', stop, true);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['getItem', 'setItem'] as const)(
     'shows the copy instead of reloading when sessionStorage.%s throws',
     (method) => {
