@@ -123,6 +123,65 @@ test.describe('the crash page', () => {
     expect(await page.evaluate(() => sessionStorage.getItem('vm-chunk-reload-at'))).not.toBeNull();
   });
 
+  // The path a roll really takes after the automatic reload: a file every page starts
+  // from fails on a full page load, so nothing hydrates and no React boundary can run.
+  test.describe('when a file fails during the page load', () => {
+    const START_FILE = /\/_next\/static\/chunks\/main-app.*\.js/;
+    const ACCOUNT = '/dashboard/account';
+
+    const countLoads = (page: Page) => {
+      const loads = { count: 0 };
+      page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) loads.count++;
+      });
+      return loads;
+    };
+
+    test('reloads by itself once and lands on the page asked for', async ({ page }) => {
+      let aborted = 0;
+      await page.route(START_FILE, async (route) => {
+        if (aborted++ === 0) await route.abort();
+        else await route.continue();
+      });
+      const loads = countLoads(page);
+      await page.goto(ACCOUNT, { waitUntil: 'commit' });
+      await expect(page.getByRole('heading', { name: 'Manage account' })).toBeVisible({
+        timeout: 20_000,
+      });
+      expect(loads.count).toBe(2);
+      expect(
+        await page.evaluate(() => sessionStorage.getItem('vm-chunk-reload-at')),
+      ).not.toBeNull();
+    });
+
+    test('still failing, it stops with the copy; no violations; Reload recovers signed in', async ({
+      page,
+      context,
+    }) => {
+      await page.route(START_FILE, (route) => route.abort());
+      const loads = countLoads(page);
+      await page.goto(ACCOUNT, { waitUntil: 'commit' });
+
+      await expect(page.getByRole('heading', { name: CRASH_HEADING })).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByText(/info@vantagemind\.ai/)).toBeVisible();
+      await page.waitForTimeout(1_000);
+      expect(loads.count).toBe(2);
+
+      const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+      expect(results.violations).toEqual([]);
+
+      expect((await context.cookies()).map((c) => c.name)).toContain(MOCK_SESSION_COOKIE);
+      await page.unroute(START_FILE);
+      await page.getByRole('button', { name: 'Reload' }).click();
+      await expect(page).toHaveURL(/\/dashboard\/account$/);
+      await expect(page.getByRole('heading', { name: 'Manage account' })).toBeVisible({
+        timeout: 20_000,
+      });
+    });
+  });
+
   test('has no WCAG 2.1 AA violations, and Reload keeps the session', async ({ page, context }) => {
     await page.route(ACCOUNT_CHUNK, (route) => route.abort());
     await openDashboard(page);
