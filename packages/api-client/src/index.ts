@@ -32,4 +32,4 @@ export {
 // Helpers.
 export { chipForConnection } from './chips';
 export { LucielApiError } from './schemas';
-export { isSyncStillRunning } from './adapters/sync-job';
+export { isSyncRemoved, isSyncStillRunning } from './adapters/sync-job';

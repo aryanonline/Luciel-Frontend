@@ -107,6 +107,8 @@ export function KnowledgeConnections() {
   const { busy, notice, setNotice, run } = useActionNotice();
   const [toDisconnect, setToDisconnect] = React.useState<Connection | null>(null);
   const [announced, setAnnounced] = React.useState('');
+  /** Sources this tab removed: their stopped sync must not talk over "no longer crawled". */
+  const removedHere = React.useRef(new Set<string>());
 
   const rows = (connections.data ?? []).filter(isKnowledgeRow);
 
@@ -177,7 +179,8 @@ export function KnowledgeConnections() {
     c: Connection,
     success: (result: KnowledgeSyncResult) => string,
     opts?: { confirmShrink: boolean },
-  ) =>
+  ) => {
+    removedHere.current.delete(c.connectionId);
     void run(
       () =>
         syncUntilAnswered({
@@ -186,11 +189,15 @@ export function KnowledgeConnections() {
           onStarted: () => void qc.invalidateQueries({ queryKey: qk.connections }),
           success,
           refresh: refreshServed,
-          report: ({ tone, text }) => setNotice({ tone, text }),
+          report: ({ tone, text, removed }) => {
+            if (removed && removedHere.current.has(c.connectionId)) return;
+            setNotice({ tone, text });
+          },
           fallbackError: SYNC_FAILED,
         }),
       SYNC_FAILED,
     );
+  };
   const resync = (c: Connection) =>
     syncRow(
       c,
@@ -224,6 +231,8 @@ export function KnowledgeConnections() {
   const confirmDisconnect = async () => {
     if (!toDisconnect) return;
     const c = toDisconnect;
+    // Marked before the call: the poll may read the removal before this answer lands.
+    removedHere.current.add(c.connectionId);
     const ok = await run(async () => {
       await disconnect.mutateAsync({ connectionId: c.connectionId });
       await qc.invalidateQueries({ queryKey: qk.knowledge });
@@ -232,6 +241,7 @@ export function KnowledgeConnections() {
         : `${nameOf(c)} is disconnected and its saved sign-in was deleted. Its synced pages stay until you delete them below.`;
     }, 'We could not disconnect that source. Nothing was changed — please try again.');
     if (ok) setToDisconnect(null);
+    else removedHere.current.delete(c.connectionId);
   };
 
   return (

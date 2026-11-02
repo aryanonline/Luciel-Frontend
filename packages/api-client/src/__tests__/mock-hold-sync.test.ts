@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { createLucielClient, LucielApiError } from '../index';
+import { createLucielClient, isSyncRemoved, LucielApiError } from '../index';
 import type { Connection, MockControl, MockRuntime } from '../index';
 
 /**
@@ -248,10 +248,12 @@ describe('the mock around a running job, as the backend answers', () => {
     await tick();
     await page.connections.disconnect(crawl.connectionId);
     await tick();
-    expect(await outcome).toMatchObject({
+    const stopped = await outcome;
+    expect(stopped).toMatchObject({
       code: 'conflict',
       message: 'This source was removed while it was syncing — nothing from that sync was kept.',
     });
+    expect(isSyncRemoved(stopped)).toBe(true);
     tab.control().releaseSync();
     expect(jobOf(await page.connections.list(), crawl.connectionId)).toBeNull();
     expect((await page.knowledge.listSources()).some((s) => s.name === SITE)).toBe(false);

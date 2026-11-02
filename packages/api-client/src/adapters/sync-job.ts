@@ -54,8 +54,15 @@ export const SYNC_REMOVED_MESSAGE =
 export const SYNC_RECONNECTED_MESSAGE =
   'This source was reconnected while it was syncing — Connected sources shows where it stands.';
 
+/** The job finished but the read that follows it failed: its data is committed. */
+export const SYNC_FINISHED_UNREAD_MESSAGE =
+  'The sync finished, but we could not read the result just now. Reload this page to see it.';
+
 /** The marker no server answer carries: this client stopped watching, nothing failed. */
 const SYNC_STILL_RUNNING_REASON = 'sync_still_running';
+
+/** The marker of a sync that ended because its source went: an outcome, not a fault. */
+const SYNC_REMOVED_REASON = 'sync_removed';
 
 const stoppedWatching = (message: string) =>
   new LucielApiError({
@@ -71,6 +78,21 @@ const stoppedWatching = (message: string) =>
  */
 export const isSyncStillRunning = (err: unknown): err is LucielApiError =>
   err instanceof LucielApiError && err.reason === SYNC_STILL_RUNNING_REASON;
+
+/**
+ * True when the poll found the source removed: the sync stopped and kept nothing. It is
+ * how that sync ended, not a failure of anything, and very often what the owner just asked
+ * for, so it is never reported as an error.
+ */
+export const isSyncRemoved = (err: unknown): err is LucielApiError =>
+  err instanceof LucielApiError && err.reason === SYNC_REMOVED_REASON;
+
+const sourceRemoved = () =>
+  new LucielApiError({
+    code: 'conflict',
+    reason: SYNC_REMOVED_REASON,
+    message: SYNC_REMOVED_MESSAGE,
+  });
 
 /** True when a sync answer is the 202 "still running" body rather than a SyncResult. */
 export const isSyncStarted = (body: unknown): body is KnowledgeSyncStarted =>
@@ -140,6 +162,9 @@ export async function awaitSyncJob({
       readOk = false;
     }
     if (readOk && row === undefined) {
+      // Both lists leave a revoked row out, so after a 202 a missing row IS the source
+      // having gone. The sync stopped with it and kept nothing.
+      if (!Number.isNaN(since)) throw sourceRemoved();
       throw new LucielApiError({ code: 'not_found', message: 'Connection not found.' });
     }
     const job = row?.syncJob;
@@ -152,12 +177,31 @@ export async function awaitSyncJob({
       // The 202 was answered after the job was on the row, so an empty row means the
       // record was cleared: the source was removed (the sync stopped, nothing kept) or
       // went back to connected. Waiting on would only end in a false "Still syncing".
-      if (row.status === 'not_connected' || row.status === 'revoked') {
-        throw new LucielApiError({ code: 'conflict', message: SYNC_REMOVED_MESSAGE });
-      }
+      if (row.status === 'not_connected') throw sourceRemoved();
       throw stoppedWatching(SYNC_RECONNECTED_MESSAGE);
     }
     if (Date.now() + intervalMs > deadline) throw stoppedWatching(STILL_SYNCING_MESSAGE);
+    await sleep(intervalMs);
+  }
+}
+
+/**
+ * A read that follows a finished job. The job's data is already committed, so a failed
+ * read is never the sync's outcome: it asks again and, if the read stays down, stops
+ * watching with an honest "finished" rather than reporting a failed sync. An ended
+ * session is still the caller's to route.
+ */
+export async function readAfterSync<T>(
+  read: () => Promise<T>,
+  { attempts = 3, intervalMs = 2000 }: { attempts?: number; intervalMs?: number } = {},
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await read();
+    } catch (err) {
+      if (err instanceof LucielApiError && err.code === 'unauthorized') throw err;
+      if (attempt >= attempts) throw stoppedWatching(SYNC_FINISHED_UNREAD_MESSAGE);
+    }
     await sleep(intervalMs);
   }
 }

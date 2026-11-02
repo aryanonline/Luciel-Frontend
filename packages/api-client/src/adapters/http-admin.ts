@@ -9,7 +9,7 @@ import type {
   KnowledgeSyncResult,
   KnowledgeSyncStarted,
 } from '../schemas';
-import { awaitSyncJob, isSyncStarted } from './sync-job';
+import { awaitSyncJob, isSyncStarted, readAfterSync } from './sync-job';
 import { createTransport, type TransportOptions } from './transport';
 
 /** POST /admin/account/export as served: camelCase or the endpoint's snake_case. */
@@ -53,6 +53,17 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
     const s = params.toString();
     return s ? `?${s}` : '';
   };
+
+  /**
+   * The sync removed this source at its origin. The sources list keeps origin tombstones on
+   * purpose (the row reads "Removed at its source"), and the route's 200 path can answer
+   * one, so finding the source is not the same as the source still being there.
+   */
+  const sourceGoneAtOrigin = () =>
+    new LucielApiError({
+      code: 'not_found',
+      message: 'Source no longer exists at the sync origin.',
+    });
 
   /** A 202 answer followed to its end, read from the row's served `syncJob`. */
   const pollSyncJob = ({ connectionId, startedAt }: KnowledgeSyncStarted) =>
@@ -134,18 +145,17 @@ export function createHttpAdminClient(opts: TransportOptions): LucielApiClient {
         const answer = await t.post<KnowledgeSource | KnowledgeSyncStarted>(
           `/api/v1/admin/knowledge/sources/${sourceId}/resync${opts?.confirmShrink ? '?confirmShrink=true' : ''}`,
         );
-        if (!isSyncStarted(answer)) return answer;
+        if (!isSyncStarted(answer)) {
+          if (answer.deletedBy === 'origin') throw sourceGoneAtOrigin();
+          return answer;
+        }
         opts?.onStarted?.();
         await pollSyncJob(answer);
-        const refreshed = (await t.get<KnowledgeSource[]>('/api/v1/admin/knowledge/sources')).find(
-          (s) => s.sourceId === sourceId,
+        const sources = await readAfterSync(() =>
+          t.get<KnowledgeSource[]>('/api/v1/admin/knowledge/sources'),
         );
-        if (!refreshed) {
-          throw new LucielApiError({
-            code: 'not_found',
-            message: 'Source no longer exists at the sync origin.',
-          });
-        }
+        const refreshed = sources.find((s) => s.sourceId === sourceId);
+        if (!refreshed || refreshed.deletedBy === 'origin') throw sourceGoneAtOrigin();
         return refreshed;
       },
       renameSource: (sourceId, name) =>
