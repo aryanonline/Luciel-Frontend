@@ -97,12 +97,21 @@ rules. Test adapters through their public client behavior where possible.
   10 min max), which matches its own job by `startedAt`: earlier → keep polling; synced → the
   result (arrays default `[]`); shrink_pending → `conflict` with the server's sentence (the
   confirm-shrink path keys on it); failed → `conflict` for "Sync unavailable…" else
-  `server_error`; a failed read keeps polling, `unauthorized` rethrows, a missing row is
-  `not_found`; no job on a not_connected row → `conflict` "This source was removed while it
-  was syncing…". The POST is sent once (the transport never repeats a POST).
+  `server_error`; a failed read keeps polling, `unauthorized` rethrows. After a 202 a row off
+  the list (both lists drop revoked rows) or no job on a not_connected row → `conflict` "This
+  source was removed while it was syncing…" with reason `sync_removed` (`isSyncRemoved`: how
+  that sync ended, never reported as an error); a missing row with no `startedAt` to speak for
+  is `not_found`. The POST is sent once (the transport never repeats a POST).
+- `resyncSource`'s read of GET `/knowledge/sources` after a finished job goes through
+  `readAfterSync` (3 tries, 2 s): the data is committed, so a read that stays down says "The
+  sync finished, but we could not read the result…" (reason `sync_still_running`), never a
+  failed sync. That list KEEPS origin tombstones, and the route's 200 can answer one, so
+  `deletedBy: 'origin'` on either path is the `not_found` "Source no longer exists at the sync
+  origin.", not a refreshed source. The mock's list serves no tombstones and throws the same.
 - **`isSyncStillRunning(err)` is the only test for "the client stopped watching"**: the poll's
-  limit ("Still syncing…"), a LATER job on the row ("Another sync of this source took over…")
-  and a job cleared by a reconnect all throw `service_unavailable` with reason
+  limit ("Still syncing…"), a LATER job on the row ("Another sync of this source took over…"),
+  a job cleared by a reconnect and a finished job's unread list all throw
+  `service_unavailable` with reason
   `sync_still_running`. Never test the code alone: the transport maps every server 503 to the
   same code, and those are failures.
 - Mock `holdNextSync()` / `releaseSync()` (control surface; `state.syncJobs` / `heldSyncs`,
