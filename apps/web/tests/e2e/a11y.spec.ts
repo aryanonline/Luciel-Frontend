@@ -33,8 +33,9 @@ interface Route {
   /** The account state the page exists in (default: the seeded, verified tenant). */
   scenario?: ScenarioName;
   /**
-   * A named region that renders after the heading (it waits on data). The gate waits
-   * for it too, so axe measures it on every run instead of only when it won the race.
+   * A named region whose content arrives after the heading (it waits on data). The
+   * region itself renders empty on the first paint, so the gate waits until it holds
+   * text: axe then measures the filled region on every run, not an empty box.
    */
   region?: string;
 }
@@ -91,7 +92,7 @@ for (const r of ROUTES) {
         timeout: 20_000,
       });
       if (r.region) {
-        await expect(page.getByRole('region', { name: r.region })).toBeVisible({
+        await expect(page.getByRole('region', { name: r.region })).toContainText(/\S/, {
           timeout: 20_000,
         });
       }
