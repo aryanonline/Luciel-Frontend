@@ -48,6 +48,9 @@ jobs:
       - name: Lint (@luciel/web)
         run: pnpm --filter @luciel/web lint
 
+      - name: Format (Prettier)
+        run: pnpm format
+
       - name: Build (all packages)
         run: pnpm -r build
 
