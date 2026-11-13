@@ -9,7 +9,7 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /
-    target-branch: feat/docs-conformance-build-20260713-r2
+    target-branch: main
     schedule:
       interval: weekly
       day: monday
@@ -23,7 +23,7 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
-    target-branch: feat/docs-conformance-build-20260713-r2
+    target-branch: main
     schedule:
       interval: weekly
       day: monday
@@ -37,7 +37,7 @@ updates:
 
   - package-ecosystem: docker
     directory: /apps/web
-    target-branch: feat/docs-conformance-build-20260713-r2
+    target-branch: main
     schedule:
       interval: weekly
       day: monday

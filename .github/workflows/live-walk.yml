@@ -18,7 +18,7 @@ name: live-walk
 # Dispatch-only. Never scheduled, never on push: a deployed tenant is not a CI
 # fixture, and the walk changes it.
 #
-#   gh workflow run live-walk.yml --ref feat/docs-conformance-build-20260713-r2 \
+#   gh workflow run live-walk.yml --ref main \
 #     -f base_url=https://vantagemind.ai -f confirm=walk-account-only
 
 on:

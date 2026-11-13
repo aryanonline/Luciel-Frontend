@@ -19,9 +19,11 @@ Do not use mock data as a business authority.
 
 ## Branch discipline
 
-- Work only on `feat/docs-conformance-build-20260713-r2` unless the owner gives
+- Work on `main`, the release branch and the default branch, unless the owner gives
   a different branch explicitly.
-- `main` is stale. Never use it as a merge base, source of truth, or deploy cue.
+- The former release branch `feat/docs-conformance-build-20260713-r2` was merged into
+  `main` and retired on 2026-11-13. Do not recreate it or treat any other branch as a
+  merge base, source of truth, or deploy cue.
 - Check the current branch and working tree before changing files.
 - Keep changes narrow, run the relevant workspace checks, then run the complete
   monorepo verification before handing off.
@@ -192,15 +194,15 @@ it were an application defect.
 ## Deploy
 
 The deployment workflow builds the web artifact and publishes the widget to the
-embed CDN. To dispatch a development deployment from this branch, use:
+embed CDN. To dispatch a development deployment from the release branch, use:
 
 ```bash
-gh workflow run deploy.yml --ref feat/docs-conformance-build-20260713-r2 -f environment=dev
+gh workflow run deploy.yml --ref main -f environment=dev
 ```
 
-Always pass `--ref`: the workflow's `guard` job refuses any other ref (2026-09-06: a
-bare dispatch shipped stale `main`'s widget to dev), there is no push trigger, and a
-prod dispatch no longer rolls dev first.
+Always pass `--ref`: the workflow's `guard` job refuses any ref but the release branch
+(2026-09-06: a bare dispatch shipped a stale default branch's widget to dev), there is
+no push trigger, and a prod dispatch no longer rolls dev first.
 
 A green deploy means the web service finished rolling: each deploy job's last step is
 `aws ecs wait services-stable`, which gives up after 10 minutes and fails the job
@@ -209,8 +211,7 @@ while it runs: during a roll two web builds serve at once.
 
 Do not imply that publishing the dashboard alone updates embeds: the widget
 bundle is deployed to the embed CDN as part of the workflow. Use the workflow's
-explicit environment input; do not treat a push to stale `main` as the operating
-path.
+explicit environment input; a push to `main` deploys nothing by itself.
 
 ## Documentation hygiene
 
