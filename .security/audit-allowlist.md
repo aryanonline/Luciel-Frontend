@@ -44,3 +44,5 @@ Transitive libraries with in-range fixes are NOT waived — they are pinned up t
 and the test runner was moved to vitest 3.2.6+ (GHSA-5xrq-8626-4rwp). Minor and patch
 updates now arrive weekly through Dependabot and merge themselves once CI is green
 (`.github/dependabot.yml`, `dependabot-auto-merge.yml`); a major is labelled for a person.
+
+Re-review 2026-11-13: GHSA-mrhx-c7xc-m3w5 (zod) renewed from 2026-11-24 to 2026-12-31. No 3.x release carries the fix; zod here still parses only Luciel's own backend responses and one short owner-typed form, so no attacker-sized collection reaches a schema. The exit is still the zod 4 migration (apps/web and packages/api-client), owed as its own change.
