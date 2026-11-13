@@ -249,6 +249,8 @@ Stripe runs in test mode, so no real payments are taken.
 ## Further reading
 
 The `CLAUDE.md` files are each module's working guide: invariants, key files, tests, pitfalls.
+Comments throughout the code cite internal design documents (`Arch §`, `Space Instructions §`) and
+audit ids (`F0xx`, `round N WP-x`) that are kept outside the repository.
 
 | Guide                                                                  | Covers                                                                                  |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
