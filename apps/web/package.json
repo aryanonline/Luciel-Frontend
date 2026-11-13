@@ -2,7 +2,7 @@
   "name": "@luciel/web",
   "version": "0.0.0",
   "private": true,
-  "description": "Next.js App Router app — the marketing site (pre-auth, SEO) and the admin dashboard (gated), in (marketing) and (app) route groups. The plane separation, expressed structurally (Space Instructions §2, §6).",
+  "description": "Next.js App Router app — the marketing site (pre-auth, SEO) and the admin dashboard (gated), in (marketing) and (app) route groups. The plane separation, expressed structurally.",
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3000",
