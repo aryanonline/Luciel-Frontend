@@ -4,9 +4,9 @@
     {
       "ghsa": "GHSA-mrhx-c7xc-m3w5",
       "package": "zod",
-      "reason": "Memory exhaustion while validating oversized constrained collections; patched only in zod 4.6.6, no 3.x release carries the fix (3.25.76 is the last 3.x). In this repository zod parses the control-plane and widget data-plane responses of Luciel's own authenticated backend and one owner-typed form (contact-health confirm code: a phone number and a 6-digit string) - no attacker-sized collection reaches a zod schema in the browser, and the public widget bundle validates only the backend's replies. Exit is the zod 4 migration (apps/web + packages/api-client import `zod`; 25 modules, schema introspection is not used so the classic API carries over), a major for the steward's triage.",
+      "reason": "Memory exhaustion while validating oversized constrained collections; patched only in zod 4.6.6, no 3.x release carries the fix (3.25.76 is the last 3.x). In this repository zod parses the control-plane and widget data-plane responses of Luciel's own authenticated backend and one owner-typed form (contact-health confirm code: a phone number and a 6-digit string) - no attacker-sized collection reaches a zod schema in the browser, and the public widget bundle validates only the backend's replies. Exit is the zod 4 migration (apps/web + packages/api-client import `zod`; 25 modules, schema introspection is not used so the classic API carries over), a major for the steward's triage. Re-reviewed 2026-11-13: still no 3.x fix (3.25.76 is the last 3.x; zod 4.6.7 is current); the reachability argument is unchanged (no schema in the browser ever sees an attacker-sized collection); renewed to 2026-12-31 with the image waivers so the December steward pass reviews them together. Exit unchanged: the zod 4 migration.",
       "added": "2026-10-25",
-      "expires": "2026-11-24"
+      "expires": "2026-12-31"
     }
   ]
 }
