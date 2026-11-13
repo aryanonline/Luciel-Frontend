@@ -179,6 +179,7 @@ pnpm -r typecheck                 # TypeScript, every package
 pnpm -r test                      # Vitest unit tests, every package
 pnpm -r build                     # production builds; the widget build runs the bundle check
 pnpm --filter @luciel/web lint    # ESLint
+pnpm format                       # Prettier check (CI runs it; pnpm format:write fixes)
 pnpm test:scripts                 # Node tests: image CVE gate, Dependabot classifier, workflow rules
 pnpm test:e2e                     # Playwright against the mock adapter (starts the dev server)
 ```
@@ -186,22 +187,22 @@ pnpm test:e2e                     # Playwright against the mock adapter (starts 
 Playwright needs a browser once: `pnpm --filter @luciel/web exec playwright install chromium`.
 To run one project: `pnpm --filter @luciel/web exec playwright test --project=walk`.
 
-| Suite                                                  | Tests (CI on `main`, 2026-11-13) | What it covers                                                                                                                          |
-| ------------------------------------------------------ | -------------------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Web app unit (`apps/web/tests/unit/`)                  |                              473 | Pages and components: states, counts, labels, modals and copy rules                                                                     |
-| API client unit (`packages/api-client/src/__tests__/`) |                              142 | Transport, adapters and the mock runtime, plane separation, the sync-job poll                                                           |
-| Widget unit (`apps/widget/src/mount.test.ts`)          |                               41 | Mounting, disclosure, sessions, polling, ending a chat, safe rendering                                                                  |
-| UI kit unit (`packages/ui/src/`)                       |                               20 | `Modal`, `StatusChip`, `Logo` and the markdown renderer                                                                                 |
-| Gate and workflow tests (`scripts/*.test.mjs`)         |                               42 | The CVE gate, the Dependabot classifier, workflow triggers and step order                                                               |
-| Playwright `chromium` project                          |                               30 | WCAG 2.1 AA on all 23 routes, crash-page recovery, route coverage, the journey from overview to billing                                 |
-| Playwright `scenario-*` projects                       |                                7 | One account state each: new, at its conversation cap, pay-as-you-go, paused, deleted within its restore window, closed, expired session |
-| Playwright `walk` project                              |                                1 | The customer-style walk through every dashboard area, with timings in the report                                                        |
+| Suite                                                  | Tests (counted 2026-11-13) | What it covers                                                                                                                          |
+| ------------------------------------------------------ | -------------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Web app unit (`apps/web/tests/unit/`)                  |                        473 | Pages and components: states, counts, labels, modals and copy rules                                                                     |
+| API client unit (`packages/api-client/src/__tests__/`) |                        142 | Transport, adapters and the mock runtime, plane separation, the sync-job poll                                                           |
+| Widget unit (`apps/widget/src/mount.test.ts`)          |                         41 | Mounting, disclosure, sessions, polling, ending a chat, safe rendering                                                                  |
+| UI kit unit (`packages/ui/src/`)                       |                         20 | `Modal`, `StatusChip`, `Logo` and the markdown renderer                                                                                 |
+| Gate and workflow tests (`scripts/*.test.mjs`)         |                         42 | The CVE gate, the Dependabot classifier, workflow triggers and step order                                                               |
+| Playwright `chromium` project                          |                         30 | WCAG 2.1 AA on all 23 routes, crash-page recovery, route coverage, the journey from overview to billing                                 |
+| Playwright `scenario-*` projects                       |                          7 | One account state each: new, at its conversation cap, pay-as-you-go, paused, deleted within its restore window, closed, expired session |
+| Playwright `walk` project                              |                          1 | The customer-style walk through every dashboard area, with timings in the report                                                        |
 
 `live-smoke` (read-only) runs only with `E2E_LIVE=1`, and `live-walk` only with `E2E_LIVE=1` plus
 `E2E_LIVE_WRITE=1`, against a deployed environment. CI ([`ci.yml`](.github/workflows/ci.yml))
 runs on every pull request, every push to `main` and daily: the audit gate, script tests,
-typecheck, unit tests, lint and every build (the widget's build includes the bundle check), then
-the 38 Playwright tests above, plus a gitleaks secret scan.
+typecheck, unit tests, lint, formatting and every build (the widget's build includes the bundle
+check), then the 38 Playwright tests above, plus a gitleaks secret scan.
 
 ## Deployment and operations
 
@@ -242,9 +243,7 @@ also cover web-tier requests.
 
 Luciel is deployed to a development environment on AWS and has been verified there end to end:
 on 2026-11-02 the customer walk passed against the deployed dashboard, with the steps that need
-a real card, phone number, mailbox or third-party sign-in skipped and reported. A production
-environment is defined in the workflows and infrastructure code but has not been stood up yet.
-Stripe runs in test mode, so no real payments are taken.
+a real card, phone number, mailbox or third-party sign-in skipped and reported.
 
 ## Further reading
 
