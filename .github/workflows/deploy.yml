@@ -3,8 +3,8 @@ name: deploy
 # Frontend CD (mirrors Luciel-Backend §5.8). Build the web image -> push to the
 # luciel-<env>-web ECR repo (owned by the backend CDK app); build the widget
 # bundle -> sync to the widget S3 bucket + invalidate CloudFront; then roll the
-# web ECS service and wait until it is stable. Dispatch only (no push trigger: `main` is a stale revert and the
-# `guard` job refuses any ref but the release branch); dev via environment=dev, prod
+# web ECS service and wait until it is stable. Dispatch only (no push trigger, and the
+# `guard` job refuses any ref but the release branch, `main`); dev via environment=dev, prod
 # behind a WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
 # prod is NEVER auto-deployed, and a prod dispatch no longer rolls dev first. (GitHub Environment required-reviewer rules
 # need a paid plan on private repos, so the gate is enforced in YAML instead.)
@@ -37,17 +37,17 @@ env:
 
 jobs:
   # ---- GUARD: deploys run ONLY from the release branch --------------------------
-  # `main` is a stale revert (CLAUDE.md "Branch discipline"), yet a bare
-  # `gh workflow run` dispatches the repository's default branch and every job
-  # below checks out whatever ref was dispatched. 2026-09-06: a dispatch without
-  # `--ref` deployed main to dev for 25 minutes. The default branch now IS the
-  # release branch, and this job refuses anything else before a single AWS call.
+  # Every job below checks out whatever ref was dispatched. 2026-09-06: a dispatch
+  # without `--ref` deployed the then-stale `main` to dev for 25 minutes. Since
+  # 2026-11-13 `main` IS the release branch and the default branch (the former
+  # release branch was merged into it and retired), and this job still refuses any
+  # other ref before a single AWS call (CLAUDE.md "Branch discipline").
   guard:
     runs-on: ubuntu-latest
     steps:
       - name: Refuse any ref that is not the release branch
         env:
-          RELEASE_BRANCH: ${{ vars.RELEASE_BRANCH || 'feat/docs-conformance-build-20260713-r2' }}
+          RELEASE_BRANCH: ${{ vars.RELEASE_BRANCH || 'main' }}
         run: |
           if [ "${{ github.ref_name }}" != "$RELEASE_BRANCH" ]; then
             echo "::error::deploys run only from $RELEASE_BRANCH (dispatched ref: ${{ github.ref_name }}). Re-run with --ref $RELEASE_BRANCH."

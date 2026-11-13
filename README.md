@@ -124,8 +124,8 @@ Deployments run only by manual dispatch of `.github/workflows/deploy.yml`, with 
 explicit environment. The workflow builds the web image, scans it against a dated CVE
 allowlist (`.security/cve-allowlist.json`, which fails closed when a waiver expires),
 rolls the web service and publishes the widget bundle to the embed CDN. A guard job
-refuses to deploy from any branch other than the release branch, and nothing deploys on
-push. Dependabot keeps dependencies current; green minor and patch updates merge
+refuses to deploy from any branch other than the release branch, `main`, and nothing
+deploys on push. Dependabot keeps dependencies current; green minor and patch updates merge
 automatically, and major updates wait for review.
 
 ## Working in this codebase
