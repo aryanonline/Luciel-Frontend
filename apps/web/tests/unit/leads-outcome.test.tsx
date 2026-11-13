@@ -30,9 +30,9 @@ describe('leads page: business outcome per lead', () => {
     // The mock adapter persists the outcome; after the refetch the row still
     // reads Won (round-tripped through the client, not local component state).
     await waitFor(() => {
-      expect(
-        (screen.getByLabelText('Outcome for Jordan P.') as HTMLSelectElement).value,
-      ).toBe('converted');
+      expect((screen.getByLabelText('Outcome for Jordan P.') as HTMLSelectElement).value).toBe(
+        'converted',
+      );
     });
     expect(screen.queryByText(/We could not save that outcome/)).not.toBeInTheDocument();
   });
@@ -53,13 +53,15 @@ describe('leads page: business outcome per lead', () => {
       target: { value: 'lost' },
     });
     expect(
-      await screen.findByText('We could not save that outcome. The lead is unchanged — please try again.'),
+      await screen.findByText(
+        'We could not save that outcome. The lead is unchanged — please try again.',
+      ),
     ).toBeInTheDocument();
     // The served value (unchanged by the failed write) is back after refresh.
     await waitFor(() => {
-      expect(
-        (screen.getByLabelText('Outcome for Jordan P.') as HTMLSelectElement).value,
-      ).not.toBe('lost');
+      expect((screen.getByLabelText('Outcome for Jordan P.') as HTMLSelectElement).value).not.toBe(
+        'lost',
+      );
     });
   });
 });

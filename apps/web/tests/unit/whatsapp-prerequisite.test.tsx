@@ -47,7 +47,8 @@ const withWhatsApp: Luciel = {
   personality: { preset: 'warm_concierge' },
 };
 
-const PREREQ = /already active on the consumer WhatsApp app cannot be used until it is migrated off/i;
+const PREREQ =
+  /already active on the consumer WhatsApp app cannot be used until it is migrated off/i;
 
 beforeEach(() => {
   served.connections = null;

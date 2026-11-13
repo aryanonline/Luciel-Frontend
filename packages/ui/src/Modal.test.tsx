@@ -33,9 +33,7 @@ describe('Modal', () => {
     const scroller = dialog.querySelector('.overflow-y-auto');
     expect(scroller).not.toBeNull();
     expect(scroller).toContainElement(screen.getByText('Long A2P consent copy.'));
-    expect(scroller).toContainElement(
-      screen.getByText('Please read this before turning it on.'),
-    );
+    expect(scroller).toContainElement(screen.getByText('Please read this before turning it on.'));
     expect(scroller).not.toContainElement(
       screen.getByText('Enable SMS — carrier registration and consent'),
     );

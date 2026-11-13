@@ -61,7 +61,9 @@ describe('Harmony wave 2, item 5: Copy button gives an unmistakable success sign
     expect(copyButton.className).not.toContain('text-vm-success');
 
     fireEvent.click(copyButton);
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('data-key')));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('data-key')),
+    );
 
     // The SAME button element (not a re-query) must now read "Copied" — this
     // is the literal DOM node a real click path would touch, matching how

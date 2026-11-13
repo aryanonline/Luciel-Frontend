@@ -56,12 +56,14 @@ const REASONS: Record<string, string> = {
     'That sign-in link had already been used or had expired. Start the connection again to get a fresh one.',
   state_expired:
     'That sign-in took too long and the link expired. Start the connection again to get a fresh one.',
-  missing_code: 'The provider sent you back without a sign-in code. Please start the connection again.',
+  missing_code:
+    'The provider sent you back without a sign-in code. Please start the connection again.',
   exchange_failed:
     'We reached the provider but it would not complete the sign-in. Please start the connection again.',
   client_not_configured:
     'This sign-in is not switched on at our end yet. There is nothing for you to do — nothing was changed.',
-  provider_error: 'The provider reported a problem with the sign-in. Please try again in a few minutes.',
+  provider_error:
+    'The provider reported a problem with the sign-in. Please try again in a few minutes.',
   server_error: 'Something failed at our end while finishing the connection. Nothing was changed.',
 };
 

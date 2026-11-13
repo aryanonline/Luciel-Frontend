@@ -76,9 +76,7 @@ const escalation: EscalationEvent = {
 };
 
 async function renderPage() {
-  const { default: ConversationsPage } = await import(
-    '@/app/(app)/dashboard/conversations/page'
-  );
+  const { default: ConversationsPage } = await import('@/app/(app)/dashboard/conversations/page');
   renderWithQuery(<ConversationsPage />);
 }
 
@@ -97,7 +95,7 @@ describe('escalation correlation on the conversations page', () => {
     expect(screen.getAllByText('Escalated').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('says why it escalated, in the owner\'s words (round 6 WP-G)', async () => {
+  it("says why it escalated, in the owner's words (round 6 WP-G)", async () => {
     await renderPage();
     const why = await screen.findByTestId('escalation-reasons');
     expect(why).toHaveTextContent('answer only 20% backed by your knowledge');

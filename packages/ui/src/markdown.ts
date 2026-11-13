@@ -42,12 +42,10 @@ function inlineHtml(escaped: string): string {
     escaped
       // Code first, so emphasis markers inside code are left alone.
       .replace(/`([^`\n]+)`/g, (_m: string, code: string) => `<code>${code}</code>`)
-      .replace(
-        /\[([^\]\n]*)\]\(([^)\s]+)\)/g,
-        (_m: string, label: string, href: string) =>
-          ALLOWED_HREF.test(href)
-            ? `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow">${label}</a>`
-            : label,
+      .replace(/\[([^\]\n]*)\]\(([^)\s]+)\)/g, (_m: string, label: string, href: string) =>
+        ALLOWED_HREF.test(href)
+          ? `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow">${label}</a>`
+          : label,
       )
       .replace(/\*\*([^\n]+?)\*\*/g, (_m: string, text: string) => `<strong>${text}</strong>`)
       .replace(/__([^\n]+?)__/g, (_m: string, text: string) => `<strong>${text}</strong>`)

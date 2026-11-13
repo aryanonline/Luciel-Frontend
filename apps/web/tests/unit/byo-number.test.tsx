@@ -215,7 +215,9 @@ describe('Arch §3.8.7: a toggled-off channel says its connection survives', () 
       ),
     };
     renderWithQuery(<ChannelsPillar luciel={offExpired} />);
-    expect(screen.getByText(/needs a reconnect — turn this back on to fix it/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/needs a reconnect — turn this back on to fix it/i),
+    ).toBeInTheDocument();
   });
 
   it('stays quiet on an off row with nothing saved', () => {

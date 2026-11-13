@@ -50,7 +50,9 @@ describe('round 6: the connection card says whose account is connected', () => {
         connection={row('error', 'acme.my.salesforce.com · org 00D000000000001')}
       />,
     );
-    expect(await screen.findByText(/Action needed: your CRM is having trouble/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Action needed: your CRM is having trouble/i),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('connected-as')).not.toBeInTheDocument();
   });
 });

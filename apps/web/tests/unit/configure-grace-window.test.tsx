@@ -42,7 +42,9 @@ describe('configure page in the 30-day grace window', () => {
     served.state = 'luciel_grace_window';
     renderWithQuery(<ConfigurePage />);
     expect(
-      await screen.findByText(/in its 30-day restore window, so its configuration cannot be edited/i),
+      await screen.findByText(
+        /in its 30-day restore window, so its configuration cannot be edited/i,
+      ),
     ).toBeInTheDocument();
     const restore = screen.getByRole('link', { name: /Restore it from the Account page/i });
     expect(restore).toHaveAttribute('href', '/dashboard/account');

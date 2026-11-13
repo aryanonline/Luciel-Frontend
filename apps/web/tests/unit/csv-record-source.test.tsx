@@ -72,9 +72,7 @@ describe('one CSV import wires knowledge AND the live-lookup table', () => {
     await screen.findByRole('button', { name: /Import CSV/i });
     importAFile();
 
-    expect(
-      await screen.findByText(/live-lookup table could not be updated/i),
-    ).toBeInTheDocument();
-    expect(importCsv).toHaveBeenCalledTimes(1);  // the knowledge half still landed
+    expect(await screen.findByText(/live-lookup table could not be updated/i)).toBeInTheDocument();
+    expect(importCsv).toHaveBeenCalledTimes(1); // the knowledge half still landed
   });
 });

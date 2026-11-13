@@ -116,7 +116,8 @@ export function createTransport(opts: TransportOptions) {
     // a one-off blip into a served answer instead of 'Network request failed.'
     // (live walk run 4, 2026-10-25: the sixth delete in a row never reached the
     // API; the five before it had). A POST is never repeated: it may not be safe.
-    const idempotent = method === 'GET' || method === 'HEAD' || method === 'PUT' || method === 'DELETE';
+    const idempotent =
+      method === 'GET' || method === 'HEAD' || method === 'PUT' || method === 'DELETE';
     for (let attempt = 0; ; attempt += 1) {
       try {
         res = await fetch(`${opts.baseUrl}${path}`, {

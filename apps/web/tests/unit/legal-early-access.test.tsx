@@ -39,7 +39,9 @@ describe('D11: legal pages are the early-access terms in effect', () => {
     ['DPA', DpaPage],
   ])('%s page is versioned, dated, and carries no draft banner', (_name, Page) => {
     render(<Page />);
-    expect(screen.getByText(/Early-access terms, version 0\.1 — last updated 2026-09-15/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Early-access terms, version 0\.1 — last updated 2026-09-15/),
+    ).toBeInTheDocument();
     expect(screen.getAllByText(/at least 30 days' notice/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/not yet in force/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/pending counsel/i)).not.toBeInTheDocument();

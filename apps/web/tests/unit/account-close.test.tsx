@@ -122,7 +122,9 @@ describe('close account with a Luciel still running (subsumed delete)', () => {
 
   it('keeps the dialog open with the reason when the close is refused', async () => {
     closeAccount.mockRejectedValue(
-      new Error('Your Luciel is still active. Delete it first, or confirm that closing the account deletes it.'),
+      new Error(
+        'Your Luciel is still active. Delete it first, or confirm that closing the account deletes it.',
+      ),
     );
     const dialog = await openCloseDialog();
     fireEvent.click(

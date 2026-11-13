@@ -25,9 +25,7 @@ describe('mock serves the CSV record source as the backend does', () => {
     expect(start.requiresClientForm).toBe(true);
     expect(start.authorizeUrl ?? null).toBeNull();
 
-    const row = (await client.connections.list()).find(
-      (c) => c.connectionType === 'record_source',
-    );
+    const row = (await client.connections.list()).find((c) => c.connectionType === 'record_source');
     expect(row?.provider).toBe('csv');
     const attempt = client.connections.submitCredentials(row!.connectionId, {});
     await expect(attempt).rejects.toBeInstanceOf(LucielApiError);

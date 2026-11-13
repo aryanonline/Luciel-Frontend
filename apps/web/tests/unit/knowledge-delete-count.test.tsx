@@ -37,7 +37,9 @@ describe('knowledge source delete confirmation states the real 7-day usage', () 
     expect(
       await screen.findByText(/No customer questions in the last 7 days used this source\./),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/\d+ customer questions? in the last 7 days/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/\d+ customer questions? in the last 7 days/),
+    ).not.toBeInTheDocument();
   });
 });
 

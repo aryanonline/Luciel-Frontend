@@ -172,7 +172,10 @@ export function WidgetPreview({
         <div ref={liveRef} role="status" aria-live="polite" className="sr-only" />
       </div>
       {sendError && (
-        <p className="border-t border-vm-border px-vm-4 py-vm-2 text-vm-1 text-vm-danger" role="alert">
+        <p
+          className="border-t border-vm-border px-vm-4 py-vm-2 text-vm-1 text-vm-danger"
+          role="alert"
+        >
           {sendError}
         </p>
       )}

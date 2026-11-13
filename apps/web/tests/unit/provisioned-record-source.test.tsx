@@ -47,7 +47,9 @@ const recordSourceGroup = (liveConnectorConfigured: boolean): ConnectionProvider
         authKind: 'credential_form',
         helpText: 'Look records up live from your own system.',
         configured: liveConnectorConfigured,
-        credentialFields: [{ name: 'url', label: 'Record lookup URL', secret: false, required: true }],
+        credentialFields: [
+          { name: 'url', label: 'Record lookup URL', secret: false, required: true },
+        ],
         scopeKind: null,
       },
       {
@@ -69,7 +71,9 @@ beforeEach(() => {
 
 describe('a provisioned record source is set up under Knowledge, never connected here', () => {
   it('on the mock adapter (served as the backend serves it): no connect button, the upload note', async () => {
-    renderWithQuery(<ConnectionControl connectionType="record_source" label="your record system" />);
+    renderWithQuery(
+      <ConnectionControl connectionType="record_source" label="your record system" />,
+    );
     expect(
       await screen.findByText(/upload your CSV under Knowledge → records/i),
     ).toBeInTheDocument();
@@ -80,7 +84,9 @@ describe('a provisioned record source is set up under Knowledge, never connected
 
   it('beside a connectable sibling, the sibling gets a button and csv gets the note', async () => {
     served.providers = recordSourceGroup(true);
-    renderWithQuery(<ConnectionControl connectionType="record_source" label="your record system" />);
+    renderWithQuery(
+      <ConnectionControl connectionType="record_source" label="your record system" />,
+    );
     expect(
       await screen.findByRole('button', { name: 'Connect Live connector' }),
     ).toBeInTheDocument();
@@ -90,7 +96,9 @@ describe('a provisioned record source is set up under Knowledge, never connected
 
   it('with the sibling unavailable, csv alone still renders the note and no button', async () => {
     served.providers = recordSourceGroup(false);
-    renderWithQuery(<ConnectionControl connectionType="record_source" label="your record system" />);
+    renderWithQuery(
+      <ConnectionControl connectionType="record_source" label="your record system" />,
+    );
     expect(
       await screen.findByText(/upload your CSV under Knowledge → records/i),
     ).toBeInTheDocument();
