@@ -83,9 +83,7 @@ describe('#3: the preview threads ONE session across messages', () => {
 
     await typeAndSend('What are your hours?');
     await typeAndSend('And your prices?');
-    expect(
-      await screen.findByText(/That message did not go through/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/That message did not go through/)).toBeInTheDocument();
 
     await typeAndSend('And your prices?');
     expect(send).toHaveBeenNthCalledWith(3, 'vm_live_test123456', {

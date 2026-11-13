@@ -68,9 +68,7 @@ describe('§3.1.6a: pending email routing offers the on-demand re-verify', () =>
   it('renders the Re-verify button on the pending_email_routing card', async () => {
     renderWithQuery(<EmailChannelProvisioning emailChannelEnabled />);
     expect(await screen.findByText(/action needed: complete email routing/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Re-verify email routing' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Re-verify email routing' })).toBeInTheDocument();
   });
 
   it('clicking calls the endpoint and reports a still-pending probe honestly', async () => {

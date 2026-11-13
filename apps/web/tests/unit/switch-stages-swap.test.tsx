@@ -87,9 +87,7 @@ describe('#4: "Switch account or provider" stages a swap, never disconnect-first
     renderWithQuery(
       <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
     );
-    fireEvent.click(
-      await screen.findByRole('button', { name: /Switch account or provider/i }),
-    );
+    fireEvent.click(await screen.findByRole('button', { name: /Switch account or provider/i }));
     expect(
       await screen.findByText(
         /Your current connection stays live until the new one is verified — backing out of the sign-in changes nothing\./i,
@@ -104,9 +102,7 @@ describe('#4: "Switch account or provider" stages a swap, never disconnect-first
     renderWithQuery(
       <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
     );
-    fireEvent.click(
-      await screen.findByRole('button', { name: /Switch account or provider/i }),
-    );
+    fireEvent.click(await screen.findByRole('button', { name: /Switch account or provider/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Switch to Salesforce/i }));
 
     await waitFor(() => expect(swap).toHaveBeenCalledTimes(1));
@@ -129,9 +125,7 @@ describe('#4: "Switch account or provider" stages a swap, never disconnect-first
     renderWithQuery(
       <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
     );
-    fireEvent.click(
-      await screen.findByRole('button', { name: /Switch account or provider/i }),
-    );
+    fireEvent.click(await screen.findByRole('button', { name: /Switch account or provider/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Keep the current one/i }));
     expect(
       screen.queryByText(/Your current connection stays live until the new one is verified/i),

@@ -75,9 +75,7 @@ describe('single configured provider ⇒ one plain Connect button, no radio quiz
     listProviders.mockResolvedValue(calendarGroup(true));
     renderWithQuery(<ConnectionControl connectionType="calendar" label="your calendar" />);
 
-    expect(
-      await screen.findByRole('button', { name: 'Connect Google Calendar' }),
-    ).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Connect Google Calendar' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Connect Calendly' })).toBeEnabled();
     // The radio-then-generic-button two-step is gone (owner concern #8).
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();

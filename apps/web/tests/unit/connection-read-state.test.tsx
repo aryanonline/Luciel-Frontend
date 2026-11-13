@@ -108,7 +108,9 @@ describe('the pillars thread the read state through', () => {
     expect(screen.getAllByText(/Checking the Twilio connection/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Action needed/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Connect WhatsApp/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Action needed: connect your Twilio account/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Action needed: connect your Twilio account/i),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/Action needed: add your number/i)).not.toBeInTheDocument();
   });
 

@@ -94,8 +94,6 @@ describe('C10: one-click Twilio OAuth connect', () => {
     );
     renderWithQuery(<ChannelsPillar luciel={withSmsEnabled} />);
     fireEvent.click(await screen.findByRole('button', { name: /^Connect Twilio$/i }));
-    expect(
-      await screen.findByText(/We could not start a secure sign-in/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/We could not start a secure sign-in/)).toBeInTheDocument();
   });
 });

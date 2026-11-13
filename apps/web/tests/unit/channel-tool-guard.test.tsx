@@ -70,9 +70,7 @@ describe('Axis5-F02: send_sms tool blocked when SMS channel is off', () => {
 
   it('shows the explanatory copy when SMS channel is off', async () => {
     renderWithQuery(<ToolsPillar luciel={lucielSmsChannelOff} />);
-    expect(
-      await screen.findByText(/Enable the SMS channel to use Send SMS/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Enable the SMS channel to use Send SMS/i)).toBeInTheDocument();
   });
 
   it('the Send SMS toggle is NOT disabled when the SMS channel is on', async () => {

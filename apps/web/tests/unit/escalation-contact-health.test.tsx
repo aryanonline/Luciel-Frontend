@@ -98,7 +98,9 @@ describe('escalation contact health (round 5B item 13)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Resend confirmation' }));
     await waitFor(() => expect(resendApi).toHaveBeenCalledWith('sales@acme.example'));
-    expect(await screen.findByText(/confirmation email sent to sales@acme\.example/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/confirmation email sent to sales@acme\.example/i),
+    ).toBeInTheDocument();
   });
 
   it('a verified contact gets no button and no warning — nothing to fix', () => {
@@ -117,8 +119,6 @@ describe('escalation contact health (round 5B item 13)', () => {
     renderWithQuery(<EscalationPillar luciel={withHealth} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Resend confirmation' }));
-    expect(
-      await screen.findByText(/a confirmation was sent moments ago/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/a confirmation was sent moments ago/i)).toBeInTheDocument();
   });
 });

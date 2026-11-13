@@ -123,9 +123,7 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
   const ungrouped = luciel.tools.filter((t) => !groupedIds.has(t.id));
 
   const connectionFor = (connectionType: ConnectionType | null): Connection | undefined =>
-    connectionType
-      ? connections.data?.find((c) => c.connectionType === connectionType)
-      : undefined;
+    connectionType ? connections.data?.find((c) => c.connectionType === connectionType) : undefined;
   // Round 7 WP-10, item 2: an absent row means "nothing connected" only once the
   // read has settled; every control below is told which it is.
   const connectionsRead = connectionReadState(connections);
@@ -212,128 +210,130 @@ export function ToolsPillar({ luciel }: { luciel: Luciel }) {
           </button>
         </Banner>
       ) : (
-      <ul className="mt-vm-3 divide-y divide-vm-border">
-        {groups.map((group) => (
-          <CapabilityRow
-            key={group.capability}
-            group={group}
-            tools={luciel.tools.filter((t) => group.toolIds.includes(t.id))}
-            connection={connectionFor(group.connectionType)}
-            readState={connectionsRead}
-            onRetryRead={retryConnections}
-            onToggle={(enabled) => writeEnabled(group.toolIds, enabled, group.label)}
-          />
-        ))}
+        <ul className="mt-vm-3 divide-y divide-vm-border">
+          {groups.map((group) => (
+            <CapabilityRow
+              key={group.capability}
+              group={group}
+              tools={luciel.tools.filter((t) => group.toolIds.includes(t.id))}
+              connection={connectionFor(group.connectionType)}
+              readState={connectionsRead}
+              onRetryRead={retryConnections}
+              onToggle={(enabled) => writeEnabled(group.toolIds, enabled, group.label)}
+            />
+          ))}
 
-        {ungrouped.map((t) => {
-          const meta = toolMeta[t.id];
-          const target = TOOL_CONNECTION[t.id];
-          const channelDep = TOOL_CHANNEL_DEPENDENCY[t.id];
-          const channelBlocked = channelDep !== undefined && !isChannelEnabled(t.id);
-          const on = t.enabled && !channelBlocked;
-          const chip = target ? null : chipKind(t.connectionStatus);
-          // Off + a saved connection: the toggle never disconnects (Arch §3.8.7),
-          // so the OFF row says the connection survives — and, when the tool
-          // reaches an external system, keeps it manageable below.
-          const offNote =
-            !on && !channelBlocked
-              ? offRowConnectionNote(
-                  target ? connectionFor(target.connectionType)?.status : t.connectionStatus,
-                )
-              : null;
-          return (
-            <li key={t.id} className="py-vm-3">
-              <div className="flex items-start justify-between gap-vm-3">
-                <div className="flex items-start gap-vm-3">
-                  <Toggle
-                    checked={on}
-                    onChange={(next) => setTool(t.id, next)}
-                    label={`Enable ${meta.label}`}
-                    disabled={channelBlocked}
-                  />
-                  <div>
-                    <div className="text-vm-2">{meta.label}</div>
-                    <div className="text-vm-0 text-vm-text-muted">{meta.desc}</div>
-                    {/* Channel-dependency notice — shown only when the required channel is off. */}
-                    {channelBlocked && channelDep && (
-                      <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
-                        Enable the {channelLabel[channelDep]} channel to use {meta.label}.
-                      </p>
-                    )}
-                    {/* Sends from Luciel's work address, which is set up in one
+          {ungrouped.map((t) => {
+            const meta = toolMeta[t.id];
+            const target = TOOL_CONNECTION[t.id];
+            const channelDep = TOOL_CHANNEL_DEPENDENCY[t.id];
+            const channelBlocked = channelDep !== undefined && !isChannelEnabled(t.id);
+            const on = t.enabled && !channelBlocked;
+            const chip = target ? null : chipKind(t.connectionStatus);
+            // Off + a saved connection: the toggle never disconnects (Arch §3.8.7),
+            // so the OFF row says the connection survives — and, when the tool
+            // reaches an external system, keeps it manageable below.
+            const offNote =
+              !on && !channelBlocked
+                ? offRowConnectionNote(
+                    target ? connectionFor(target.connectionType)?.status : t.connectionStatus,
+                  )
+                : null;
+            return (
+              <li key={t.id} className="py-vm-3">
+                <div className="flex items-start justify-between gap-vm-3">
+                  <div className="flex items-start gap-vm-3">
+                    <Toggle
+                      checked={on}
+                      onChange={(next) => setTool(t.id, next)}
+                      label={`Enable ${meta.label}`}
+                      disabled={channelBlocked}
+                    />
+                    <div>
+                      <div className="text-vm-2">{meta.label}</div>
+                      <div className="text-vm-0 text-vm-text-muted">{meta.desc}</div>
+                      {/* Channel-dependency notice — shown only when the required channel is off. */}
+                      {channelBlocked && channelDep && (
+                        <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+                          Enable the {channelLabel[channelDep]} channel to use {meta.label}.
+                        </p>
+                      )}
+                      {/* Sends from Luciel's work address, which is set up in one
                         place only — beside the Email channel (Decision #4). */}
-                    {on && t.id === 'send_email' && t.connectionStatus !== 'connected' && (
-                      <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
-                        Luciel sends from its own work email — finish setting that address up with
-                        the Email channel above.
-                      </p>
-                    )}
-                    {/* Mirror of the email case: an enabled Send SMS whose
+                      {on && t.id === 'send_email' && t.connectionStatus !== 'connected' && (
+                        <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+                          Luciel sends from its own work email — finish setting that address up with
+                          the Email channel above.
+                        </p>
+                      )}
+                      {/* Mirror of the email case: an enabled Send SMS whose
                         number/account isn't ready looked fully set up — no
                         chip, no note — while every send would fail. */}
-                    {on && t.id === 'send_sms' && t.connectionStatus !== 'connected' && (
-                      <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
-                        Luciel texts from your own business number — finish connecting your Twilio
-                        account and number with the SMS channel above.
-                      </p>
-                    )}
-                    {/* Say the saved connection survives the toggle — the
+                      {on && t.id === 'send_sms' && t.connectionStatus !== 'connected' && (
+                        <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+                          Luciel texts from your own business number — finish connecting your Twilio
+                          account and number with the SMS channel above.
+                        </p>
+                      )}
+                      {/* Say the saved connection survives the toggle — the
                         connect control only renders while on, so without
                         this the connection (even one needing a reconnect)
                         went invisible. */}
-                    {offNote && (
-                      <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
-                        {offNote}
-                      </p>
-                    )}
+                      {offNote && (
+                        <p className="mt-vm-1 text-vm-0 text-vm-text-muted" role="note">
+                          {offNote}
+                        </p>
+                      )}
+                    </div>
                   </div>
+                  {/* A tool with a connection gets its chip from the control below. */}
+                  {on && chip && <StatusChip kind={chip} />}
                 </div>
-                {/* A tool with a connection gets its chip from the control below. */}
-                {on && chip && <StatusChip kind={chip} />}
-              </div>
 
-              {/* Round 7 WP-10, item 3 (the channels' round 6 WP-D rule, applied here):
+                {/* Round 7 WP-10, item 3 (the channels' round 6 WP-D rule, applied here):
                   an OFF tool with a saved connection can still be switched, reconnected
                   or disconnected without turning it on first — the same control, behind
                   a disclosure so an off row does not open a full panel unasked. */}
-              {offNote && target && (
-                <details className="mt-vm-2 pl-[3.5rem]">
-                  <summary className="cursor-pointer text-vm-0 underline underline-offset-2">
-                    Manage connection
-                  </summary>
-                  <div className="mt-vm-3">
+                {offNote && target && (
+                  <details className="mt-vm-2 pl-[3.5rem]">
+                    <summary className="cursor-pointer text-vm-0 underline underline-offset-2">
+                      Manage connection
+                    </summary>
+                    <div className="mt-vm-3">
+                      <ConnectionControl
+                        connectionType={target.connectionType}
+                        label={meta.connectLabel ?? meta.label}
+                        connection={connectionFor(target.connectionType)}
+                        fallbackProvider={target.fallbackProvider}
+                        unavailableReason={
+                          CONNECTION_COPY[target.connectionType]?.unavailableReason
+                        }
+                        readState={connectionsRead}
+                        onRetryRead={retryConnections}
+                      />
+                    </div>
+                  </details>
+                )}
+
+                {on && target && (
+                  <div className="mt-vm-3 pl-[3.5rem]">
                     <ConnectionControl
                       connectionType={target.connectionType}
                       label={meta.connectLabel ?? meta.label}
+                      purpose={CONNECTION_COPY[target.connectionType]?.purpose}
                       connection={connectionFor(target.connectionType)}
                       fallbackProvider={target.fallbackProvider}
                       unavailableReason={CONNECTION_COPY[target.connectionType]?.unavailableReason}
+                      disabledReason={t.disabledReason}
                       readState={connectionsRead}
                       onRetryRead={retryConnections}
                     />
                   </div>
-                </details>
-              )}
-
-              {on && target && (
-                <div className="mt-vm-3 pl-[3.5rem]">
-                  <ConnectionControl
-                    connectionType={target.connectionType}
-                    label={meta.connectLabel ?? meta.label}
-                    purpose={CONNECTION_COPY[target.connectionType]?.purpose}
-                    connection={connectionFor(target.connectionType)}
-                    fallbackProvider={target.fallbackProvider}
-                    unavailableReason={CONNECTION_COPY[target.connectionType]?.unavailableReason}
-                    disabledReason={t.disabledReason}
-                    readState={connectionsRead}
-                    onRetryRead={retryConnections}
-                  />
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </Card>
   );
@@ -368,11 +368,7 @@ function CapabilityRow({
   return (
     <li className="py-vm-3">
       <div className="flex items-start gap-vm-3">
-        <Toggle
-          checked={enabled}
-          onChange={onToggle}
-          label={`Enable ${group.label}`}
-        />
+        <Toggle checked={enabled} onChange={onToggle} label={`Enable ${group.label}`} />
         <div className="flex-1">
           <div className="text-vm-2">{group.label}</div>
           <div className="text-vm-0 text-vm-text-muted">{group.helpText}</div>

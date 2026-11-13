@@ -264,9 +264,7 @@ describe('contract §1: each client is honest-disabled on its own', () => {
     renderWithQuery(<ChannelsPillar luciel={base} />);
 
     expect(await screen.findByRole('button', { name: 'Connect WhatsApp' })).toBeEnabled();
-    expect(
-      await screen.findByRole('button', { name: 'Connect Facebook Messenger' }),
-    ).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Connect Facebook Messenger' })).toBeEnabled();
     expect(
       await screen.findByText(/Not available yet — Instagram sign-in not configured/i),
     ).toBeInTheDocument();

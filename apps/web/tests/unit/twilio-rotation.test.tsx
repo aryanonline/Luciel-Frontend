@@ -118,12 +118,8 @@ describe('an expired Twilio credential asks for credentials, not a number', () =
     renderWithQuery(<ChannelsPillar luciel={lucielWith('expired')} />);
 
     // One shared credential, one shared state: SMS and Voice both say it.
-    expect(
-      screen.getAllByText('Reconnect needed: update your Twilio credentials'),
-    ).toHaveLength(2);
-    expect(
-      await screen.findByText(/stopped accepting the saved credentials/i),
-    ).toBeInTheDocument();
+    expect(screen.getAllByText('Reconnect needed: update your Twilio credentials')).toHaveLength(2);
+    expect(await screen.findByText(/stopped accepting the saved credentials/i)).toBeInTheDocument();
     expect(await screen.findByLabelText(/Twilio Account SID/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Verify and save' })).toBeInTheDocument();
     // The WRONG affordances: the number is on file and is not the problem.

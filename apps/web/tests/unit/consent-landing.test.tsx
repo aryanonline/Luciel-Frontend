@@ -79,7 +79,7 @@ const withWhatsApp = (): ChannelConfig[] => [
 ];
 
 describe('consent landing — success', () => {
-  it("names the provider from the served registry and clears the params", async () => {
+  it('names the provider from the served registry and clears the params', async () => {
     nav.params = new URLSearchParams({
       status: 'connected',
       provider: 'google_calendar',
@@ -119,9 +119,7 @@ describe('consent landing — a grant that still owes a step', () => {
 
     // "Meta" is the registry's displayName — each channel row carries its own
     // channel name, so the provider label no longer enumerates the surfaces.
-    expect(
-      await screen.findByText(/Meta is authorized — one step left\./),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Meta is authorized — one step left\./)).toBeInTheDocument();
     expect(screen.queryByText(/Meta is connected\./)).not.toBeInTheDocument();
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/dashboard/configure'));
   });
@@ -148,9 +146,7 @@ describe('consent landing — a grant that still owes a step', () => {
     renderWithQuery(<ConfigurePage />);
 
     expect(
-      await screen.findByText(
-        /Meta is authorized\. If the channel below asks for an id/,
-      ),
+      await screen.findByText(/Meta is authorized\. If the channel below asks for an id/),
     ).toBeInTheDocument();
   });
 });

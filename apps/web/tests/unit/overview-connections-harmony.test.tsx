@@ -53,7 +53,9 @@ describe('Harmony FE-H#7: Overview agrees with Configure on honest-disabled prov
     const calendarRow = screen.getByText(/Calendar · Google Calendar/i).closest('li');
     expect(calendarRow).not.toBeNull();
     expect(
-      within(calendarRow as HTMLElement).queryByRole('button', { name: /Change connected account/i }),
+      within(calendarRow as HTMLElement).queryByRole('button', {
+        name: /Change connected account/i,
+      }),
     ).not.toBeInTheDocument();
   });
 
@@ -108,4 +110,3 @@ describe('Harmony wave 2, item 6a: a registry-unconfigured connection row is nev
     expect(within(hubspotRow as HTMLElement).getByText(/Reconnect needed/i)).toBeInTheDocument();
   });
 });
-
