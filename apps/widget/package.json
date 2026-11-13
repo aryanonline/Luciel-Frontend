@@ -9,7 +9,7 @@
     "build": "vite build && node scripts/check-bundle.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"(lint placeholder \u2014 eslint config added with first feature PR)\"",
+    "lint": "echo \"(not linted; CI lints apps/web only)\"",
     "test": "vitest run"
   },
   "dependencies": {

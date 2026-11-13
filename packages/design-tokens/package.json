@@ -13,7 +13,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"(lint placeholder — eslint config added with first feature PR)\"",
+    "lint": "echo \"(not linted; CI lints apps/web only)\"",
     "test": "echo \"(no unit tests yet — tokens are data; contrast is verified by axe in apps)\""
   },
   "peerDependencies": {
