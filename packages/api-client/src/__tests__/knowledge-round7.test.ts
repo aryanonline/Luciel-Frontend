@@ -93,7 +93,7 @@ describe('mock: knowledge_states', () => {
   it('an item gone at its origin: 404 on re-sync, then a 409 on restore', async () => {
     const api = createLucielClient({ adapter: 'mock', mock: { scenario: 'knowledge_states' } });
     const gone = (await api.knowledge.listSources()).find(
-      (s) => s.name === 'sarahchen.com/old-pricing',
+      (s) => s.name === 'sarahchen.example/old-pricing',
     );
     await expect(api.knowledge.resyncSource(gone!.sourceId)).rejects.toMatchObject({
       code: 'not_found',

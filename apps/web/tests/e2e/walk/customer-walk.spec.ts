@@ -708,7 +708,7 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
     walkSources.push(csvName);
 
     // On live the walk crawls the product's own site (never a third party's).
-    const crawlUrl = w.live ? `${origin}/` : 'https://sarahchen.com/services';
+    const crawlUrl = w.live ? `${origin}/` : 'https://sarahchen.example/services';
     const crawlWait = w.live ? 420_000 : 5_000;
     const crawl = page.getByRole('dialog', { name: 'Crawl a website' });
     const connected = pillar.getByRole('list', { name: 'Connected sources' });
@@ -867,7 +867,7 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
     await expect(page.getByRole('button', { name: /Copied/ })).toBeVisible();
 
     const allow = card(page, 'Websites that may load this chat');
-    const site = w.live ? 'https://walk.example.com' : 'https://sarahchen.com';
+    const site = w.live ? 'https://walk.example.com' : 'https://sarahchen.example';
     await w.mutate('a path is refused by the server, and said', {
       act: async () => {
         await allow.getByLabel('Website address').fill(`${site}/contact`);

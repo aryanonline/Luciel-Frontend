@@ -685,7 +685,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
         displayName: 'Website crawl',
         providerAvailable: true,
         status: 'connected',
-        nonSecretConfig: { crawl_urls: ['https://sarahchen.com'] },
+        nonSecretConfig: { crawl_urls: ['https://sarahchen.example'] },
         createdAt: '2026-02-01T10:16:00Z',
       },
     );
@@ -718,7 +718,7 @@ export function createMockAdminClient(options: MockAdminOptions = {}): LucielApi
       },
       {
         sourceId: 'abababab-0000-4000-8000-000000000003',
-        name: 'sarahchen.com/old-pricing',
+        name: 'sarahchen.example/old-pricing',
         origin: 'website_crawl',
         ingestionStatus: 'ready',
         sizeBytes: 40_000,
