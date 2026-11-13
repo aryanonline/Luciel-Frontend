@@ -188,7 +188,7 @@ To run one project: `pnpm --filter @luciel/web exec playwright test --project=wa
 
 | Suite                                                  | Tests (CI on `main`, 2026-11-13) | What it covers                                                                                                                          |
 | ------------------------------------------------------ | -------------------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Web app unit (`apps/web/tests/unit/`)                  |                              472 | Pages and components: states, counts, labels, modals and copy rules                                                                     |
+| Web app unit (`apps/web/tests/unit/`)                  |                              473 | Pages and components: states, counts, labels, modals and copy rules                                                                     |
 | API client unit (`packages/api-client/src/__tests__/`) |                              142 | Transport, adapters and the mock runtime, plane separation, the sync-job poll                                                           |
 | Widget unit (`apps/widget/src/mount.test.ts`)          |                               41 | Mounting, disclosure, sessions, polling, ending a chat, safe rendering                                                                  |
 | UI kit unit (`packages/ui/src/`)                       |                               20 | `Modal`, `StatusChip`, `Logo` and the markdown renderer                                                                                 |

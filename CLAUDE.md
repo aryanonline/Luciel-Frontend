@@ -156,8 +156,8 @@ pnpm -r test
 pnpm -r build
 ```
 
-The current suite is approximately 675 tests (api-client 142, ui 20, widget 41, web 472;
-counted 2026-11-02).
+The current suite is approximately 676 tests (api-client 142, ui 20, widget 41, web 473;
+counted 2026-11-13).
 Treat an unexpected test-count change as a signal to review, not as a substitute for
 the command exit status. `pnpm --filter @luciel/web test:e2e` runs the Playwright
 a11y gate plus the mock-adapter customer journey (`tests/e2e/journey.spec.ts`) against
