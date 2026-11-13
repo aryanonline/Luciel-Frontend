@@ -8,12 +8,14 @@ This repository is the Luciel customer-facing frontend monorepo. It contains:
 - the embeddable customer-site widget; and
 - shared API, UI, and design-token packages.
 
-Authoritative business and product documents live in the Luciel Perplexity project
-files, updated **2026-08-06**. They are not maintained in this repository.
+Business and product documents are kept outside this repository.
 Treat served backend state and the current code contract as implementation evidence;
 do not recreate, copy, or infer a business specification into repository docs.
 
-When product language or behavior is uncertain, use the project files and the
+Comment tags such as `Arch §`, `Space Instructions §`, `F0xx`, `round N WP-x` and `Dn`
+cite internal design documents, audit ids and owner decisions kept outside the repository.
+
+When product language or behavior is uncertain, use those documents and the
 served contract. Prefer the least-claiming state rather than a happy-path claim.
 Do not use mock data as a business authority.
 
@@ -21,9 +23,8 @@ Do not use mock data as a business authority.
 
 - Work on `main`, the release branch and the default branch, unless the owner gives
   a different branch explicitly.
-- The former release branch `feat/docs-conformance-build-20260713-r2` was merged into
-  `main` and retired on 2026-11-13. Do not recreate it or treat any other branch as a
-  merge base, source of truth, or deploy cue.
+- The former release branch was merged into `main` on 2026-11-13; do not recreate it,
+  or treat any other branch as a merge base, source of truth, or deploy cue.
 - Check the current branch and working tree before changing files.
 - Keep changes narrow, run the relevant workspace checks, then run the complete
   monorepo verification before handing off.
@@ -140,7 +141,9 @@ pnpm --filter @luciel/ui test
 pnpm --filter @luciel/ui build
 ```
 
-`pnpm test:scripts` runs the repo-script tests (`scripts/*.test.mjs`; the image CVE gate).
+`pnpm test:scripts` runs the repo-script tests (`scripts/*.test.mjs`): the image CVE gate,
+the Dependabot auto-merge classifier, the deploy and maintenance workflow gates, the
+dispatch-only pins on the live workflows, and the walk report summary.
 The web image CVE gate is `scripts/image-scan-gate.mjs` with the dated allowlist in
 `.security/cve-allowlist.json` (round 7 WP-0): it fails closed, blocks HIGH + CRITICAL,
 and an expired waiver blocks the deploy. The base image is `node:22.x-trixie-slim`.
@@ -183,14 +186,6 @@ at 13:00 UTC). It and the weekly `image-rebuild` workflow, which posts to the sa
 the month's issue by exact title over the REST list, never the search index;
 `scripts/workflow-gates.test.mjs` pins the cron and both lookups.
 
-## Verification lesson from this cycle
-
-When validating cloud-browser artifacts, match the copied confirmation by the
-substring **“Copied”** rather than assuming exact surrounding UI text. If an
-interaction appears to fail in a cloud browser, confirm it in plain Chromium
-before changing production code; avoid fixing a browser-artifact mismatch as if
-it were an application defect.
-
 ## Deploy
 
 The deployment workflow builds the web artifact and publishes the widget to the
@@ -200,9 +195,8 @@ embed CDN. To dispatch a development deployment from the release branch, use:
 gh workflow run deploy.yml --ref main -f environment=dev
 ```
 
-Always pass `--ref`: the workflow's `guard` job refuses any ref but the release branch
-(2026-09-06: a bare dispatch shipped a stale default branch's widget to dev), there is
-no push trigger, and a prod dispatch no longer rolls dev first.
+Always pass `--ref main`: the workflow's `guard` job refuses any other ref before the
+first AWS call, there is no push trigger, and a prod dispatch no longer rolls dev first.
 
 A green deploy means the web service finished rolling: each deploy job's last step is
 `aws ecs wait services-stable`, which gives up after 10 minutes and fails the job
@@ -216,7 +210,7 @@ explicit environment input; a push to `main` deploys nothing by itself.
 ## Documentation hygiene
 
 `CLAUDE.md` files are operational codebase guidance, not a replacement for the
-Perplexity project business documents. Keep root guidance cross-cutting and
+business and product documents, which are kept outside this repository. Keep root guidance cross-cutting and
 module guidance local. Before removing or renaming a doc, search scripts, tests,
 and workflows for filename reads or references; update those references in the
 same change.
