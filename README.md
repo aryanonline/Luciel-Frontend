@@ -1,136 +1,266 @@
 # Luciel — Frontend
 
-Luciel is an AI assistant that a business runs on its own knowledge. It answers
-customers on the business's website and other channels, grounds its answers in the
-business's own documents, and hands the conversation to the team when it can't
-answer confidently.
+Luciel, by VantageMind, is an AI front-desk employee for small businesses. It answers a
+business's customers on its website and other channels from the business's own knowledge,
+hands the conversation to the team when it cannot answer confidently, and gives the owner a
+dashboard to run it. This repository is the browser-facing half of the product: the marketing
+site, sign-up and the owner dashboard (one Next.js app), the chat widget that businesses embed
+on their own websites, and the typed API client, UI kit and design tokens those apps share. The
+API, the AI runtime and the AWS infrastructure live in a separate backend repository.
 
-This repository holds everything people see: the public marketing and legal pages,
-the owner sign-up and dashboard, and the chat widget that businesses embed on their
-own websites. The API and AI runtime live in a separate backend repository.
+## Highlights
 
-## What's in this repository
+- **Two API planes, kept apart down to the shipped bundle.** The dashboard calls the
+  control-plane API through `@luciel/api-client` with an httpOnly session cookie; the widget
+  calls the public data-plane API through `@luciel/api-client/widget` with an embed key and no
+  cookies. A [scan of the built bundle](apps/widget/scripts/check-bundle.mjs) fails the widget
+  build if admin-API symbols or paths turn up in it, and a
+  [source-level test](packages/api-client/src/__tests__/plane-separation.test.ts) fails the unit
+  tests if the widget's entry point exports the admin client.
+- **One typed client, two adapters.** Components depend only on the `LucielApiClient` interface,
+  whose response shapes come from Zod schemas. One flag picks the HTTP adapter or a stateful mock
+  with account states, injected failures and slow calls, so the dashboard runs and is tested end
+  to end without a backend. ESLint keeps UI code away from the adapters, and production builds
+  default to HTTP ([`lib/api.ts`](apps/web/src/lib/api.ts)).
+- **Honest states as a tested contract.** A connection reads Connected, Action needed, Reconnect
+  needed or Not available yet, never a false Connected
+  ([`chips.ts`](packages/api-client/src/chips.ts)). Answer evidence has three attribution states.
+  Mutations show pending, success and error, a failed confirmation keeps its dialog open with the
+  error ([`Modal.tsx`](packages/ui/src/Modal.tsx)), and lists keep loading, empty and error apart.
+- **Long-running knowledge syncs without hung requests.** When a sync such as a website crawl
+  outlives the server's inline wait, the API answers 202 and the client polls the job every 2 s
+  for up to 10 minutes ([`sync-job.ts`](packages/api-client/src/adapters/sync-job.ts)), matching
+  its own job by start time and telling "still running" apart from "failed". The dashboard frees
+  the button at the 202 and refreshes the list while the source syncs.
+- **A widget that behaves on someone else's page.** One self-initialising script in plain
+  TypeScript and DOM. It mounts in a Shadow DOM, pins its position with inline styles on the host
+  element, refuses plain-HTTP pages (except localhost), renders nothing while the assistant is
+  paused or the channel is off, keeps one conversation across page navigations, and gets team
+  replies by polling, never presented as instant. Assistant markdown goes through an escape-first
+  renderer with a tag allowlist ([`markdown.ts`](packages/ui/src/markdown.ts)); visitor text
+  stays a text node.
+- **Strict browser security.** A per-request, nonce-based Content Security Policy with
+  `frame-ancestors 'none'` ([`middleware.ts`](apps/web/src/middleware.ts)), HSTS and related
+  headers, and a session token held in an httpOnly cookie that browser code never reads.
+- **Supply-chain gates that fail closed and expire.** The [audit gate](scripts/audit-gate.mjs)
+  and the [image CVE gate](scripts/image-scan-gate.mjs) block HIGH and CRITICAL findings, fail
+  when their input is missing or unreadable, and fail once a waiver expires while its finding
+  remains. Waivers live in [`.security/`](.security) with a reason and an expiry, and tests pin
+  the deploy order: gate the image, then promote it.
+- **Tests that walk the product like a customer.** Playwright with axe-core checks WCAG 2.1 AA on
+  all 23 routes and fails when a new page has no entry; seven projects replay account states and
+  re-read every write after a reload; a scripted walk covers the whole dashboard. The same walk
+  runs against a deployed environment from a dispatch-only workflow, writing only to a dedicated
+  test account and skipping, with reasons, steps that need a real card, phone number, mailbox or
+  third-party sign-in.
 
-It is a pnpm monorepo with two apps and three shared packages:
+## Architecture
 
-| Path                                               | What it is                                                                                                                                                            |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`apps/web`](apps/web)                             | Next.js 15 (App Router) and React 19 app: marketing and legal pages, sign-up / login / password reset, the first-run setup, the owner dashboard and the embed preview |
-| [`apps/widget`](apps/widget)                       | The embeddable website chat widget: a Vite library bundle that mounts inside a Shadow DOM on the customer's site                                                      |
-| [`packages/api-client`](packages/api-client)       | The typed API boundary: Zod schemas plus a dashboard (control-plane) client and a separate widget (data-plane) client, each with HTTP and mock adapters               |
-| [`packages/ui`](packages/ui)                       | Shared, accessible React UI primitives and markdown helpers                                                                                                           |
-| [`packages/design-tokens`](packages/design-tokens) | Design tokens shared as TypeScript, CSS and Tailwind configuration                                                                                                    |
+```mermaid
+flowchart LR
+    owner["Business owner's browser"]
+    visitor["Visitor's browser<br/>on the business's website"]
+    subgraph aws["AWS"]
+        waf["AWS WAF"]
+        alb["Application Load Balancer<br/>routes by host and path"]
+        web["Web service on ECS Fargate<br/>Next.js server, apps/web"]
+        control["Control-plane API on ECS<br/>backend repository"]
+        data["Data-plane API on ECS<br/>backend repository"]
+        cdn["CloudFront<br/>embed host"]
+        bucket["S3 bucket<br/>widget bundle, apps/widget"]
+    end
+    owner -->|"pages, and API calls with the session cookie"| waf
+    visitor -->|"chat calls with the embed key"| waf
+    visitor -->|"loads /v1/luciel.js"| cdn
+    cdn --> bucket
+    waf --> alb
+    alb -->|"app hostnames"| web
+    alb -->|"API host, control-plane paths"| control
+    alb -->|"API host, all other paths"| data
+```
 
-The dashboard (`apps/web/src/app/(app)/dashboard`) covers the overview, configuration
-(knowledge sources, channels and connections), conversations and human takeover,
-leads, analytics, billing, embed code, the audit log and account settings.
+- **Web app ([`apps/web`](apps/web)).** One Next.js App Router app: `(marketing)` holds the home,
+  contact, embed-preview and legal pages, `(auth)` sign-up, verification, login and password
+  reset, and `(app)` first-run setup and the dashboard (overview, configuration, embedding,
+  conversations with evidence and human takeover, leads, billing, analytics, audit log, account
+  lifecycle). Dashboard pages fetch from the API in the browser with TanStack Query. The root
+  layout is `force-dynamic` so every response carries a fresh CSP nonce, which is why the app
+  runs as a Node server rather than as a static export.
+- **Widget ([`apps/widget`](apps/widget)).** A business adds one tag to its site; the script
+  reads the public embed key from `data-key` at runtime, mounts itself and talks only to the
+  data plane:
 
-The marketing site, the dashboard and the widget share a design system but never an
-auth context: the widget talks only to the public data-plane API and ships no admin
-code.
+  ```html
+  <script src="https://embed.vantagemind.ai/v1/luciel.js" data-key="vm_live_..."></script>
+  ```
+
+- **Backend (separate repository).** The API runs in ca-central-1 as two ECS services behind one
+  load balancer per environment: a control plane for the dashboard and account API (including
+  sign-up, login and the contact form) and a data plane for the widget and channel webhooks. The
+  backend's AWS CDK app also defines the web service, its ECR repository, the widget bucket and
+  the CloudFront distribution; this repository builds and ships the artifacts.
 
 ## Tech stack
 
-- **Language and tooling:** TypeScript, pnpm workspaces, Prettier, ESLint
-- **Web app:** Next.js 15, React 19, TanStack Query, React Hook Form with Zod, Radix UI, Tailwind CSS
-- **Widget:** Vite (library mode), plain TypeScript and DOM, Shadow DOM isolation
-- **Testing:** Vitest and Testing Library for unit tests; Playwright with axe-core for end-to-end and accessibility tests
-- **Delivery:** GitHub Actions, Docker (web image), with the widget published to an embed CDN
+| Area                   | Choices                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| Language and workspace | TypeScript (strict), pnpm 9 workspaces, Node.js 20+                                                       |
+| Web app                | Next.js 15 (App Router), React 19, TanStack Query, React Hook Form with Zod, Radix UI, Tailwind CSS 3     |
+| Widget                 | Vite 6 library build (IIFE and ES module), plain DOM, Shadow DOM                                          |
+| API boundary           | Zod schemas, a `fetch` transport with typed errors, HTTP and mock adapters                                |
+| Testing                | Vitest, Testing Library, jsdom, Playwright, axe-core                                                      |
+| Quality and security   | ESLint (`next/core-web-vitals`), Prettier, gitleaks, `pnpm audit` gate, ECR image-scan gate               |
+| Delivery               | Docker (Node 22 on Debian slim, non-root), GitHub Actions with AWS OIDC, ECR, ECS Fargate, S3, CloudFront |
 
-## How it behaves
+## Repository layout
 
-These rules are enforced in code and tests:
+| Path                                            | Contents                                                                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/app/`                             | App Router route groups `(marketing)`, `(auth)` and `(app)`, plus the error pages                                                                                                     |
+| `apps/web/src/components/`, `apps/web/src/lib/` | Dashboard components (`config/` holds the Configure page's sections), API wiring, query hooks, sync and crash-recovery helpers                                                        |
+| `apps/web/src/middleware.ts`                    | Per-request CSP and the signed-out redirect for dashboard routes                                                                                                                      |
+| `apps/web/tests/`                               | Vitest unit tests (`unit/`) and Playwright suites (`e2e/`)                                                                                                                            |
+| `apps/web/Dockerfile`                           | Multi-stage production image, built from the repository root                                                                                                                          |
+| `apps/widget/`                                  | The widget: `src/mount.ts` (mount, chat loop, polling), `src/styles.ts` and `scripts/check-bundle.mjs`                                                                                |
+| `packages/api-client/`                          | Zod schemas, the `LucielApiClient` and `WidgetApiClient` interfaces, HTTP and mock adapters, connection-chip mapping                                                                  |
+| `packages/ui/`                                  | Shared accessible React primitives (`Modal`, `StatusChip`, `Field` and others) and the safe markdown renderer                                                                         |
+| `packages/design-tokens/`                       | Design tokens as TypeScript, CSS custom properties and a Tailwind preset                                                                                                              |
+| `scripts/`                                      | Supply-chain scripts: `audit-gate.mjs` (the CI dependency-audit gate), `image-scan-gate.mjs` (the deploy's image CVE gate), `allowlist-expiry.mjs` (the monthly waiver-expiry report) |
+| `scripts/*.test.mjs`                            | Node tests for the image gate, the Dependabot classifier and the workflows                                                                                                            |
+| `.security/`                                    | Dated, reasoned waivers for the dependency audit and the image CVE gate                                                                                                               |
+| `.github/`                                      | Workflows (CI, deploy, live checks, scheduled maintenance) and the Dependabot configuration                                                                                           |
 
-- **Honest states.** A connection shows _Connected_, _Action needed_, _Reconnect needed_
-  or _Not available yet_, never a false _Connected_. Labels come from the API, not from
-  raw provider names.
-- **Every action shows its outcome.** Mutations show pending, success and error states,
-  and every list has separate loading, empty and error views. An empty list never stands
-  in for a failed request.
-- **Evidence is never invented.** Answers carry one of three evidence states (has sources,
-  no sources retrieved, attribution unavailable). Answers from before scoring existed are
-  shown as not scored, not as ungrounded.
-- **A well-behaved widget.** It is closed by default, isolated in a Shadow DOM, keeps an
-  AI disclosure visible whenever it is open, and shows nothing at all when the assistant
-  is paused. A bundle check fails the build if any admin API code leaks into it.
-- **Accessible by default.** Keyboard operation, visible focus, semantic labels, live
-  announcements and reduced-motion support. CI runs a WCAG 2.1 AA check over every route.
+## Local development
 
-## Getting started
-
-Requirements: Node.js 20 or later and pnpm 9 (via Corepack).
+Requirements: Node.js 20 or later (CI uses Node 20, the production image Node 22) and pnpm
+9.7.0, pinned in `package.json` and provided by Corepack.
 
 ```bash
-corepack prepare pnpm@9.7.0 --activate
+corepack enable && corepack prepare pnpm@9.7.0 --activate
 pnpm install --frozen-lockfile
+pnpm dev    # dashboard on http://localhost:3000; widget's Vite dev server on http://localhost:5173
 ```
 
-Configuration comes from environment variables. Copy [`.env.example`](.env.example) to
-`.env.local` and read the comments in it. The key setting is the API adapter:
+With no configuration, both apps run against the mock adapters, so no backend is needed. Sign in
+at `/login` with any email address and password. Add `?mock_scenario=<name>` to a URL to put the
+account in another state (for example `fresh`, `paused` or `closed`) and `?mock_reset=1` to start
+over; the dashboard's mock keeps its data in `sessionStorage`, so writes survive a reload.
 
-| Variable                             | Purpose                                                                                    |
-| ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_API_ADAPTER`            | `mock` runs the dashboard against in-memory data with no backend; `http` uses the real API |
-| `NEXT_PUBLIC_API_BASE_URL`           | Public API origin, needed only with the `http` adapter                                     |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe _publishable_ key (never a secret key)                                              |
-| `VITE_WIDGET_API_BASE_URL`           | Data-plane API origin for the widget build                                                 |
+| Variable                        | Read by      | Purpose                                                                              |
+| ------------------------------- | ------------ | ------------------------------------------------------------------------------------ |
+| `NEXT_PUBLIC_API_ADAPTER`       | `apps/web`   | `mock` or `http`; defaults to `mock` in development and `http` in a production build |
+| `NEXT_PUBLIC_API_BASE_URL`      | `apps/web`   | API origin for the `http` adapter, also allowed in the CSP's `connect-src`           |
+| `NEXT_PUBLIC_MOCK_SCENARIO`     | `apps/web`   | The build's default mock scenario (`verified` when unset)                            |
+| `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` | `apps/web`   | Public hCaptcha site key for the contact form; hCaptcha's test key when unset        |
+| `VITE_WIDGET_ADAPTER`           | widget build | `mock` (the default) or `http`                                                       |
+| `VITE_WIDGET_API_BASE_URL`      | widget build | Data-plane API origin compiled into the bundle                                       |
 
-No secret ever belongs in a `NEXT_PUBLIC_*` or `VITE_*` variable, because those are
-compiled into public bundles. Session tokens live in an httpOnly cookie set by the
-backend, and the widget's embed key is read at runtime from the host page's `data-key`
-attribute.
+Next.js reads its variables from `apps/web/.env.local`; the widget build reads its two from the
+shell environment. [`.env.example`](.env.example) is a template for four of them (the API adapter
+and origin, and the two widget variables). Every one of them is compiled into a public bundle, so
+none may hold a secret.
 
-Run everything in development mode:
+To build the production web image locally, pass the adapter build arguments from the repository
+root, as the deploy workflow does:
 
 ```bash
-pnpm dev
+docker build -f apps/web/Dockerfile \
+  --build-arg NEXT_PUBLIC_API_ADAPTER=http \
+  --build-arg NEXT_PUBLIC_API_BASE_URL=<api-origin> \
+  -t luciel-web .
 ```
 
-Or work on one package at a time:
+Without them the image runs the mock adapter: the Dockerfile passes an unset build argument to
+`next build` as an empty string, which bypasses the HTTP default.
+
+## Tests and quality checks
 
 ```bash
-pnpm --filter @luciel/web dev
-pnpm --filter @luciel/widget dev
+pnpm -r typecheck                 # TypeScript, every package
+pnpm -r test                      # Vitest unit tests, every package
+pnpm -r build                     # production builds; the widget build runs the bundle check
+pnpm --filter @luciel/web lint    # ESLint
+pnpm test:scripts                 # Node tests: image CVE gate, Dependabot classifier, workflow rules
+pnpm test:e2e                     # Playwright against the mock adapter (starts the dev server)
 ```
 
-## Testing and quality checks
+Playwright needs a browser once: `pnpm --filter @luciel/web exec playwright install chromium`.
+To run one project: `pnpm --filter @luciel/web exec playwright test --project=walk`.
+
+| Suite                                                  | Tests (CI on `main`, 2026-11-13) | What it covers                                                                                                                          |
+| ------------------------------------------------------ | -------------------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Web app unit (`apps/web/tests/unit/`)                  |                              472 | Pages and components: states, counts, labels, modals and copy rules                                                                     |
+| API client unit (`packages/api-client/src/__tests__/`) |                              142 | Transport, adapters and the mock runtime, plane separation, the sync-job poll                                                           |
+| Widget unit (`apps/widget/src/mount.test.ts`)          |                               41 | Mounting, disclosure, sessions, polling, ending a chat, safe rendering                                                                  |
+| UI kit unit (`packages/ui/src/`)                       |                               20 | `Modal`, `StatusChip`, `Logo` and the markdown renderer                                                                                 |
+| Gate and workflow tests (`scripts/*.test.mjs`)         |                               42 | The CVE gate, the Dependabot classifier, workflow triggers and step order                                                               |
+| Playwright `chromium` project                          |                               30 | WCAG 2.1 AA on all 23 routes, crash-page recovery, route coverage, the journey from overview to billing                                 |
+| Playwright `scenario-*` projects                       |                                7 | One account state each: new, at its conversation cap, pay-as-you-go, paused, deleted within its restore window, closed, expired session |
+| Playwright `walk` project                              |                                1 | The customer-style walk through every dashboard area, with timings in the report                                                        |
+
+`live-smoke` (read-only) runs only with `E2E_LIVE=1`, and `live-walk` only with `E2E_LIVE=1` plus
+`E2E_LIVE_WRITE=1`, against a deployed environment. CI ([`ci.yml`](.github/workflows/ci.yml))
+runs on every pull request, every push to `main` and daily: the audit gate, script tests,
+typecheck, unit tests, lint and every build (the widget's build includes the bundle check), then
+the 38 Playwright tests above, plus a gitleaks secret scan.
+
+## Deployment and operations
+
+Deploys run only when a person dispatches [`deploy.yml`](.github/workflows/deploy.yml) from
+`main`; a push deploys nothing.
 
 ```bash
-pnpm -r typecheck      # all packages
-pnpm -r test           # unit tests (about 675 across the workspace)
-pnpm -r build          # production builds
-pnpm test:e2e          # Playwright journeys and accessibility checks for the web app
-pnpm test:scripts      # tests for the repository scripts (image CVE gate)
-pnpm format            # Prettier check
+gh workflow run deploy.yml --ref main -f environment=dev
 ```
 
-The end-to-end suite runs against the mock adapter. It covers the customer journey,
-one project per account scenario (fresh, at the free cap, pay-as-you-go, paused, grace
-period, closed, expired session) and an accessibility check of every route. A read-only
-smoke test against a deployed environment is opt-in and runs only from a manually
-dispatched workflow.
+1. **Guard.** Refuses any ref other than `main` before the first AWS call.
+2. **Build.** Assumes the environment's deploy role through GitHub OIDC (no stored AWS keys),
+   builds the widget and the web image, and pushes the image under its commit SHA.
+3. **CVE gate.** Waits for ECR's scan-on-push result and runs the image gate on it; an incomplete
+   scan, an unwaived HIGH or CRITICAL finding or an expired waiver stops the deploy.
+4. **Promote and roll.** Promotes only the gated image to `latest`, the tag the web task runs,
+   and redeploys the web service; a missing image fails the job.
+5. **Widget.** Syncs the bundle to S3 under `/v1/`, gives the fixed-URL entrypoints a UTF-8
+   charset and a five-minute must-revalidate cache, and invalidates CloudFront.
+6. **Wait.** The job waits for the ECS roll to finish and fails if it takes over 10 minutes.
 
-CI (`.github/workflows/ci.yml`) runs on every push and pull request:
+There is no separate rollback job: a refused image never becomes `latest`, a roll that does not
+settle fails the run, and the web service's ECS deployment circuit breaker has rollback turned
+on (backend CDK app). A `prod` deploy needs its own `environment=prod` dispatch and leaves dev
+alone. Web containers log to CloudWatch, the service scales on CPU and memory, and the backend's
+load-balancer alarms (5xx responses generated by the load balancer, p95 target response time)
+also cover web-tier requests.
 
-- typecheck, unit tests and a build for every package, plus lint for the web app
-- a dependency audit that blocks high and critical vulnerabilities (waivers expire)
-- the widget bundle check
-- the WCAG 2.1 AA accessibility suite (Playwright and axe-core)
-- a secret scan (gitleaks)
+| Workflow                                | Trigger                                                  | What it does                                                                                                                         |
+| --------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `ci.yml`                                | Pull requests, pushes to `main`, daily at 06:23 UTC      | The checks above; the daily run keeps the audit and the secret scan current                                                          |
+| `image-rebuild.yml`                     | Mondays at 07:45 UTC                                     | Rebuilds the web image from `main`, runs the CVE gate in report mode and posts the result to the month's review issue; never deploys |
+| `dependency-review.yml`                 | The 1st of each month, 02:00 UTC                         | Audit, outdated packages and waivers expiring within 35 days, filed as the month's "Dependency & CVE review" issue                   |
+| Dependabot, `dependabot-auto-merge.yml` | Weekly on Mondays; the merge check runs when CI finishes | npm, GitHub Actions and base-image updates; a green minor or patch update is squash-merged, a major is labelled for a person         |
+| `live-smoke.yml`, `live-walk.yml`       | Manual dispatch only                                     | The live Playwright projects; the walk also requires the input `confirm=walk-account-only`                                           |
 
-## Deployment
+## Project status
 
-Deployments run only by manual dispatch of `.github/workflows/deploy.yml`, with an
-explicit environment. The workflow builds the web image, scans it against a dated CVE
-allowlist (`.security/cve-allowlist.json`, which fails closed when a waiver expires),
-rolls the web service and publishes the widget bundle to the embed CDN. A guard job
-refuses to deploy from any branch other than the release branch, `main`, and nothing
-deploys on push. Dependabot keeps dependencies current; green minor and patch updates merge
-automatically, and major updates wait for review.
+Luciel is deployed to a development environment on AWS and has been verified there end to end:
+on 2026-11-02 the customer walk passed against the deployed dashboard, with the steps that need
+a real card, phone number, mailbox or third-party sign-in skipped and reported. A production
+environment is defined in the workflows and infrastructure code but has not been stood up yet.
+Stripe runs in test mode, so no real payments are taken.
 
-## Working in this codebase
+## Further reading
 
-The [`CLAUDE.md`](CLAUDE.md) files at the root and in each app and package are the
-working guides: invariants, key files, test locations and known pitfalls. Read the one
-for the module you are changing first. Product and business documents are kept outside
-this repository.
+The `CLAUDE.md` files are each module's working guide: invariants, key files, tests, pitfalls.
+
+| Guide                                                                  | Covers                                                                                  |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [`CLAUDE.md`](CLAUDE.md)                                               | Cross-cutting product rules, branch discipline, commands and deploy notes               |
+| [`apps/web/CLAUDE.md`](apps/web/CLAUDE.md)                             | Dashboard key files and invariants, the Playwright suites, known pitfalls               |
+| [`apps/widget/CLAUDE.md`](apps/widget/CLAUDE.md)                       | The widget contract: mounting, sessions, paused states, polling, the bundle gate        |
+| [`packages/api-client/CLAUDE.md`](packages/api-client/CLAUDE.md)       | The API boundary, plane separation, the mock runtime and the asynchronous sync protocol |
+| [`packages/ui/CLAUDE.md`](packages/ui/CLAUDE.md)                       | Shared primitives and their accessibility and async rules                               |
+| [`packages/design-tokens/CLAUDE.md`](packages/design-tokens/CLAUDE.md) | The token system shared by the dashboard and the widget                                 |
+| [`.security/audit-allowlist.md`](.security/audit-allowlist.md)         | The reasoning behind each dependency-audit waiver                                       |
+
+## License
+
+This code is proprietary and shared for portfolio review only. All rights reserved.
