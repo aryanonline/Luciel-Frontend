@@ -1,16 +1,17 @@
 name: deploy
 
-# Frontend CD (mirrors Luciel-Backend §5.8). Build the web image -> push to the
-# luciel-<env>-web ECR repo (owned by the backend CDK app); build the widget
+# Frontend CD (mirrors the backend's deploy pipeline). Build the web image -> push to
+# the luciel-<env>-web ECR repo (owned by the backend CDK app); build the widget
 # bundle -> sync to the widget S3 bucket + invalidate CloudFront; then roll the
 # web ECS service and wait until it is stable. Dispatch only (no push trigger, and the
-# `guard` job refuses any ref but the release branch, `main`); dev via environment=dev, prod
-# behind a WORKFLOW-LEVEL manual gate (explicit workflow_dispatch + environment=prod).
-# prod is NEVER auto-deployed, and a prod dispatch no longer rolls dev first. (GitHub Environment required-reviewer rules
-# need a paid plan on private repos, so the gate is enforced in YAML instead.)
-# NOTE: the authoritative pre-prod §10 verification HARD gate lives in the BACKEND
-# pipeline (ephemeral prod-shaped preprod). This frontend prod deploy is the
-# manual, gated frontend rollout that follows a passed backend release.
+# `guard` job refuses any ref but the release branch, `main`); dev via environment=dev.
+# A prod deploy needs an explicit workflow_dispatch with environment=prod AND the
+# approval of the `prod` GitHub Environment's required reviewer (the deploy-prod job
+# runs in that environment). prod is never auto-deployed, and a prod dispatch does
+# not roll dev.
+# NOTE: the authoritative pre-prod verification gate lives in the BACKEND pipeline
+# (ephemeral prod-shaped preprod). This frontend prod deploy is the manual, gated
+# frontend rollout that follows a passed backend release.
 
 on:
   workflow_dispatch:
@@ -73,7 +74,7 @@ jobs:
       - name: Configure AWS via OIDC (frontend deploy role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
+          role-to-assume: arn:aws:iam::${{ env.ACCOUNT }}:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
@@ -156,16 +157,14 @@ jobs:
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
+          role-to-assume: arn:aws:iam::${{ env.ACCOUNT }}:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
           aws-region: ${{ env.AWS_REGION }}
       - name: Promote web image tag for this env + roll the service
         env:
           TAG: ${{ needs.build.outputs.image_tag }}
         run: |
-          aws ecr login >/dev/null 2>&1 || true
-          REG=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com
-          REPO=luciel-${ENVIRONMENT}-web
           set -euo pipefail
+          REPO=luciel-${ENVIRONMENT}-web
           # Promote the gated commit image to :latest (the tag the web task definition runs).
           # A missing image or a failed promotion fails the deploy: rolling the service
           # without it would restart the PREVIOUS image and still report success.
@@ -186,6 +185,7 @@ jobs:
       - name: Sync widget bundle + invalidate CloudFront
         env: { ENVIRONMENT: dev }
         run: |
+          set -euo pipefail
           ACCT=$(aws sts get-caller-identity --query Account --output text)
           BUCKET=luciel-${ENVIRONMENT}-widget-${ACCT}
           aws s3 sync dist "s3://${BUCKET}/v1/" --delete --cache-control "public,max-age=31536000,immutable"
@@ -208,7 +208,17 @@ jobs:
           done
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
-          [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
+          # No matching distribution is a warning (the bucket is updated; the edge serves
+          # the old entrypoints until their five-minute cache expires). A failed
+          # invalidation fails the step.
+          if [ -z "$DIST" ] || [ "$DIST" = "None" ]; then
+            echo "::warning::no CloudFront distribution matches 'Luciel ${ENVIRONMENT} widget'; nothing invalidated"
+          elif ! aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' >/dev/null; then
+            echo "::error::CloudFront invalidation of /v1/* failed on distribution $DIST"
+            exit 1
+          else
+            echo "invalidated /v1/* on distribution $DIST"
+          fi
       # A deploy must not say success before the roll ends: the update above returns in
       # seconds while ECS takes minutes to reach steady state (deploy 40239826580: 17 s
       # against 2.5 minutes), and a walk dispatched after a "green" deploy ran into two
@@ -225,11 +235,9 @@ jobs:
   deploy-prod:
     needs: [guard, build]
     runs-on: ubuntu-latest
-    # PROD GATE (workflow-level): this job only runs on a deliberate manual
-    # workflow_dispatch with environment=prod. A push to main can NEVER reach prod
-    # (inputs.environment is empty on push, so the condition is false). This is the
-    # §5.8 founder approval gate, enforced in YAML because required-reviewer rules
-    # need a paid GitHub plan on private repos.
+    # PROD GATE: this job runs only on a deliberate workflow_dispatch with
+    # environment=prod (the `if` below), and it runs in the `prod` GitHub Environment,
+    # whose required reviewer must approve it before any step starts.
     environment: prod
     if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
     env: { ENVIRONMENT: prod }
@@ -239,7 +247,7 @@ jobs:
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::729005488042:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
+          role-to-assume: arn:aws:iam::${{ env.ACCOUNT }}:role/luciel-${{ env.ENVIRONMENT }}-frontend-github-deploy
           aws-region: ${{ env.AWS_REGION }}
       - name: Roll web service + sync widget
         env:
@@ -286,7 +294,17 @@ jobs:
           done
           DIST=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?contains(Comment, 'Luciel ${ENVIRONMENT} widget')].Id" --output text)
-          [ -n "$DIST" ] && aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' || true
+          # No matching distribution is a warning (the bucket is updated; the edge serves
+          # the old entrypoints until their five-minute cache expires). A failed
+          # invalidation fails the step.
+          if [ -z "$DIST" ] || [ "$DIST" = "None" ]; then
+            echo "::warning::no CloudFront distribution matches 'Luciel ${ENVIRONMENT} widget'; nothing invalidated"
+          elif ! aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/v1/*' >/dev/null; then
+            echo "::error::CloudFront invalidation of /v1/* failed on distribution $DIST"
+            exit 1
+          else
+            echo "invalidated /v1/* on distribution $DIST"
+          fi
       # A deploy must not say success before the roll ends: the update above returns in
       # seconds while ECS takes minutes to reach steady state (deploy 40239826580: 17 s
       # against 2.5 minutes), and a walk dispatched after a "green" deploy ran into two
