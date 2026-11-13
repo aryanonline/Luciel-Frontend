@@ -31,7 +31,7 @@ export const INSTANCE_ID = '33333333-3333-4333-8333-333333333333';
 export const seedAccount: Account = {
   adminId: ADMIN_ID,
   userId: USER_ID,
-  email: 'sarah@sarahchen.com',
+  email: 'sarah@sarahchen.example',
   state: 'verified',
   createdAt: '2026-01-15T14:00:00Z',
   emailVerified: true,
@@ -42,7 +42,7 @@ export const seedAccount: Account = {
 export const seedLuciel: Luciel = {
   instanceId: INSTANCE_ID,
   name: "Sarah's Front-Desk Assistant",
-  websiteUrl: 'sarahchen.com',
+  websiteUrl: 'sarahchen.example',
   state: 'active',
   embedKeyPublicId: 'vm_live_a8f3c2',
   channels: [
@@ -72,13 +72,13 @@ export const seedLuciel: Luciel = {
     { id: 'bring_your_own_webhook', enabled: false },
   ],
   escalation: {
-    primaryEmail: 'sarah@sarahchen.com',
+    primaryEmail: 'sarah@sarahchen.example',
     preferredChannel: 'email',
   },
   // Steady state: the seeded contact confirmed its link long ago (round 5B #13).
   escalationContactHealth: [
     {
-      address: 'sarah@sarahchen.com',
+      address: 'sarah@sarahchen.example',
       state: 'verified',
       verifiedAt: '2026-07-01T09:00:00Z',
       lastBouncedAt: null,

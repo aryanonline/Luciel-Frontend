@@ -37,10 +37,10 @@ test('overview → configure → embed → conversations → leads → billing',
   await page.goto('/dashboard/embed');
   await expect(page.getByText(/embed\.vantagemind\.ai\/v1\/luciel\.js/)).toBeVisible();
   await expect(page.getByTestId('origins-empty')).toBeVisible();
-  await page.getByRole('button', { name: 'Add https://sarahchen.com' }).click();
-  await expect(page.getByText('https://sarahchen.com can load your chat.')).toBeVisible();
+  await page.getByRole('button', { name: 'Add https://sarahchen.example' }).click();
+  await expect(page.getByText('https://sarahchen.example can load your chat.')).toBeVisible();
   await expect(page.getByRole('list', { name: 'Allowed websites' })).toContainText(
-    'https://sarahchen.com',
+    'https://sarahchen.example',
   );
 
   // Conversations and leads: the lists render with the seeded rows.

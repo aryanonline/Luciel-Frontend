@@ -12,7 +12,7 @@ import type { Connection, MockControl, MockRuntime } from '../index';
  */
 
 const DRIVE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const SITE = 'https://sarahchen.com/services';
+const SITE = 'https://sarahchen.example/services';
 const ALREADY_RUNNING = 'A sync of this source is already running — it will finish on its own.';
 const STORE_KEY = 'luciel.mock.store.v1';
 

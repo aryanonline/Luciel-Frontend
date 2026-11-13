@@ -252,14 +252,14 @@ describe('scenario shapes the walk relies on', () => {
 
   it('a crawl is listed as a connection, and a re-sync never adds a page twice', async () => {
     const api = fakeTab().load();
-    const crawl = await api.knowledge.startCrawl(['https://sarahchen.com/services']);
+    const crawl = await api.knowledge.startCrawl(['https://sarahchen.example/services']);
     const first = await api.knowledge.syncConnection(crawl.connectionId);
     const again = await api.knowledge.syncConnection(crawl.connectionId);
     expect(first.added).toHaveLength(1);
     expect(again.added).toHaveLength(0);
     const row = (await api.connections.list()).find((c) => c.connectionId === crawl.connectionId);
     expect(row).toMatchObject({ provider: 'website_crawl', status: 'connected' });
-    expect(row?.nonSecretConfig?.crawl_urls).toEqual(['https://sarahchen.com/services']);
+    expect(row?.nonSecretConfig?.crawl_urls).toEqual(['https://sarahchen.example/services']);
   });
 
   it('the walk’s writes reach the audit log, newest first', async () => {

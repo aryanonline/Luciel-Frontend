@@ -103,7 +103,7 @@ describe('mock: the confirmation states', () => {
   it('with no SMS number connected, a saved contact names the honest refusal', async () => {
     const api = createLucielClient({ adapter: 'mock' });
     const luciel = await api.luciel.updateEscalation({
-      primaryEmail: 'sarah@sarahchen.com',
+      primaryEmail: 'sarah@sarahchen.example',
       primarySms: '+16045550199',
       preferredChannel: 'email',
     });
@@ -116,7 +116,7 @@ describe('mock: the confirmation states', () => {
     });
     // The verified email keeps its state through the save.
     expect(
-      luciel.escalationContactHealth.find((x) => x.address === 'sarah@sarahchen.com')?.state,
+      luciel.escalationContactHealth.find((x) => x.address === 'sarah@sarahchen.example')?.state,
     ).toBe('verified');
   });
 });
