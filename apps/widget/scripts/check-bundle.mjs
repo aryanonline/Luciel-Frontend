@@ -9,7 +9,8 @@
  *
  * dist is resolved from this file, not the working directory, so the check reads the
  * same bundle whether it runs inside apps/widget (the build script) or from the repo
- * root (CI). It fails closed: a missing or renamed bundle is a failure, never an OK.
+ * root (CI). It fails closed: the build emits both bundles (vite.config.ts) and the
+ * deploy copies both by name, so a missing or renamed bundle is a failure, never an OK.
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -31,10 +32,14 @@ const FORBIDDEN = [
 
 let failed = false;
 const checked = [];
+const missing = [];
 
 for (const file of candidates) {
   const p = resolve(distDir, file);
-  if (!existsSync(p)) continue;
+  if (!existsSync(p)) {
+    missing.push(file);
+    continue;
+  }
   checked.push(file);
   const content = readFileSync(p, 'utf8');
   for (const symbol of FORBIDDEN) {
@@ -45,9 +50,9 @@ for (const file of candidates) {
   }
 }
 
-if (checked.length === 0) {
+if (missing.length > 0) {
   console.error(
-    `[check-bundle] No widget bundle found in ${distDir} (expected ${candidates.join(' or ')}). ` +
+    `[check-bundle] Missing ${missing.join(' and ')} in ${distDir} (expected ${candidates.join(' and ')}). ` +
       'Build the widget first (pnpm --filter @luciel/widget build).',
   );
   process.exit(1);
