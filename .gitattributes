@@ -1,0 +1,15 @@
+# Text files are stored and checked out with LF, so Prettier (endOfLine: lf) and
+# the tests see the same bytes on every OS, Windows included.
+* text=auto eol=lf
+
+# Binary assets: never normalise or diff as text.
+*.woff2 binary
+*.woff binary
+*.ttf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
