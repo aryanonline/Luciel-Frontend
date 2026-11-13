@@ -14,7 +14,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@hookform/resolvers": "^3.9.0",
+    "@hookform/resolvers": "^7.0.3",
     "@luciel/api-client": "workspace:*",
     "@luciel/design-tokens": "workspace:*",
     "@luciel/ui": "workspace:*",
