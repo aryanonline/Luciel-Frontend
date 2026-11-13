@@ -138,7 +138,13 @@ export function WidgetPreview({
           {boot?.aiAssistantLabel ?? 'AI assistant'}
         </span>
       </div>
-      <div className="max-h-72 space-y-vm-3 overflow-y-auto p-vm-4" aria-label="Conversation">
+      {/* A named region, not role="log": replies are already announced through the
+          polite status region below, and a log would announce them twice. */}
+      <div
+        className="max-h-72 space-y-vm-3 overflow-y-auto p-vm-4"
+        role="region"
+        aria-label="Conversation"
+      >
         {messages.map((m) => (
           <div
             key={m.messageId}

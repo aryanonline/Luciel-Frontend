@@ -94,3 +94,14 @@ describe('#3: the preview threads ONE session across messages', () => {
     });
   });
 });
+
+// axe aria-prohibited-attr: an aria-label on a role-less div is not allowed. The
+// transcript is a named region (not a log: replies already go to the status region).
+describe('the conversation container', () => {
+  it('is a region named "Conversation" that holds the transcript', async () => {
+    render(<WidgetPreview embedKey="vm_live_test123456" />);
+    const region = await screen.findByRole('region', { name: 'Conversation' });
+    expect(region).toHaveTextContent("Hi! I'm an AI assistant. How can I help?");
+    expect(screen.queryByRole('log')).not.toBeInTheDocument();
+  });
+});

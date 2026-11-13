@@ -32,13 +32,18 @@ interface Route {
   heading: string | RegExp;
   /** The account state the page exists in (default: the seeded, verified tenant). */
   scenario?: ScenarioName;
+  /**
+   * A named region that renders after the heading (it waits on data). The gate waits
+   * for it too, so axe measures it on every run instead of only when it won the race.
+   */
+  region?: string;
 }
 
 const ROUTES: Route[] = [
   // Marketing and legal.
   { route: '/', heading: 'Your business, answered.' },
   { route: '/contact', heading: 'We’d love to hear from you' },
-  { route: '/embed-preview', heading: 'See a Luciel in action' },
+  { route: '/embed-preview', heading: 'See a Luciel in action', region: 'Conversation' },
   { route: '/legal/terms', heading: 'Terms of Service' },
   { route: '/legal/privacy', heading: 'Privacy Policy' },
   { route: '/legal/dpa', heading: 'Data Processing Addendum' },
@@ -85,6 +90,11 @@ for (const r of ROUTES) {
       await expect(page.getByRole('heading', { name }).first()).toBeVisible({
         timeout: 20_000,
       });
+      if (r.region) {
+        await expect(page.getByRole('region', { name: r.region })).toBeVisible({
+          timeout: 20_000,
+        });
+      }
       // Settled: no loading state left for axe to measure instead of the page.
       await expect(page.getByText(/^Loading\b/)).toHaveCount(0, { timeout: 20_000 });
       const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
