@@ -5,7 +5,7 @@
   "description": "VantageMind (Luciel) customer-facing frontend — three artifacts (marketing, admin dashboard, embeddable widget) sharing a design system, never an auth context.",
   "packageManager": "pnpm@9.7.0",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=22",
     "pnpm": ">=9.0.0"
   },
   "scripts": {
