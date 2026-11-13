@@ -156,9 +156,8 @@ over; the dashboard's mock keeps its data in `sessionStorage`, so writes survive
 | `VITE_WIDGET_API_BASE_URL`      | widget build | Data-plane API origin compiled into the bundle                                       |
 
 Next.js reads its variables from `apps/web/.env.local`; the widget build reads its two from the
-shell environment. [`.env.example`](.env.example) is a template for four of them (the API adapter
-and origin, and the two widget variables). Every one of them is compiled into a public bundle, so
-none may hold a secret.
+shell environment. [`.env.example`](.env.example) is a template for all six (the mock scenario
+commented out). Every one of them is compiled into a public bundle, so none may hold a secret.
 
 To build the production web image locally, pass the adapter build arguments from the repository
 root, as the deploy workflow does:
