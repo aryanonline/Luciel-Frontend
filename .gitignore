@@ -30,6 +30,9 @@ walk-results.json
 npm-debug.log*
 pnpm-debug.log*
 
+# Local Claude Code settings
+.claude/
+
 # Turbo / caches
 .turbo/
 .cache/

@@ -265,4 +265,5 @@ cite design documents (`Arch §`, `Space Instructions §`), audit and work-packa
 
 ## License
 
-This code is proprietary and shared for portfolio review only. All rights reserved.
+This code is proprietary and shared for portfolio review only. All rights reserved. See
+[`LICENSE`](LICENSE); to report a vulnerability, see [`SECURITY.md`](SECURITY.md).
