@@ -1,0 +1,12 @@
+{
+  // The tests and the two runner configs, which tsconfig.json leaves out so that
+  // `next build` never type-checks them. `pnpm --filter @luciel/web typecheck:tests`;
+  // CI runs it in the typecheck step. Vitest's globals and the jest-dom matchers are
+  // global types; Playwright's arrive through the specs' own imports.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom/vitest"]
+  },
+  "include": ["next-env.d.ts", "tests/**/*", "playwright.config.ts", "vitest.config.ts"],
+  "exclude": ["node_modules"]
+}
