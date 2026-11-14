@@ -39,8 +39,12 @@ jobs:
       - name: Repo-script tests (image CVE gate)
         run: pnpm test:scripts
 
-      - name: Typecheck (all packages)
-        run: pnpm -r typecheck
+      # tsconfig.json leaves the web tests out so `next build` never compiles them;
+      # typecheck:tests checks them (and the Playwright and Vitest configs) instead.
+      - name: Typecheck (all packages, and the web tests)
+        run: |
+          pnpm -r typecheck
+          pnpm --filter @luciel/web typecheck:tests
 
       - name: Unit tests (all packages)
         run: pnpm -r test
