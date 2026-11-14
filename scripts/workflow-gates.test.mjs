@@ -162,14 +162,20 @@ for (const name of ['deploy-dev', 'deploy-prod']) {
     assert.ok(roll > promote, 'promotes before the roll');
     const before = text.slice(0, roll);
     assert.match(before, /set -euo pipefail/);
-    assert.doesNotMatch(before.slice(before.lastIndexOf('put-image')), /\|\| true/, 'a failed promotion must fail the job');
+    assert.doesNotMatch(
+      before.slice(before.lastIndexOf('put-image')),
+      /\|\| true/,
+      'a failed promotion must fail the job',
+    );
   });
 }
 
 // 2026-11-14: the AWS account id was a literal in both AWS workflows of this public
 // repository. It is the repository variable AWS_ACCOUNT_ID now, and a run without a
 // 12-digit value stops with a readable error before the first AWS call, instead of
-// failing inside the OIDC step on a role ARN with no account in it.
+// failing inside the OIDC step on a role ARN with no account in it. The id is read
+// only by that check step's env and the role ARNs: GitHub does not mask a variable,
+// and a workflow- or job-level env value is repeated in every step's log header.
 const AWS_WORKFLOWS = [
   ['.github/workflows/deploy.yml', 'guard'],
   ['.github/workflows/image-rebuild.yml', 'rebuild'],
@@ -198,7 +204,13 @@ function runScript(step) {
 for (const [path] of AWS_WORKFLOWS) {
   test(`${path} takes the AWS account id from vars.AWS_ACCOUNT_ID, never a literal`, () => {
     const wf = read(path);
-    assert.match(wf, /^ {2}ACCOUNT: \$\{\{ vars\.AWS_ACCOUNT_ID \}\}$/m);
+    assert.doesNotMatch(wf, /^( {2}| {6})ACCOUNT:/m, 'no workflow- or job-level ACCOUNT env');
+    assert.doesNotMatch(wf, /env\.ACCOUNT/, 'the role ARNs read vars.AWS_ACCOUNT_ID directly');
+    const roles = [...wf.matchAll(/role-to-assume: (.*)$/gm)].map((m) => m[1]);
+    assert.ok(roles.length > 0, 'no role-to-assume');
+    for (const role of roles) {
+      assert.match(role, /^arn:aws:iam::\$\{\{ vars\.AWS_ACCOUNT_ID \}\}:role\//);
+    }
     assert.doesNotMatch(wf, /ACCOUNT: '?\d/);
     assert.doesNotMatch(
       wf,
@@ -244,6 +256,11 @@ for (const [path, jobName] of AWS_WORKFLOWS) {
       assert.ok(step, 'no account check step');
       const script = runScript(step);
       assert.doesNotMatch(script, /\$\{\{/, 'the check must run as written, with no expressions');
+      assert.match(
+        step,
+        /^ {8}env:\n {10}ACCOUNT: \$\{\{ vars\.AWS_ACCOUNT_ID \}\}$/m,
+        'the check step reads the variable through its own env',
+      );
       const run = (ACCOUNT) =>
         spawnSync('bash', ['-c', `set -eo pipefail\n${script}`], {
           encoding: 'utf8',

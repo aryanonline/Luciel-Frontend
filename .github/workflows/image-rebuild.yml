@@ -31,7 +31,6 @@ env:
   # The AWS account id is the repository variable AWS_ACCOUNT_ID (Settings > Secrets and
   # variables > Actions > Variables), never a literal in this public file; the first step
   # refuses a run without it.
-  ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
   RELEASE_BRANCH: ${{ vars.RELEASE_BRANCH || 'main' }}
 
 jobs:
@@ -39,9 +38,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      # The role ARN below is built from ACCOUNT, so a missing or malformed variable
+      # The role ARN below is built from AWS_ACCOUNT_ID, so a missing or malformed variable
       # stops the run here with a readable error, not inside the OIDC step later.
       - name: Refuse a run without the AWS account id
+        # Read here and in the role ARNs only: GitHub does not mask a variable, and a
+        # workflow- or job-level env value is repeated in every step's log header.
+        env:
+          ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
         run: |
           if [ -z "${ACCOUNT:-}" ]; then
             echo "::error::the repository variable AWS_ACCOUNT_ID is not set (Settings > Secrets and variables > Actions > Variables); the AWS role ARNs are built from it."
@@ -60,7 +63,7 @@ jobs:
       - name: Configure AWS via OIDC (dev frontend deploy role — dev ECR is the scratch registry)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ env.ACCOUNT }}:role/luciel-dev-frontend-github-deploy
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/luciel-dev-frontend-github-deploy
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
