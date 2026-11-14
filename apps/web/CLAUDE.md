@@ -107,10 +107,16 @@ bundle.
 
 ```bash
 pnpm --filter @luciel/web typecheck
+pnpm --filter @luciel/web lint
 pnpm --filter @luciel/web test
 pnpm --filter @luciel/web build
 pnpm --filter @luciel/web test:e2e
 ```
+
+Lint is the ESLint 9 CLI over the whole app (`eslint .`, migrated from the deprecated
+`next lint` on 2026-11-14). `eslint.config.mjs` is a flat config that loads eslint-config-next
+15's `next/core-web-vitals` through FlatCompat and adds the adapter-import ban; `next build`
+lints `src/` with the same config. eslint-config-next 15.5 does not support ESLint 10.
 
 Run the whole workspace checks before handoff. Add a focused unit test alongside
 any fix to a dashboard state, connection label, count, modal, or evidence rule.

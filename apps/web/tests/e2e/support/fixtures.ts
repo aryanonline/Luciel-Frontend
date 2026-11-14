@@ -34,7 +34,9 @@ export interface MockOptions {
 export const test = base.extend<MockOptions>({
   mockScenario: [null, { option: true }],
   plantSession: [true, { option: true }],
-  context: async ({ context, mockScenario, plantSession, baseURL }, use) => {
+  // `provide` is Playwright's fixture callback, which its docs call `use`: under that name
+  // ESLint's react-hooks/rules-of-hooks reads the call as React's use() hook.
+  context: async ({ context, mockScenario, plantSession, baseURL }, provide) => {
     const host = new URL(baseURL ?? 'http://localhost:3000').hostname;
     const cookies = [];
     if (mockScenario) {
@@ -59,7 +61,7 @@ export const test = base.extend<MockOptions>({
       });
     }
     if (cookies.length) await context.addCookies(cookies);
-    await use(context);
+    await provide(context);
   },
 });
 
