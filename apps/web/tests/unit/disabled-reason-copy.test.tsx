@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { ConnectionControl } from '@/components/config/connection-control';
-import type { ProviderGroup } from '@luciel/api-client';
+import type { ConnectionProviders } from '@luciel/api-client';
 
 /**
  * #5a (live-caught on the 2026-08-23 dev walkthrough): the server writes the
@@ -12,7 +12,7 @@ import type { ProviderGroup } from '@luciel/api-client';
  * reasons are de-snaked, never shown as wire enums.
  */
 
-const listProviders = vi.fn<() => Promise<ProviderGroup[]>>();
+const listProviders = vi.fn<() => Promise<ConnectionProviders[]>>();
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -28,7 +28,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
-const crmProviders: ProviderGroup[] = [
+const crmProviders: ConnectionProviders[] = [
   {
     connectionType: 'crm',
     providers: [
@@ -38,6 +38,8 @@ const crmProviders: ProviderGroup[] = [
         authKind: 'oauth',
         helpText: 'Keep HubSpot contacts current.',
         configured: true,
+        credentialFields: [],
+        scopeKind: null,
       },
     ],
   },

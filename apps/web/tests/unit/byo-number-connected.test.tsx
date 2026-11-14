@@ -37,7 +37,9 @@ const connected: Luciel = {
   ],
   tools: [],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
+  escalationContactHealth: [],
   personality: { preset: 'warm_concierge' },
+  leadRetentionDays: null,
 };
 
 // Drive the mock through the real two-step BYO flow so the connection row holds

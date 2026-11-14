@@ -67,7 +67,6 @@ const conversations: ConversationSummary[] = [
 const escalation: EscalationEvent = {
   escalationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   sessionId: ESCALATED_ID,
-  leadId: null,
   signal: 'cannot_answer',
   gate: 'outcome',
   firedAt: '2026-08-18T02:29:00Z',

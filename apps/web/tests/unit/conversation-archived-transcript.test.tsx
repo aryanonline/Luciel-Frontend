@@ -41,7 +41,7 @@ const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 const conversation: ConversationSummary = {
   sessionId: SESSION_ID,
   channel: 'widget',
-  mode: 'autopilot',
+  mode: 'ai',
   startedAt: '2026-05-01T10:00:00Z',
   lastMessageAt: '2026-05-01T10:05:00Z',
 };

@@ -55,7 +55,7 @@ const MESSAGE_ID = '22222222-2222-4222-8222-222222222222';
 const conversation: ConversationSummary = {
   sessionId: SESSION_ID,
   channel: 'widget',
-  mode: 'autopilot',
+  mode: 'ai',
   startedAt: '2026-08-01T10:00:00Z',
   lastMessageAt: '2026-08-01T10:05:00Z',
 };

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { ConnectionControl } from '@/components/config/connection-control';
-import type { ProviderGroup } from '@luciel/api-client';
+import type { ConnectionProviders } from '@luciel/api-client';
 
 /**
  * Owner ruling (scheduling UX): "connect your calendar" should be enough.
@@ -16,7 +16,7 @@ import type { ProviderGroup } from '@luciel/api-client';
  * starts its sign-in on the click.
  */
 
-const listProviders = vi.fn<() => Promise<ProviderGroup[]>>();
+const listProviders = vi.fn<() => Promise<ConnectionProviders[]>>();
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -32,7 +32,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
-const calendarGroup = (calendlyConfigured: boolean): ProviderGroup[] => [
+const calendarGroup = (calendlyConfigured: boolean): ConnectionProviders[] => [
   {
     connectionType: 'calendar',
     providers: [
@@ -42,6 +42,8 @@ const calendarGroup = (calendlyConfigured: boolean): ProviderGroup[] => [
         authKind: 'oauth',
         helpText: 'Offer and book real times from your Google Calendar.',
         configured: true,
+        credentialFields: [],
+        scopeKind: null,
       },
       {
         provider: 'calendly',
@@ -49,6 +51,8 @@ const calendarGroup = (calendlyConfigured: boolean): ProviderGroup[] => [
         authKind: 'oauth',
         helpText: 'Offer and book times from your Calendly availability.',
         configured: calendlyConfigured,
+        credentialFields: [],
+        scopeKind: null,
       },
     ],
   },

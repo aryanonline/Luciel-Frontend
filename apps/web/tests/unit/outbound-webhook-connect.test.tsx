@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { ConnectionControl } from '@/components/config/connection-control';
-import type { ProviderGroup } from '@luciel/api-client';
+import type { ConnectionProviders } from '@luciel/api-client';
 
 /**
  * BYO outbound webhook end-to-end (audit round 3, Phase 5).
@@ -15,7 +15,7 @@ import type { ProviderGroup } from '@luciel/api-client';
  * anywhere in the flow.
  */
 
-const listProviders = vi.fn<() => Promise<ProviderGroup[]>>();
+const listProviders = vi.fn<() => Promise<ConnectionProviders[]>>();
 const start = vi.fn();
 const submitCredentials = vi.fn();
 
@@ -51,7 +51,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
-const GROUP: ProviderGroup[] = [
+const GROUP: ConnectionProviders[] = [
   {
     connectionType: 'outbound_webhook',
     providers: [
@@ -65,6 +65,7 @@ const GROUP: ProviderGroup[] = [
           { name: 'url', label: 'Webhook URL', secret: false, required: true },
           { name: 'auth_header', label: 'Authorization header', secret: true, required: false },
         ],
+        scopeKind: null,
       },
     ],
   },

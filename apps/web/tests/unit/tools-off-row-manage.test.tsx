@@ -36,7 +36,9 @@ const allOff: Luciel = {
     { id: 'schedule_callback', enabled: false },
   ],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
+  escalationContactHealth: [],
   personality: { preset: 'warm_concierge' },
+  leadRetentionDays: null,
 };
 
 const rowOf = (toggleName: RegExp): HTMLElement => {

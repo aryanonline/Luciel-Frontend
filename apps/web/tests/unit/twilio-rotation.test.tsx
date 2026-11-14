@@ -104,7 +104,9 @@ const lucielWith = (connectionStatus: ConnectionStatus): Luciel => ({
   ],
   tools: [],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
+  escalationContactHealth: [],
   personality: { preset: 'warm_concierge' },
+  leadRetentionDays: null,
 });
 
 beforeEach(() => {

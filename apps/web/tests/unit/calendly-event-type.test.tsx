@@ -96,7 +96,9 @@ const luciel: Luciel = {
     { id: 'book_appointment', enabled: true, connectionStatus: 'connected' },
   ],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
+  escalationContactHealth: [],
   personality: { preset: 'warm_concierge' },
+  leadRetentionDays: null,
 };
 
 const calendlyRow = (config: Record<string, unknown>): Connection => ({

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { ConnectionControl } from '@/components/config/connection-control';
-import type { Connection, ProviderGroup } from '@luciel/api-client';
+import type { Connection, ConnectionProviders } from '@luciel/api-client';
 
 /**
  * #4 (live-caught on the 2026-08-23 dev walkthrough): Configure's "Switch
@@ -22,7 +22,7 @@ vi.mock('@/lib/oauth-connect', async (importOriginal) => {
   return { ...actual, authorizeOrExplain: (start: unknown) => authorizeOrExplain(start) };
 });
 
-const listProviders = vi.fn<() => Promise<ProviderGroup[]>>();
+const listProviders = vi.fn<() => Promise<ConnectionProviders[]>>();
 const swap = vi.fn();
 const switchAccount = vi.fn();
 
@@ -49,9 +49,10 @@ const connectedWebhook: Connection = {
   connectionType: 'crm',
   provider: 'custom_webhook',
   status: 'connected',
+  createdAt: '2026-08-01T10:00:00Z',
 };
 
-const crmProviders: ProviderGroup[] = [
+const crmProviders: ConnectionProviders[] = [
   {
     connectionType: 'crm',
     providers: [
@@ -62,6 +63,7 @@ const crmProviders: ProviderGroup[] = [
         helpText: 'Send each captured lead to your own endpoint.',
         configured: true,
         credentialFields: [{ name: 'url', label: 'Webhook URL', secret: false, required: true }],
+        scopeKind: null,
       },
       {
         provider: 'salesforce',
@@ -69,6 +71,8 @@ const crmProviders: ProviderGroup[] = [
         authKind: 'oauth',
         helpText: 'Keep Salesforce Leads current as facts surface.',
         configured: true,
+        credentialFields: [],
+        scopeKind: null,
       },
     ],
   },

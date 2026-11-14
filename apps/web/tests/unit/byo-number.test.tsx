@@ -46,7 +46,9 @@ const base: Luciel = {
     { id: 'bring_your_own_webhook', enabled: false },
   ],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
+  escalationContactHealth: [],
   personality: { preset: 'warm_concierge' },
+  leadRetentionDays: null,
 };
 
 const withSmsEnabledNoNumber: Luciel = {

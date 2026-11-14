@@ -16,6 +16,7 @@ import { KnowledgeScopeSections } from '@/components/config/knowledge-scope';
 import { SYNC_HALTED_NOTICE, syncUntilAnswered } from '@/lib/sync-action';
 import type {
   Connection,
+  DisconnectResult,
   KnowledgeSource,
   KnowledgeSyncJob,
   KnowledgeSyncOptions,
@@ -453,15 +454,19 @@ describe('a sync stopped by removing its source', () => {
   const removedMidSync = () =>
     new LucielApiError({ code: 'conflict', reason: 'sync_removed', message: REMOVED });
   const NO_LONGER = /is no longer crawled/;
+  /** The disconnect's answer: the crawl, no longer connected, and nothing else switched off. */
+  const disconnected = (): DisconnectResult => ({
+    connection: { ...crawl(null), status: 'not_connected' },
+    secretDeleted: true,
+    disabledTools: [],
+    disabledChannels: [],
+  });
 
   /** Re-sync answers 202 and the row serves "Crawling…", with the disconnect stubbed. */
   async function syncingRow() {
     const list = vi.spyOn(api.connections, 'list').mockResolvedValueOnce([crawl(null)]);
     vi.spyOn(api.knowledge, 'listSources').mockResolvedValue([page]);
-    const disconnect = vi.spyOn(api.connections, 'disconnect').mockResolvedValue({
-      ...crawl(null),
-      status: 'not_connected',
-    });
+    const disconnect = vi.spyOn(api.connections, 'disconnect').mockResolvedValue(disconnected());
     const running = runningSync();
     renderWithQuery(<KnowledgeConnections />);
     const row = await rowOf('https://vantagemind.ai/');
@@ -495,13 +500,13 @@ describe('a sync stopped by removing its source', () => {
 
   it('the poll reads the removal before the disconnect answers: the notice still stands', async () => {
     const { fail, list, disconnect, row } = await syncingRow();
-    let answer!: (c: Connection) => void;
-    disconnect.mockImplementation(() => new Promise<Connection>((res) => (answer = res)));
+    let answer!: (r: DisconnectResult) => void;
+    disconnect.mockImplementation(() => new Promise<DisconnectResult>((res) => (answer = res)));
     list.mockResolvedValue([{ ...crawl(null), status: 'not_connected' }]);
     await removeCrawl(row);
     await act(async () => fail(removedMidSync()));
     expect(screen.queryByText(REMOVED)).not.toBeInTheDocument();
-    await act(async () => answer({ ...crawl(null), status: 'not_connected' }));
+    await act(async () => answer(disconnected()));
     expect(await screen.findByText(NO_LONGER)).toBeInTheDocument();
   });
 

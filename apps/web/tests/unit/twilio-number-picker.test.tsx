@@ -99,7 +99,9 @@ const luciel: Luciel = {
   ],
   tools: [],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
+  escalationContactHealth: [],
   personality: { preset: 'warm_concierge' },
+  leadRetentionDays: null,
 };
 
 beforeEach(() => {
@@ -129,7 +131,7 @@ describe('the designate picker lists the account numbers', () => {
   it('picking a number designates it through the same write as manual entry', async () => {
     renderWithQuery(<ChannelsPillar luciel={luciel} />);
 
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Use this number' }))[0]);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Use this number' }))[0]!);
     await waitFor(() => expect(startConnection).toHaveBeenCalled());
     expect(startConnection).toHaveBeenCalledWith('sms_sender', 'twilio', {
       phoneNumber: '+15005550006',

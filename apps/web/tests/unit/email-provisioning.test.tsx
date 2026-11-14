@@ -63,7 +63,9 @@ const luciel: Luciel = {
   ],
   tools: [{ id: 'send_email', enabled: false }],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
+  escalationContactHealth: [],
   personality: { preset: 'warm_concierge' },
+  leadRetentionDays: null,
 };
 
 describe('P0-2: work-email provisioning sits inside the Channels pillar', () => {

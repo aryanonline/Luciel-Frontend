@@ -27,7 +27,9 @@ const withEmailOn: Luciel = {
   ],
   tools: [],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
+  escalationContactHealth: [],
   personality: { preset: 'warm_concierge' },
+  leadRetentionDays: null,
 };
 
 describe('turning a channel off states the mid-conversation carve-out', () => {

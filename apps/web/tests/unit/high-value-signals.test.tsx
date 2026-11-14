@@ -35,7 +35,9 @@ const luciel: Luciel = {
   channels: [{ id: 'widget', enabled: true }],
   tools: [],
   escalation: { primaryEmail: 'owner@example.com', preferredChannel: 'email' },
+  escalationContactHealth: [],
   personality: { preset: 'warm_concierge', highValueSignals: ['wedding season'] },
+  leadRetentionDays: null,
 };
 
 beforeEach(() => {

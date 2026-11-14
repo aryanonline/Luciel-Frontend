@@ -163,6 +163,7 @@ const row = (over: Partial<Connection>): Connection => ({
   statusDetail: null,
   nonSecretConfig: {},
   lastHealthCheckAt: null,
+  createdAt: '2026-08-01T10:00:00Z',
   ...over,
 });
 
@@ -216,7 +217,7 @@ describe('WP-D: acknowledgements can be withdrawn', () => {
     await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(3));
     expect(list).toHaveTextContent('Voice recording and AI-disclosure consent');
     expect(list).toHaveTextContent('Carrier registration attested as approved');
-    fireEvent.click(within(list).getAllByRole('button', { name: 'Withdraw' })[0]);
+    fireEvent.click(within(list).getAllByRole('button', { name: 'Withdraw' })[0]!);
     fireEvent.click(await screen.findByRole('button', { name: 'Yes, withdraw' }));
     await waitFor(() => expect(calls.withdrawVoice).toBe(1));
     expect(await screen.findByText(/Withdrawn\. Phone calls are switched off/)).toBeVisible();
@@ -245,6 +246,7 @@ describe('WP-D: connected knowledge sources', () => {
           helpText: '',
           configured: true,
           credentialFields: [],
+          scopeKind: 'drive_folders',
         },
       ]),
     ];
@@ -289,7 +291,7 @@ describe('WP-D: escalation contacts have their own Remove', () => {
     const list = await screen.findByRole('list', { name: 'Saved escalation contacts' });
     const items = within(list).getAllByRole('listitem');
     expect(items).toHaveLength(2);
-    fireEvent.click(within(items[1]).getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(items[1]!).getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(calls.updateEscalation).toHaveLength(1));
     expect(calls.updateEscalation[0]).toEqual({
       primaryEmail: 'owner@acme.example',
@@ -311,6 +313,7 @@ describe('WP-D: the mailbox can be switched or disconnected', () => {
           helpText: '',
           configured: true,
           credentialFields: [],
+          scopeKind: null,
         },
       ]),
     ];
@@ -352,9 +355,10 @@ describe('WP-D: a connection can be edited in place', () => {
           helpText: '',
           configured: true,
           credentialFields: [
-            { name: 'url', label: 'Endpoint URL', secret: false },
-            { name: 'auth_header', label: 'Authorization header', secret: true },
+            { name: 'url', label: 'Endpoint URL', secret: false, required: false },
+            { name: 'auth_header', label: 'Authorization header', secret: true, required: false },
           ],
+          scopeKind: null,
         },
       ]),
     ];
@@ -395,6 +399,7 @@ describe('WP-D: a connection can be edited in place', () => {
           helpText: '',
           configured: true,
           credentialFields: [],
+          scopeKind: null,
         },
       ]),
     ];

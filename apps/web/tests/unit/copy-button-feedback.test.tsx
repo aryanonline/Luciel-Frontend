@@ -40,8 +40,8 @@ describe('Harmony wave 2, item 5: Copy button gives an unmistakable success sign
     // Clipboard is not configurable by default in some jsdom versions; guard
     // the delete so a re-run never throws on a non-configurable descriptor.
     try {
-      // @ts-expect-error - test cleanup, deliberately reaching into navigator
-      delete (navigator as any).clipboard;
+      // Test cleanup, deliberately reaching into navigator for the stub a test assigned.
+      delete (navigator as { clipboard?: Clipboard }).clipboard;
     } catch {
       /* noop */
     }

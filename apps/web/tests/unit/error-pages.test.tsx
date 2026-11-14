@@ -3,7 +3,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ErrorPage from '@/app/error';
 import GlobalError from '@/app/global-error';
-import { ErrorBoundaryHandler } from 'next/dist/client/components/error-boundary';
+import {
+  ErrorBoundaryHandler,
+  type ErrorComponent,
+} from 'next/dist/client/components/error-boundary';
 import { CRASH_SCREEN_EVENT, isChunkLoadError } from '@/lib/chunk-reload';
 
 // next/font is a compiler transform; there is no compiler under vitest.
@@ -64,10 +67,14 @@ describe('the crash pages', () => {
   });
 
   describe('Reload on an ordinary error, under the real boundary', () => {
+    // Next types errorComponent's `reset` as optional, but ErrorBoundaryHandler always
+    // passes its own, and app/error.tsx requires it. The same function, typed as Next's.
+    const errorPage = ErrorPage as ErrorComponent;
+
     function inBoundary(child: () => React.ReactNode) {
       const Child = () => <>{child()}</>;
       return render(
-        <ErrorBoundaryHandler pathname="/dashboard" errorComponent={ErrorPage}>
+        <ErrorBoundaryHandler pathname="/dashboard" errorComponent={errorPage}>
           <Child />
         </ErrorBoundaryHandler>,
       );
@@ -106,7 +113,7 @@ describe('the crash pages', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
       now.mockReturnValue(1_000_000 + 11_000);
       view.rerender(
-        <ErrorBoundaryHandler pathname="/dashboard" errorComponent={ErrorPage}>
+        <ErrorBoundaryHandler pathname="/dashboard" errorComponent={errorPage}>
           <Thrower />
         </ErrorBoundaryHandler>,
       );
