@@ -86,12 +86,23 @@ beforeEach(() => {
   switchAccount.mockReset();
 });
 
+/**
+ * The button names the provider choice once the served registry has landed. That wait
+ * is a cheap text query, and the button is then used by role: polled from the first
+ * render, the role query paid its one-time setup inside the 1 s wait, and on a loaded
+ * machine the wait could run out before the registry's answer had rendered.
+ */
+async function openSwitch() {
+  await screen.findByText('Switch account or provider');
+  fireEvent.click(screen.getByRole('button', { name: /Switch account or provider/i }));
+}
+
 describe('#4: "Switch account or provider" stages a swap, never disconnect-first', () => {
   it('states the current connection stays live before any provider is chosen', async () => {
     renderWithQuery(
       <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
     );
-    fireEvent.click(await screen.findByRole('button', { name: /Switch account or provider/i }));
+    await openSwitch();
     expect(
       await screen.findByText(
         /Your current connection stays live until the new one is verified — backing out of the sign-in changes nothing\./i,
@@ -106,7 +117,7 @@ describe('#4: "Switch account or provider" stages a swap, never disconnect-first
     renderWithQuery(
       <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
     );
-    fireEvent.click(await screen.findByRole('button', { name: /Switch account or provider/i }));
+    await openSwitch();
     fireEvent.click(await screen.findByRole('button', { name: /Switch to Salesforce/i }));
 
     await waitFor(() => expect(swap).toHaveBeenCalledTimes(1));
@@ -129,7 +140,7 @@ describe('#4: "Switch account or provider" stages a swap, never disconnect-first
     renderWithQuery(
       <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
     );
-    fireEvent.click(await screen.findByRole('button', { name: /Switch account or provider/i }));
+    await openSwitch();
     fireEvent.click(await screen.findByRole('button', { name: /Keep the current one/i }));
     expect(
       screen.queryByText(/Your current connection stays live until the new one is verified/i),

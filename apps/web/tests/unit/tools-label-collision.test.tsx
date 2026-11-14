@@ -30,14 +30,20 @@ describe('Tools pillar: no two entries share a name', () => {
 
   it('names the own-endpoint tool as its own thing, leaving one Custom webhook', async () => {
     renderWithQuery(<ConfigurePage />);
+    // Each served read is awaited with a cheap text query; the role queries then run once,
+    // on the settled rows. Re-run on every commit of this page, a role query costs tens of
+    // milliseconds a pass (several times that on a loaded machine) on the same thread as
+    // the renders it waits for, and the 1 s wait ran out before the Tools rows landed.
+    await screen.findByText('Tools your Luciel can use');
+    await screen.findByText('Post to my own endpoint');
     expect(
-      await screen.findByRole('switch', { name: /Enable Post to my own endpoint/i }),
+      screen.getByRole('switch', { name: /Enable Post to my own endpoint/i }),
     ).toBeInTheDocument();
     // The one left is the CRM destination — since the Phase-4 rework it renders
-    // as that provider's own named connect button inside the CRM control.
-    expect(await screen.findAllByRole('button', { name: 'Connect Custom webhook' })).toHaveLength(
-      1,
-    );
+    // as that provider's own named connect button inside the CRM control, once the
+    // control's own provider read has landed.
+    await screen.findAllByText('Connect Custom webhook');
+    expect(screen.getAllByRole('button', { name: 'Connect Custom webhook' })).toHaveLength(1);
     expect(screen.queryAllByText('Custom webhook')).toHaveLength(0);
   });
 });
