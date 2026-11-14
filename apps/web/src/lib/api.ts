@@ -27,9 +27,11 @@ import {
  * dropped env var shipped a fully interactive fake product — every button
  * working, every figure invented — instead of an obvious failure to reach the
  * backend. A dev server still falls back to the mock, because that is what
- * `pnpm dev` with no backend is for; a production build never does.
+ * `pnpm dev` with no backend is for; a production build never does. An EMPTY flag
+ * counts as unset (`||`, not `??`): a Docker build without the build argument
+ * passes '' to `next build`, which used to select the mock silently.
  */
-const adapter = (process.env.NEXT_PUBLIC_API_ADAPTER ??
+const adapter = (process.env.NEXT_PUBLIC_API_ADAPTER ||
   (process.env.NODE_ENV === 'production' ? 'http' : 'mock')) as ApiAdapterKind;
 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 const scenario = (process.env.NEXT_PUBLIC_MOCK_SCENARIO ?? 'verified') as MockScenario;
