@@ -89,7 +89,7 @@ bundle.
   error by showing an empty state.
 - Every mutation exposes pending, success, and error. Destructive or confirmable
   writes use `Modal`'s async contract so failures stay visible.
-- Evidence respects the three attribution states. Old answers render
+- Evidence respects the four attribution states. Old answers render
   **“Not scored (before scoring existed)”** instead of a made-up score.
 - Takeover UI must not describe widget delivery as real time; widget replies are
   delivered through polling.

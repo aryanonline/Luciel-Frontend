@@ -77,9 +77,9 @@ See the module-level `CLAUDE.md` files for implementation-specific paths, tests,
 
 ### Evidence, conversations, and takeover
 
-- Evidence attribution is three-state: `has_sources`,
-  `no_sources_retrieved`, and `attribution_unavailable`. An empty source list
-  is not enough to claim that retrieval found no sources.
+- Evidence attribution has four states: `has_sources`, `no_sources_retrieved`,
+  `attribution_unavailable` and `retrieval_unavailable` (the search never ran).
+  An empty source list is not enough to claim that retrieval found no sources.
 - Legacy answers without scoring render **“Not scored (before scoring existed)”**;
   never manufacture a score or label them as ungrounded.
 - Human takeover replies are persisted and arrive in the widget by polling.

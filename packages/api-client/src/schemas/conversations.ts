@@ -212,9 +212,9 @@ export const scoringStatus = z.enum(['scored', 'not_scored_legacy', 'not_applica
 export type ScoringStatus = z.infer<typeof scoringStatus>;
 
 /** `AnswerEvidenceOut.attributionStatus` (Harmony wave 2, item 6b/backend item 2a) — a
- * 3-state enum, NOT a boolean: `no_sources_retrieved` (honest empty result) and
- * `attribution_unavailable` (never captured) are different claims that both
- * happen to carry an empty `sourceChunks`. */
+ * 4-state enum, NOT a boolean: `no_sources_retrieved` (honest empty result),
+ * `attribution_unavailable` (never captured) and `retrieval_unavailable` (the
+ * search never ran) are different claims that all carry an empty `sourceChunks`. */
 export const attributionStatus = z.enum([
   'has_sources',
   'no_sources_retrieved',
