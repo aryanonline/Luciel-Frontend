@@ -241,9 +241,10 @@ also cover web-tier requests.
 
 ## Project status
 
-Luciel is deployed to a development environment on AWS and has been verified there end to end:
-on 2026-11-02 the customer walk passed against the deployed dashboard, with the steps that need
-a real card, phone number, mailbox or third-party sign-in skipped and reported.
+Luciel is deployed to a development environment on AWS and has been verified there end to end.
+The current build was deployed from `main` on 2026-11-14, and the customer walk then passed
+against the deployed dashboard, as it first did on 2026-11-02. Steps that need a real card,
+phone number, mailbox or third-party sign-in are skipped and reported.
 
 ## Further reading
 
