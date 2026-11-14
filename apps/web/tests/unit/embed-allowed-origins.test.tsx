@@ -79,6 +79,11 @@ describe('Embed page: websites that may load the chat', () => {
     await waitFor(() =>
       expect(served.calls[1]).toEqual(['https://acme.example', 'https://landing.acme.example']),
     );
+    // And this save settles too, inside the test: the call above is recorded when the
+    // write starts, and the rest of the save (its read, its outcome) ran on past the end.
+    expect(
+      await screen.findByText('https://landing.acme.example can load your chat.'),
+    ).toBeInTheDocument();
   });
 
   it("shows the server's refusal instead of pretending a bad address was saved", async () => {

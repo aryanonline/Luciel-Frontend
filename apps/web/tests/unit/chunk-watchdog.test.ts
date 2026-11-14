@@ -48,6 +48,11 @@ describe('the script behind a file that fails during a page load', () => {
   });
 
   afterEach(() => {
+    // A run that drew the copy puts it back every 250 ms until ErrorScreen takes the
+    // page. Stand it down the way ErrorScreen does, before its listener goes: left
+    // running, the interval outlived the file and fired after the environment was torn
+    // down ("document is not defined"), failing a run whose tests had all passed.
+    window.dispatchEvent(new Event(CRASH_SCREEN_EVENT));
     for (const [type, listener, options] of added) {
       window.removeEventListener(type, listener, options as boolean);
     }

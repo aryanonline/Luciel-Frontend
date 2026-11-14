@@ -127,6 +127,16 @@ const channelRow = (name: RegExp): HTMLElement => {
   return row as HTMLElement;
 };
 
+/**
+ * A connect click is a flow, not a call: the start is followed by a connection read
+ * (resolveId) and only then by the row's answer. Waiting for that answer — the "Action
+ * needed" detail the start served — keeps the flow from running on past the test.
+ */
+const flowAnswered = async (name: RegExp) =>
+  expect(
+    await within(channelRow(name)).findByText('Action needed: nothing to redirect to in a test.'),
+  ).toBeInTheDocument();
+
 beforeEach(() => {
   startConnection.mockReset();
   catalog.mockReset();
@@ -163,6 +173,7 @@ describe('§3.1.2: WhatsApp and Messenger are separate rows on the one Meta gran
 
     fireEvent.click(await screen.findByRole('button', { name: 'Connect WhatsApp' }));
     await waitFor(() => expect(startConnection).toHaveBeenCalledWith('channel_auth', 'meta'));
+    await flowAnswered(/Enable WhatsApp/i);
 
     startConnection.mockClear();
     startConnection.mockResolvedValue({
@@ -171,6 +182,7 @@ describe('§3.1.2: WhatsApp and Messenger are separate rows on the one Meta gran
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Connect Facebook Messenger' }));
     await waitFor(() => expect(startConnection).toHaveBeenCalledWith('channel_auth', 'meta'));
+    await flowAnswered(/Enable Facebook Messenger/i);
   });
 
   it('says on both Meta rows that the sign-in is shared — and that each row still owes its own id', async () => {
@@ -212,6 +224,7 @@ describe('contract §2: Instagram is connected on its own client, never the Meta
         name: /Connect (WhatsApp|Facebook Messenger)/i,
       }),
     ).not.toBeInTheDocument();
+    await flowAnswered(/Enable Instagram DM/i);
   });
 
   it('forewarns that Instagram needs a professional account, before the sign-in', async () => {
