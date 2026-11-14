@@ -189,7 +189,8 @@ The web app runs on Next 15 / React 19 (migrated 2026-09-07). The strict CSP adm
 `'unsafe-eval'` for development builds only, because `next dev` cannot hydrate without
 it; production policy is unchanged. zod runs with its JIT off
 (`packages/api-client/src/schemas/zod-setup.ts`): zod 4 otherwise probes for eval when it
-builds a schema, and the production policy reported that probe on every page. Dependencies are kept current by Dependabot on the
+builds a schema, and the production policy reported that probe on every page. Dependencies
+are kept current by Dependabot on the
 release branch with auto-merge of green minor/patch updates; a major bump is labelled
 `major-update` for a person, and the `dependency-review` workflow files a monthly issue
 (cron 02:00 UTC on the 1st, because GitHub fires schedules hours late and the steward reads
