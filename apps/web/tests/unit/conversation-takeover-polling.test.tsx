@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
+import ConversationsPage from '@/app/(app)/dashboard/conversations/page';
 import type { ConversationSummary, EscalationEvent, Message } from '@luciel/api-client';
 
 /**
@@ -65,8 +66,11 @@ const second: Message = {
   at: '2026-09-05T10:01:00Z',
 };
 
+/**
+ * The page loads with the file. Imported inside the first test, its whole module graph
+ * counted against that test's 5 s budget, which a loaded machine can spend on it alone.
+ */
 async function renderPage() {
-  const { default: ConversationsPage } = await import('@/app/(app)/dashboard/conversations/page');
   renderWithQuery(<ConversationsPage />);
 }
 

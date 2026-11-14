@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
+import ConversationsPage from '@/app/(app)/dashboard/conversations/page';
 import type { ConversationSummary, Message, SendMessageResult } from '@luciel/api-client';
 import { LucielApiError } from '@luciel/api-client';
 import { sessionChannelLabel } from '@/components/config/labels';
@@ -105,8 +106,11 @@ const humanReply = (over: Partial<Message>): Message => ({
 const SESSION_ENDED_MESSAGE =
   'This conversation has ended, so there is nothing to take over or reply into (session_ended).';
 
+/**
+ * The page loads with the file. Imported inside the first test, its whole module graph
+ * counted against that test's 5 s budget, which a loaded machine can spend on it alone.
+ */
 async function renderPage() {
-  const { default: ConversationsPage } = await import('@/app/(app)/dashboard/conversations/page');
   renderWithQuery(<ConversationsPage />);
 }
 

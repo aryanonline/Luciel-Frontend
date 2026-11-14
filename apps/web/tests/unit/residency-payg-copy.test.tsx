@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import PrivacyPage from '@/app/(marketing)/legal/privacy/page';
 import DpaPage from '@/app/(marketing)/legal/dpa/page';
+import DashboardPage from '@/app/(app)/dashboard/page';
 
 /**
  * P1 doctrine alignment.
@@ -46,47 +47,48 @@ const budgetBase = {
   atCap: false,
 };
 
-function mockHooks(budget: Record<string, unknown>) {
-  vi.doMock('@/lib/hooks', () => ({
-    useLuciel: () => ({ data: { name: 'Sarah', state: 'active' }, isLoading: false }),
-    useBilling: () => ({ data: { budget } }),
-    useConversations: () => ({ data: [] }),
-    useLeads: () => ({ data: [] }),
-    useConnections: () => ({ data: [] }),
-    useConnectionProviders: () => ({ data: [] }),
-    useSwapConnection: () => ({ mutate: vi.fn(), isPending: false }),
-    // The Today card (round 6 WP-F) reads the employee status; an empty read keeps
-    // these budget-copy assertions about the budget card alone.
-    useEmployeeStatus: () => ({ data: null, isPending: false, isError: false, refetch: vi.fn() }),
-    useLucielMutations: () => ({}),
-  }));
-}
+/**
+ * The hook layer is mocked for the whole file and each test sets the budget it serves.
+ * It was mocked per test after `vi.resetModules()`, so each test imported the
+ * Overview page's whole module graph inside its own 5 s budget.
+ */
+const served = vi.hoisted(() => ({ budget: {} as Record<string, unknown> }));
+
+vi.mock('@/lib/hooks', () => ({
+  useLuciel: () => ({ data: { name: 'Sarah', state: 'active' }, isLoading: false }),
+  useBilling: () => ({ data: { budget: served.budget } }),
+  useConversations: () => ({ data: [] }),
+  useLeads: () => ({ data: [] }),
+  useConnections: () => ({ data: [] }),
+  useConnectionProviders: () => ({ data: [] }),
+  useSwapConnection: () => ({ mutate: vi.fn(), isPending: false }),
+  // The Today card (round 6 WP-F) reads the employee status; an empty read keeps
+  // these budget-copy assertions about the budget card alone.
+  useEmployeeStatus: () => ({ data: null, isPending: false, isError: false, refetch: vi.fn() }),
+  useLucielMutations: () => ({}),
+}));
 
 describe('P1: PAYG near-next-block nudge (Arch §3.4.1b / Vision §7)', () => {
-  it('renders the honest heads-up for a payg_enabled account near a new block', async () => {
-    vi.resetModules();
-    mockHooks({
+  it('renders the honest heads-up for a payg_enabled account near a new block', () => {
+    served.budget = {
       ...budgetBase,
       billingState: 'payg_enabled',
       conversationsThisPeriod: 240,
       billedThisPeriod: 190,
       nearNextBlock: true,
-    });
-    const { default: DashboardPage } = await import('@/app/(app)/dashboard/page');
+    };
     renderWithQuery(<DashboardPage />);
     expect(screen.getByText(/about 80% through your current billed block/i)).toBeInTheDocument();
     expect(screen.getByText(/not a cap/i)).toBeInTheDocument();
   });
 
-  it('does NOT render the nudge for a free_cap account', async () => {
-    vi.resetModules();
-    mockHooks({
+  it('does NOT render the nudge for a free_cap account', () => {
+    served.budget = {
       ...budgetBase,
       billingState: 'free_cap',
       conversationsThisPeriod: 38,
       billedThisPeriod: 0,
-    });
-    const { default: DashboardPage } = await import('@/app/(app)/dashboard/page');
+    };
     renderWithQuery(<DashboardPage />);
     expect(screen.queryByText(/current billed block/i)).not.toBeInTheDocument();
   });

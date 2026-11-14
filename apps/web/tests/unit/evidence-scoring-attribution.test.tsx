@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
+// Loaded with the file only so that the first test's own import below finds the page
+// already transformed: its whole module graph used to load inside that test's 5 s budget.
+// Each test still imports a fresh instance after vi.resetModules().
+import '@/app/(app)/dashboard/conversations/page';
 import type { AnswerEvidence, ConversationSummary, Message } from '@luciel/api-client';
 
 /**
