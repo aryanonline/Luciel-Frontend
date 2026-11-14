@@ -16,7 +16,10 @@ API, the AI runtime and the AWS infrastructure live in the companion Luciel-Back
   cookies. A [scan of the built bundle](apps/widget/scripts/check-bundle.mjs) fails the widget
   build if admin-API symbols or paths turn up in it, and a
   [source-level test](packages/api-client/src/__tests__/plane-separation.test.ts) fails the unit
-  tests if the widget's entry point exports the admin client.
+  tests if the widget's entry point exports the admin client. The widget's code path holds only
+  the data plane and validates replies with zod/mini, so the embed script is 37 kB minified (13 kB
+  gzipped); [another test](packages/api-client/src/__tests__/widget-bundle-imports.test.ts) follows
+  its imports to keep it that way.
 - **One typed client, two adapters.** Components depend only on the `LucielApiClient` interface,
   whose response shapes come from Zod schemas. One flag picks the HTTP adapter or a stateful mock
   with account states, injected failures and slow calls, so the dashboard runs and is tested end
@@ -105,9 +108,9 @@ flowchart LR
 | Area                   | Choices                                                                                                   |
 | ---------------------- | --------------------------------------------------------------------------------------------------------- |
 | Language and workspace | TypeScript (strict), pnpm 9 workspaces, Node.js 22+                                                       |
-| Web app                | Next.js 15 (App Router), React 19, TanStack Query, React Hook Form with Zod, Radix UI, Tailwind CSS 3     |
+| Web app                | Next.js 15 (App Router), React 19, TanStack Query, React Hook Form with Zod 4, Radix UI, Tailwind CSS 3   |
 | Widget                 | Vite 6 library build (IIFE and ES module), plain DOM, Shadow DOM                                          |
-| API boundary           | Zod schemas, a `fetch` transport with typed errors, HTTP and mock adapters                                |
+| API boundary           | Zod 4 schemas (zod/mini for the widget), a `fetch` transport with typed errors, HTTP and mock adapters    |
 | Testing                | Vitest, Testing Library, jsdom, Playwright, axe-core                                                      |
 | Quality and security   | ESLint (`next/core-web-vitals`), Prettier, gitleaks, `pnpm audit` gate, ECR image-scan gate               |
 | Delivery               | Docker (Node 22 on Debian slim, non-root), GitHub Actions with AWS OIDC, ECR, ECS Fargate, S3, CloudFront |
@@ -189,8 +192,8 @@ To run one project: `pnpm --filter @luciel/web exec playwright test --project=wa
 
 | Suite                                                  | Tests (counted 2026-11-14) | What it covers                                                                                                                          |
 | ------------------------------------------------------ | -------------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Web app unit (`apps/web/tests/unit/`)                  |                        477 | Pages and components: states, counts, labels, modals and copy rules                                                                     |
-| API client unit (`packages/api-client/src/__tests__/`) |                        142 | Transport, adapters and the mock runtime, plane separation, the sync-job poll                                                           |
+| Web app unit (`apps/web/tests/unit/`)                  |                        487 | Pages and components: states, counts, labels, modals, copy rules and form messages                                                      |
+| API client unit (`packages/api-client/src/__tests__/`) |                        163 | Transport, adapters and the mock runtime, plane separation, the sync-job poll, the schemas' validation rules                            |
 | Widget unit (`apps/widget/src/mount.test.ts`)          |                         41 | Mounting, disclosure, sessions, polling, ending a chat, safe rendering                                                                  |
 | UI kit unit (`packages/ui/src/`)                       |                         20 | `Modal`, `StatusChip`, `Logo` and the markdown renderer                                                                                 |
 | Gate and workflow tests (`scripts/*.test.mjs`)         |                         50 | The CVE gate, the Dependabot classifier, workflow triggers and step order                                                               |
