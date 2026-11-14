@@ -187,13 +187,13 @@ pnpm test:e2e                     # Playwright against the mock adapter (starts 
 Playwright needs a browser once: `pnpm --filter @luciel/web exec playwright install chromium`.
 To run one project: `pnpm --filter @luciel/web exec playwright test --project=walk`.
 
-| Suite                                                  | Tests (counted 2026-11-13) | What it covers                                                                                                                          |
+| Suite                                                  | Tests (counted 2026-11-14) | What it covers                                                                                                                          |
 | ------------------------------------------------------ | -------------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Web app unit (`apps/web/tests/unit/`)                  |                        477 | Pages and components: states, counts, labels, modals and copy rules                                                                     |
 | API client unit (`packages/api-client/src/__tests__/`) |                        142 | Transport, adapters and the mock runtime, plane separation, the sync-job poll                                                           |
 | Widget unit (`apps/widget/src/mount.test.ts`)          |                         41 | Mounting, disclosure, sessions, polling, ending a chat, safe rendering                                                                  |
 | UI kit unit (`packages/ui/src/`)                       |                         20 | `Modal`, `StatusChip`, `Logo` and the markdown renderer                                                                                 |
-| Gate and workflow tests (`scripts/*.test.mjs`)         |                         42 | The CVE gate, the Dependabot classifier, workflow triggers and step order                                                               |
+| Gate and workflow tests (`scripts/*.test.mjs`)         |                         50 | The CVE gate, the Dependabot classifier, workflow triggers and step order                                                               |
 | Playwright `chromium` project                          |                         30 | WCAG 2.1 AA on all 23 routes, crash-page recovery, route coverage, the journey from overview to billing                                 |
 | Playwright `scenario-*` projects                       |                          7 | One account state each: new, at its conversation cap, pay-as-you-go, paused, deleted within its restore window, closed, expired session |
 | Playwright `walk` project                              |                          1 | The customer-style walk through every dashboard area, with timings in the report                                                        |
