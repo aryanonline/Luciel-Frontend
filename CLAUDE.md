@@ -125,6 +125,7 @@ Run a single workspace while developing:
 
 ```bash
 pnpm --filter @luciel/web typecheck
+pnpm --filter @luciel/web typecheck:tests
 pnpm --filter @luciel/web test
 pnpm --filter @luciel/web build
 pnpm --filter @luciel/widget typecheck
@@ -152,9 +153,14 @@ Required whole-workspace verification:
 
 ```bash
 pnpm -r typecheck
+pnpm --filter @luciel/web typecheck:tests
 pnpm -r test
 pnpm -r build
 ```
+
+`pnpm -r typecheck` does not reach the web tests: `apps/web/tsconfig.json` leaves them out so
+`next build` never compiles them, and `typecheck:tests` checks them instead. CI runs both in
+its typecheck step.
 
 The current suite is approximately 711 tests (api-client 163, ui 20, widget 41, web 487;
 counted 2026-11-14, after the zod 4 migration added the schema-rule, form-message and

@@ -178,13 +178,14 @@ empty build argument counts as unset, so a production build selects the HTTP ada
 ## Tests and quality checks
 
 ```bash
-pnpm -r typecheck                 # TypeScript, every package
-pnpm -r test                      # Vitest unit tests, every package
-pnpm -r build                     # production builds; the widget build runs the bundle check
-pnpm --filter @luciel/web lint    # ESLint
-pnpm format                       # Prettier check (CI runs it; pnpm format:write fixes)
-pnpm test:scripts                 # Node tests: image CVE gate, Dependabot classifier, workflow rules
-pnpm test:e2e                     # Playwright against the mock adapter (starts the dev server)
+pnpm -r typecheck                          # TypeScript, every package
+pnpm --filter @luciel/web typecheck:tests  # TypeScript, the web tests (tsconfig.json leaves them out)
+pnpm -r test                               # Vitest unit tests, every package
+pnpm -r build                              # production builds; the widget build runs the bundle check
+pnpm --filter @luciel/web lint             # ESLint
+pnpm format                                # Prettier check (CI runs it; pnpm format:write fixes)
+pnpm test:scripts                          # Node tests: image CVE gate, Dependabot classifier, workflow rules
+pnpm test:e2e                              # Playwright against the mock adapter (starts the dev server)
 ```
 
 Playwright needs a browser once: `pnpm --filter @luciel/web exec playwright install chromium`.
@@ -204,8 +205,8 @@ To run one project: `pnpm --filter @luciel/web exec playwright test --project=wa
 `live-smoke` (read-only) runs only with `E2E_LIVE=1`, and `live-walk` only with `E2E_LIVE=1` plus
 `E2E_LIVE_WRITE=1`, against a deployed environment. CI ([`ci.yml`](.github/workflows/ci.yml))
 runs on every pull request, every push to `main` and daily: the audit gate, script tests,
-typecheck, unit tests, lint, formatting and every build (the widget's build includes the bundle
-check), then the 38 Playwright tests above, plus a gitleaks secret scan.
+typecheck (the web tests included), unit tests, lint, formatting and every build (the widget's
+build includes the bundle check), then the 38 Playwright tests above, plus a gitleaks secret scan.
 
 ## Deployment and operations
 

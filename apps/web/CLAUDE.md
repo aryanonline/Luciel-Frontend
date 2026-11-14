@@ -107,11 +107,20 @@ bundle.
 
 ```bash
 pnpm --filter @luciel/web typecheck
+pnpm --filter @luciel/web typecheck:tests
 pnpm --filter @luciel/web lint
 pnpm --filter @luciel/web test
 pnpm --filter @luciel/web build
 pnpm --filter @luciel/web test:e2e
 ```
+
+`tsconfig.json` excludes `tests/` so `next build` never compiles them. `tsconfig.test.json`
+extends it and type-checks `tests/**`, `playwright.config.ts` and `vitest.config.ts`
+(`typecheck:tests`, run by CI's typecheck step, added 2026-11-14). A fixture typed with a schema
+type must carry every required field; when one is added, give it the value its absence already
+behaved as (for a Luciel, `escalationContactHealth: []` and `leadRetentionDays: null`). Vitest
+strips types without checking them, so only this check catches a fixture that has drifted from
+the contract.
 
 Lint is the ESLint 9 CLI over the whole app (`eslint .`, migrated from the deprecated
 `next lint` on 2026-11-14). `eslint.config.mjs` is a flat config that loads eslint-config-next
