@@ -125,7 +125,7 @@ flowchart LR
 
 | Path                                            | Contents                                                                                                                                                                              |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/app/`                             | App Router route groups `(marketing)`, `(auth)` and `(app)`, plus the error pages                                                                                                     |
+| `apps/web/src/app/`                             | App Router route groups `(marketing)`, `(auth)` and `(app)`, plus the error pages and the site icon (`favicon.ico`, `icon.svg`, `apple-icon.png`)                                     |
 | `apps/web/src/components/`, `apps/web/src/lib/` | Dashboard components (`config/` holds the Configure page's sections), API wiring, query hooks, sync and crash-recovery helpers                                                        |
 | `apps/web/src/middleware.ts`                    | Per-request CSP and the signed-out redirect for dashboard routes                                                                                                                      |
 | `apps/web/tests/`                               | Vitest unit tests (`unit/`) and Playwright suites (`e2e/`)                                                                                                                            |
@@ -199,7 +199,7 @@ To run one project: `pnpm --filter @luciel/web exec playwright test --project=wa
 
 | Suite                                                  | Tests (counted 2026-11-14) | What it covers                                                                                                                          |
 | ------------------------------------------------------ | -------------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Web app unit (`apps/web/tests/unit/`)                  |                        492 | Pages and components: states, counts, labels, modals, copy rules and form messages                                                      |
+| Web app unit (`apps/web/tests/unit/`)                  |                        496 | Pages and components: states, counts, labels, modals, copy rules, form messages and the site icon                                       |
 | API client unit (`packages/api-client/src/__tests__/`) |                        166 | Transport, adapters and the mock runtime, plane separation, the sync-job poll, the schemas' validation rules, zod with its JIT off      |
 | Widget unit (`apps/widget/src/mount.test.ts`)          |                         41 | Mounting, disclosure, sessions, polling, ending a chat, safe rendering                                                                  |
 | UI kit unit (`packages/ui/src/`)                       |                         20 | `Modal`, `StatusChip`, `Logo` and the markdown renderer                                                                                 |

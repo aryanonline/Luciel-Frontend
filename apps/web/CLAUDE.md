@@ -36,6 +36,13 @@ bundle.
 - `src/app/error.tsx`, `src/app/global-error.tsx` — the crash pages, both rendering
   `src/components/error-screen.tsx`; `src/lib/chunk-reload.ts` — the one automatic reload;
   `src/lib/chunk-watchdog.ts` — the same recovery for a file lost during a page load.
+- `src/app/favicon.ico`, `icon.svg`, `apple-icon.png` — the site icon, the Logo's V mark
+  (2026-11-14: the app had none, so browsers fetched `/favicon.ico` on their own and logged a
+  404). Next serves them from the ROOT segment by its metadata file convention and adds the
+  `<link>` tags to every page; there is no `public/` folder. The ICO (16/32/48 px) and the
+  touch icon (180 px, full-bleed because iOS rounds it) are renders of icon.svg: re-render
+  them when the mark changes. `tests/unit/site-icon.test.tsx` pins them, and that every
+  root-relative file named in `src/` exists where Next serves it.
 - `src/lib/api.ts` and `src/lib/hooks.ts` — typed control-plane client and queries.
 - `tests/unit/` — focused UI behavior and regression tests.
 - `tests/e2e/a11y.spec.ts` — the WCAG 2.1 AA gate over EVERY route (round 7 WP-12: 23 today).
