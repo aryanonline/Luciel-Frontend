@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { screen, fireEvent, within } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { ToolsPillar } from '@/components/config/tools-pillar';
-import type { Luciel } from '@luciel/api-client';
+import type { ConnectionProviders, Luciel } from '@luciel/api-client';
+import { api } from '@/lib/api';
 
 /**
  * Round 7 WP-10, item 3 — tools off-rows had no way to disconnect or re-point a
@@ -48,6 +49,8 @@ const rowOf = (toggleName: RegExp): HTMLElement => {
 };
 
 describe('tools off-rows keep their saved connection manageable', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('an OFF capability with a connected calendar offers Manage connection → Disconnect', async () => {
     renderWithQuery(<ToolsPillar luciel={allOff} />);
     await screen.findByRole('switch', { name: /Enable Appointment scheduling/i });
@@ -62,6 +65,17 @@ describe('tools off-rows keep their saved connection manageable', () => {
   });
 
   it('an OFF standalone tool with an expired CRM offers Manage connection → Reconnect', async () => {
+    // "Reconnect your CRM" is this control's action while its CRM provider read is in
+    // flight; once the registry lands, the control lists the CRM providers by name
+    // instead. The assertions below ran inside that window without holding it, so on a
+    // loaded machine the registry landed first, or between the find and the assertion
+    // (the button found had already been replaced). The read is held until they are made.
+    const listProviders = api.connections.listProviders;
+    let landRegistry!: (groups: ConnectionProviders[]) => void;
+    const heldRegistry = new Promise<ConnectionProviders[]>((r) => (landRegistry = r));
+    vi.spyOn(api.connections, 'listProviders').mockImplementation((connectionType) =>
+      connectionType === 'crm' ? heldRegistry : listProviders(connectionType),
+    );
     renderWithQuery(<ToolsPillar luciel={allOff} />);
     await screen.findByRole('switch', { name: /Enable Push leads to my CRM/i });
     const row = rowOf(/Enable Push leads to my CRM/i);
@@ -73,13 +87,17 @@ describe('tools off-rows keep their saved connection manageable', () => {
       await within(row).findByRole('button', { name: /Reconnect your CRM/i }),
     ).toBeInTheDocument();
     expect(within(row).getByText(/Reconnect needed/i)).toBeInTheDocument();
+    // Nothing is left waiting on the held read.
+    landRegistry(await listProviders('crm'));
   });
 
   it('an OFF tool with nothing saved shows no disclosure', async () => {
     renderWithQuery(<ToolsPillar luciel={allOff} />);
     await screen.findByRole('switch', { name: /Enable Look up a record/i });
-    // The seed has no record_source row, so nothing to manage.
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    // The seed has no record_source row, so nothing to manage. The connection read has
+    // landed once the expired CRM row says so — a fixed 400 ms sleep could end first
+    // on a loaded machine and leave the assertion below proving nothing.
+    await screen.findByText(/Its saved connection needs a reconnect/i);
     const row = rowOf(/Enable Look up a record/i);
     expect(within(row).queryByText('Manage connection')).not.toBeInTheDocument();
   });

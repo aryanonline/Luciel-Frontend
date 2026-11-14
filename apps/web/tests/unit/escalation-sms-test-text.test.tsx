@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import ConfigurePage from '@/app/(app)/dashboard/configure/page';
+import { api } from '@/lib/api';
 
 /**
  * 2026-09-05 audit F084: an SMS escalation contact had no confirmation loop at all —
@@ -12,6 +13,8 @@ import ConfigurePage from '@/app/(app)/dashboard/configure/page';
  * the "no SMS number connected" truth rather than a pretend green).
  */
 describe('escalation SMS contacts: E.164 hint, save-time validation, test text', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('hints the international format on both SMS fields', async () => {
     renderWithQuery(<ConfigurePage />);
     await screen.findByLabelText('Primary SMS (optional)');
@@ -28,10 +31,16 @@ describe('escalation SMS contacts: E.164 hint, save-time validation, test text',
   });
 
   it('offers a test text for a saved number and reports honestly when it cannot send', async () => {
+    const write = vi.spyOn(api.luciel, 'updateEscalation');
     renderWithQuery(<ConfigurePage />);
     const sms = await screen.findByLabelText('Primary SMS (optional)');
     fireEvent.change(sms, { target: { value: '+1 (604) 555-1234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save escalation settings' }));
+    // A save is the write, then a re-read of the Luciel that renders this whole page
+    // again, and only then the notice. One wait for all three ran out on a loaded
+    // machine, so the write is awaited on its own and the wait covers the re-read.
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+    await write.mock.results[0]?.value;
     await screen.findByText(/Saved\. New conversations escalate to these contacts/);
 
     // The saved (normalised) number shows with its test affordance.
