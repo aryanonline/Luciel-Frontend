@@ -169,8 +169,8 @@ docker build -f apps/web/Dockerfile \
   -t luciel-web .
 ```
 
-Without them the image runs the mock adapter: the Dockerfile passes an unset build argument to
-`next build` as an empty string, which bypasses the HTTP default.
+Without them the image has no API origin and fails rather than falling back to the mock: an
+empty build argument counts as unset, so a production build selects the HTTP adapter.
 
 ## Tests and quality checks
 
@@ -189,7 +189,7 @@ To run one project: `pnpm --filter @luciel/web exec playwright test --project=wa
 
 | Suite                                                  | Tests (counted 2026-11-13) | What it covers                                                                                                                          |
 | ------------------------------------------------------ | -------------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Web app unit (`apps/web/tests/unit/`)                  |                        473 | Pages and components: states, counts, labels, modals and copy rules                                                                     |
+| Web app unit (`apps/web/tests/unit/`)                  |                        477 | Pages and components: states, counts, labels, modals and copy rules                                                                     |
 | API client unit (`packages/api-client/src/__tests__/`) |                        142 | Transport, adapters and the mock runtime, plane separation, the sync-job poll                                                           |
 | Widget unit (`apps/widget/src/mount.test.ts`)          |                         41 | Mounting, disclosure, sessions, polling, ending a chat, safe rendering                                                                  |
 | UI kit unit (`packages/ui/src/`)                       |                         20 | `Modal`, `StatusChip`, `Logo` and the markdown renderer                                                                                 |
