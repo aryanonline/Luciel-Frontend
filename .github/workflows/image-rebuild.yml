@@ -63,7 +63,8 @@ jobs:
         run: |
           set -euo pipefail
           TAG="weekly-$(date -u +%Y%m%d)"
-          docker build --pull -f apps/web/Dockerfile \
+          # --provenance/--sbom off, as in deploy.yml: an image index is never scanned.
+          docker build --pull --provenance=false --sbom=false -f apps/web/Dockerfile \
             --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.vantagemind.ai \
             --build-arg NEXT_PUBLIC_API_ADAPTER=http \
             -t "$ECR/$REPO:$TAG" .

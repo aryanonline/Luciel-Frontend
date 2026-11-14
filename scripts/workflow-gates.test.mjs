@@ -136,6 +136,23 @@ test('the build pushes only the commit tag; :latest moves after the gate', () =>
   assert.doesNotMatch(all[pushIdx], /:latest/, 'the build must not push or tag :latest');
 });
 
+// 2026-11-14 (deploy 43562167704): newer Docker engines add a provenance attestation by
+// default, so the push became an OCI image index that ECR's basic scan-on-push never
+// scans, and the CVE gate failed closed on a scan that never appeared. Every image build
+// must push a single image manifest.
+for (const path of ['.github/workflows/deploy.yml', '.github/workflows/image-rebuild.yml']) {
+  test(`${path} builds the web image without attestations, so ECR scans it`, () => {
+    const builds = read(path)
+      .split('\n')
+      .filter((l) => /^\s*docker (buildx )?build\b/.test(l));
+    assert.ok(builds.length > 0, 'no docker build line found');
+    for (const line of builds) {
+      assert.match(line, /--provenance=false/, line.trim());
+      assert.match(line, /--sbom=false/, line.trim());
+    }
+  });
+}
+
 for (const name of ['deploy-dev', 'deploy-prod']) {
   test(`${name} promotes the gated image to :latest before it rolls, and fails if it cannot`, () => {
     const text = job(read('.github/workflows/deploy.yml'), name);

@@ -101,7 +101,11 @@ jobs:
           REPO: luciel-${{ env.ENVIRONMENT }}-web
           TAG: ${{ github.sha }}
         run: |
-          docker build -f apps/web/Dockerfile \
+          # --provenance/--sbom off: with them (the default on newer Docker engines) the
+          # push is an OCI image INDEX holding an attestation manifest, which ECR's basic
+          # scan-on-push never scans, so the CVE gate below finds no scan and fails closed
+          # (deploy 43562167704, 2026-11-14). The backend builds the same way.
+          docker build --provenance=false --sbom=false -f apps/web/Dockerfile \
             --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.vantagemind.ai \
             --build-arg NEXT_PUBLIC_API_ADAPTER=http \
             --build-arg NEXT_PUBLIC_HCAPTCHA_SITE_KEY=6f66ccc8-ae5a-4d20-90f6-e49adfa8c10e \
