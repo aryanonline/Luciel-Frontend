@@ -6,7 +6,8 @@ hands the conversation to the team when it cannot answer confidently, and gives 
 dashboard to run it. This repository is the browser-facing half of the product: the marketing
 site, sign-up and the owner dashboard (one Next.js app), the chat widget that businesses embed
 on their own websites, and the typed API client, UI kit and design tokens those apps share. The
-API, the AI runtime and the AWS infrastructure live in the companion Luciel-Backend repository.
+API, the AI runtime and the AWS infrastructure live in the companion
+[Luciel-Backend](https://github.com/aryanonline/Luciel-Backend) repository.
 
 ## Highlights
 
@@ -258,10 +259,11 @@ phone number, mailbox or third-party sign-in are skipped and reported.
 
 On 2026-11-14 the hosted environment was paused to stop AWS charges. Most of it was deleted, and
 what a restore needs, such as the database snapshot, an archive of its stored files and the
-provider keys, was kept. The backend's restore runbook (`docs/operations/teardown-and-restore.md`
-in the Luciel-Backend repository) brings it back. Until then `vantagemind.ai`, the API and the
-embed host serve nothing, and the deploy and live-check workflows have nothing to run against.
-The code in this repository still builds, tests and runs locally on the mock adapters.
+provider keys, was kept. The backend's
+[restore runbook](https://github.com/aryanonline/Luciel-Backend/blob/main/docs/operations/teardown-and-restore.md)
+brings it back. Until then `vantagemind.ai`, the API and the embed host serve nothing, and the
+deploy and live-check workflows have nothing to run against. The code in this repository still
+builds, tests and runs locally on the mock adapters.
 
 ## Further reading
 
