@@ -90,16 +90,23 @@ describe('transcript polling during a human takeover', () => {
     expect(getMessages).toHaveBeenCalledTimes(1);
 
     getMessages.mockResolvedValue([first, second]);
-    vi.advanceTimersByTime(5000);
-    // The poll's refetch resolves on real timers after the faked interval fires; a
-    // slow CI runner took longer than findByText's default second (nightly, 2026-10-14).
-    expect(
-      await screen.findByText('still there? my number is on file', {}, { timeout: 5000 }),
-    ).toBeInTheDocument();
-    expect(getMessages).toHaveBeenCalledTimes(2);
-    // The whole test, not only the second wait, must outlast a slow runner: the
-    // page's dynamic import plus two real-timer waits blew vitest's default 5 s
-    // (nightly 2026-10-24, push CI 2026-10-25) with the poll itself working.
+    // Advance the faked interval one poll period at a time until the new turn shows.
+    // A single advance right after the first render was a race, not a slow runner
+    // (it failed on nightly 2026-10-14 and 2026-10-24 and on push CI 2026-10-25 and
+    // 2026-11-14, each time after longer timeouts): the advance could land before
+    // the poll's interval was (re)registered, or a re-render could stop a tick
+    // whose result was still in flight, and nothing advanced the fake clock again.
+    // The second turn can only arrive through a poll: the first read returned one.
+    // (Never advance the clock inside waitFor: waitFor's own interval is faked too,
+    // so advancing there re-enters waitFor and hangs.)
+    const secondTurn = 'still there? my number is on file';
+    for (let poll = 0; poll < 6 && !screen.queryByText(secondTurn); poll++) {
+      await vi.advanceTimersByTimeAsync(5000);
+      // Real timer: let the tick's read resolve and React commit before looking.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(await screen.findByText(secondTurn, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(getMessages.mock.calls.length).toBeGreaterThanOrEqual(2);
   }, 20_000);
 
   it('stays quiet while Luciel has the conversation', async () => {
