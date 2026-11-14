@@ -12,7 +12,7 @@ expiring within 35 days.
 None. The last one, GHSA-mrhx-c7xc-m3w5 (zod), was retired on 2026-11-14 by the zod 4
 migration (see Retired waivers).
 
-Round 7 (2026-11-01): both `tinypool` waivers retired two days before they expired, without the vitest major: a `pnpm.overrides` entry `"tinypool": "^2.2.0"` runs vitest 3.2.x on tinypool 2.2.0. The whole workspace suite stays green on it, and `scripts/audit-gate.mjs` reported both advisories as no longer reported. Drop the override when vitest 4 arrives.
+Round 7 (2026-11-01): both `tinypool` waivers retired two days before they expired, without the vitest major: a `pnpm.overrides` entry `"tinypool": "^2.2.0"` runs vitest 3.2.x on tinypool 2.2.0. The whole workspace suite stays green on it, and `scripts/audit-gate.mjs` reported both advisories as no longer reported. The override was dropped on 2026-11-14 by the vitest 4 migration (4.1.12): Vitest 4 runs its own worker pool, so nothing in the tree depends on tinypool any more. The same move cleared three moderate vitest advisories (GHSA-82fw-gwwq-j7x9 on `vitest` and `@vitest/mocker`, GHSA-qxg6-89mg-rqv8 on `@vitest/mocker`, fixed in 4.1.11 and 4.1.12).
 
 Round 7 (2026-10-25): the nightly audit went red on 2026-10-24 for four advisories. Three had in-range fixes and were taken: `next` 15.5.27 → 15.5.28 (GHSA-2464-fhr4-w9xw, an unauthenticated RCE in the Image Optimization API with SVG input, and GHSA-p3m5-59mp-jv5r), `vite` 6.4.3 → 6.4.4+ (GHSA-587h-7wmj-h5pm, launch-editor). `zod` had no 3.x fix and was waived (retired 2026-11-14, below). The `braces` waiver was retired the same day: the advisory is no longer reported.
 
