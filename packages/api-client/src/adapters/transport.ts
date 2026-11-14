@@ -1,4 +1,5 @@
-import { LucielApiError, type ApiErrorCode } from '../schemas';
+import { LucielApiError } from '../errors';
+import type { ApiErrorCode } from '../schemas/common';
 
 /**
  * Minimal fetch transport used by the httpAdapter. Centralizes:

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ISO_INSTANT } from './rules';
 
 /**
  * Shared primitives. Types derive from Zod schemas (Space Instructions §7):
@@ -13,15 +14,7 @@ import { z } from 'zod';
  */
 export const uuid = z.guid();
 
-/**
- * An ISO 8601 instant: a date, `T`, a time whose seconds are optional, then `Z` or a
- * numeric offset (`+05:30` or `+0530`). This is the pattern zod 3 built for
- * `.datetime({ offset: true })`, kept as it was: zod 4's `z.iso.datetime()` accepts
- * RFC 3339 only (seconds required, a colon in the offset), and the widget parses the
- * `at` of every reply it renders with this schema.
- */
-const ISO_INSTANT =
-  /^((\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\d|3[01])|(0[469]|11)-(0[1-9]|[12]\d|30)|(02)-(0[1-9]|1\d|2[0-8])))T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?(Z|([+-]\d{2}:?\d{2}))$/;
+/** An ISO 8601 instant with a `Z` or numeric offset, seconds optional (see `ISO_INSTANT`). */
 export const isoTimestamp = z.string().regex(ISO_INSTANT);
 
 /**
@@ -126,19 +119,4 @@ export const apiError = z.object({
 });
 export type ApiError = z.infer<typeof apiError>;
 
-/** Thrown by adapters so callers (TanStack Query) get a typed error. */
-export class LucielApiError extends Error {
-  readonly code: ApiErrorCode;
-  readonly retryAfterSeconds?: number;
-  /** The wire body's typed-refusal word, when the server sent one (see `apiError`). */
-  readonly reason?: string;
-  readonly detail?: Record<string, unknown>;
-  constructor(err: ApiError) {
-    super(err.message);
-    this.name = 'LucielApiError';
-    this.code = err.code;
-    this.retryAfterSeconds = err.retryAfterSeconds;
-    if (err.reason !== undefined) this.reason = err.reason;
-    if (err.detail !== undefined) this.detail = err.detail;
-  }
-}
+export { LucielApiError } from '../errors';

@@ -1,11 +1,17 @@
-import { z } from 'zod';
-import { uuid, isoTimestamp } from './common';
+import { z } from 'zod/mini';
+import { ISO_INSTANT } from './rules';
 
 /**
  * DATA-PLANE shapes for the embeddable widget (Arch §1.2, §3.1, §3.4.1b/§3.6.2).
  * These intentionally contain ZERO admin surface. The widget client (built from
  * these) is the only client the widget bundle imports — it must never reach the
  * admin API (Space Instructions §1, §6.3).
+ *
+ * They are zod/mini schemas, unlike the classic-API schemas beside them: they ship in
+ * the public widget bundle, where mini keeps only the checks they use (about 16 kB of
+ * zod, against about 94 kB for the classic API). Nothing on the widget's import path
+ * may import `zod` itself (`widget-bundle-imports.test.ts`). The id and instant rules
+ * are the same as common.ts's `uuid` and `isoTimestamp`.
  *
  * ASSUMPTION (flagged): the Architecture lists the `/api/v1/chat-widget/*`
  * endpoint FAMILY (§1.2) and the widget behaviors (paused → empty div §3.6.2,
@@ -16,6 +22,11 @@ import { uuid, isoTimestamp } from './common';
  * reconcile against the backend when it lands without changing widget components
  * (the swap-with-zero-changes rule, §7).
  */
+
+/** Any 8-4-4-4-12 hex id (common.ts `uuid`). */
+const uuid = z.guid();
+/** An ISO 8601 instant with a `Z` or numeric offset (common.ts `isoTimestamp`). */
+const isoTimestamp = z.string().check(z.regex(ISO_INSTANT));
 
 /** Server-driven render directive — the widget renders what it is told. */
 export const widgetRenderState = z.enum([
@@ -62,8 +73,8 @@ export const widgetMessage = z.object({
 export type WidgetMessage = z.infer<typeof widgetMessage>;
 
 export const widgetSendRequest = z.object({
-  sessionId: uuid.optional(), // omitted on first message; server assigns
-  text: z.string().min(1),
+  sessionId: z.optional(uuid), // omitted on first message; server assigns
+  text: z.string().check(z.minLength(1)),
 });
 export type WidgetSendRequest = z.infer<typeof widgetSendRequest>;
 

@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { createWidgetClient } from '../widget';
 import {
   uuid,
   isoTimestamp,
@@ -32,6 +33,8 @@ import {
 
 const ok = (schema: { safeParse: (v: unknown) => { success: boolean } }, value: unknown) =>
   schema.safeParse(value).success;
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('ids', () => {
   it('accepts any 8-4-4-4-12 hex id, not only RFC version/variant UUIDs', () => {
@@ -301,5 +304,34 @@ describe('the widget data plane', () => {
         renderState: 'active',
       }),
     ).toBe(false);
+  });
+
+  it('the HTTP widget client parses a reply with them and refuses a malformed one', async () => {
+    const served = {
+      sessionId: '00000000-0000-0000-0000-000000000001',
+      reply: {
+        messageId: '88888888-8888-4888-8888-888888888888',
+        role: 'assistant',
+        text: 'Hello.',
+        at: '2026-06-13T23:42:00Z',
+      },
+      renderState: 'active',
+    };
+    const serve = (body: unknown) =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify(body), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }),
+        ),
+      );
+    const client = createWidgetClient({ adapter: 'http', baseUrl: 'https://api.example.com' });
+    serve(served);
+    await expect(client.send('vm_live_demo', { text: 'Hi' })).resolves.toEqual(served);
+    serve({ ...served, reply: { ...served.reply, at: '2026-06-13T23:42:00' } });
+    await expect(client.send('vm_live_demo', { text: 'Hi' })).rejects.toThrow();
   });
 });

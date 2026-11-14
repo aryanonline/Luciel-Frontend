@@ -1,6 +1,6 @@
 import type { WidgetApiClient } from '../widget-client';
-import type { WidgetBootstrap } from '../schemas';
-import { widgetBootstrap, widgetSendResult } from '../schemas';
+import type { WidgetBootstrap } from '../schemas/widget';
+import { widgetBootstrap, widgetSendResult } from '../schemas/widget';
 import { createTransport } from './transport';
 
 /**

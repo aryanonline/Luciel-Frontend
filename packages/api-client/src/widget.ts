@@ -16,4 +16,4 @@ export type {
   WidgetSendResult,
   WidgetRenderState,
 } from './schemas';
-export { LucielApiError } from './schemas';
+export { LucielApiError } from './errors';

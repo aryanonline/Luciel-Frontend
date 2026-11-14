@@ -76,3 +76,7 @@ message-rendering behavior.
   broken floating shell.
 - Any bundle-separation failure is a release blocker, even if source-level
   imports appear correct.
+- The bundle carries zod/mini only (api-client `schemas/widget.ts`): 37.0 kB minified
+  (`luciel.js`, 12.7 kB gzip) since 2026-11-14. A value import of classic zod or the
+  control-plane schemas anywhere on the widget's path puts about 94 kB back; api-client's
+  `widget-bundle-imports.test.ts` fails first.

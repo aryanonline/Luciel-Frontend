@@ -8,7 +8,9 @@ client, with mock and HTTP adapters behind stable interfaces.
 
 ## Key files
 
-- `src/schemas/` — Zod schemas and derived shared types.
+- `src/schemas/` — Zod schemas and derived shared types. `schemas/widget.ts` (the data
+  plane) is zod/mini; every other schema module uses the classic API.
+- `src/errors.ts` — `LucielApiError`, outside the schemas so the widget path can throw it.
 - `src/client.ts` — control-plane `LucielApiClient` interface.
 - `src/widget-client.ts` — widget `WidgetApiClient` interface.
 - `src/index.ts` — control-plane public entrypoint.
@@ -64,6 +66,12 @@ rules. Test adapters through their public client behavior where possible.
   `createLucielRequest` spells out zod 3's default wording, which the first-run form shows.
   `z.email()` accepts exactly the addresses zod 3 did. Swapping in a zod 4 built-in is a rule
   change: make it on purpose, with the test.
+- The widget parses with zod/mini. Classic zod 4 tree-shakes poorly and grew the widget bundle
+  from 89.7 kB (zod 3) to 130.2 kB; with `schemas/widget.ts` on mini, `LucielApiError` in
+  `src/errors.ts` and the instant pattern in `schemas/rules.ts`, nothing the widget entry
+  reaches loads classic zod, and the bundle is 37.0 kB (luciel.js, minified). Do not import
+  `zod` or the schemas index from a module on that path; `widget-bundle-imports.test.ts`
+  follows the imports from `src/widget.ts` and fails if one does.
 - `providerAvailable` is stronger than a connection's stale `status`. It avoids
   offering an impossible owner action or showing a false Connected chip.
 - The widget bundle gate checks emitted output, not just TypeScript exports.
