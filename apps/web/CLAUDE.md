@@ -46,7 +46,8 @@ bundle.
   main-app for the page-load path.
 - `tests/e2e/journey.spec.ts` — the mock-adapter customer walk (overview → configure →
   embed → conversations → leads → billing); `tests/e2e/live-smoke.spec.ts` — the opt-in,
-  read-only walk of a deployed environment; `tests/e2e/mock-session.ts` — the planted
+  read-only walk of a deployed environment (there is none while the hosted dev environment is
+  paused, since 2026-11-14; see the root CLAUDE.md); `tests/e2e/mock-session.ts` — the planted
   session-presence cookie the middleware requires before any dashboard page renders.
 - `tests/e2e/scenarios/*.spec.ts` (round 7 WP-12) — one Playwright project per mock
   scenario (`scenario-fresh`, `-at-cap`, `-payg`, `-paused`, `-grace`, `-closed`,
@@ -71,8 +72,10 @@ bundle.
   with the walk account (credentials set through the DOM by `fillSecret`, never a titled
   `fill`; no trace or video), first repairs what a cut-short walk left (closed / deleted /
   paused), changes only what it created or toggles back, and skips with the reason every
-  step needing an owner asset or provider consent (`NEEDS` in walk-kit.ts).
-  `walk/summary.mjs` turns the JSON report into the job summary.
+  step needing an owner asset or provider consent (`NEEDS` in walk-kit.ts). While the hosted dev
+  environment is paused (since 2026-11-14), `live-walk` has no tenant to walk: the walk account
+  comes back with the database snapshot, and the backend's restore runbook runs this walk once
+  dev is back. `walk/summary.mjs` turns the JSON report into the job summary.
 
 ## Invariants owned here
 

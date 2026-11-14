@@ -179,9 +179,11 @@ and `live-walk`: the SAME walk against a deployed environment with `E2E_LIVE=1
 E2E_LIVE_WRITE=1`, run only by the dispatch-only `live-walk` workflow
 (`-f confirm=walk-account-only`) with the walk account from repo secrets. It writes to that tenant only
 and skips, with the reason, every step that needs an owner asset or a provider consent.
-`pnpm test:scripts` pins both live workflows to `workflow_dispatch`. On a machine whose
-Playwright browser cache is older than the installed Playwright, point
-`E2E_CHROMIUM_EXECUTABLE` at an installed Chromium.
+`pnpm test:scripts` pins both live workflows to `workflow_dispatch`. While the hosted dev
+environment is paused (since 2026-11-14; see Deploy), neither live project has anything to run
+against. The walk account comes back with the database snapshot, and the restore runbook runs a
+live walk once dev is back. On a machine whose Playwright browser cache is older than the
+installed Playwright, point `E2E_CHROMIUM_EXECUTABLE` at an installed Chromium.
 
 The web app runs on Next 15 / React 19 (migrated 2026-09-07). The strict CSP admits
 `'unsafe-eval'` for development builds only, because `next dev` cannot hydrate without
@@ -191,9 +193,20 @@ release branch with auto-merge of green minor/patch updates; a major bump is lab
 (cron 02:00 UTC on the 1st, because GitHub fires schedules hours late and the steward reads
 at 13:00 UTC). It and the weekly `image-rebuild` workflow, which posts to the same issue, find
 the month's issue by exact title over the REST list, never the search index;
-`scripts/workflow-gates.test.mjs` pins the cron and both lookups.
+`scripts/workflow-gates.test.mjs` pins the cron and both lookups. While dev is paused, both
+workflows are disabled, and the monthly steward routine that reads their issue is paused. Re-enable
+the workflows (`gh workflow enable image-rebuild.yml`, `gh workflow enable dependency-review.yml`)
+only when the restore runbook reaches that step, after the backend runs again: `image-rebuild`
+pushes to `luciel-dev-web`, an ECR repository deleted with the environment.
 
 ## Deploy
+
+The hosted dev environment was paused on 2026-11-14 to stop AWS charges. Most of it was deleted,
+including the `luciel-dev-web` ECR repository, the web service and the widget CDN that this
+workflow deploys to, and the public hostnames serve nothing until it is restored. The restore
+runbook is `docs/operations/teardown-and-restore.md` in
+[Luciel-Backend](https://github.com/aryanonline/Luciel-Backend): dispatch this workflow only at
+its frontend step, after the backend deploy has recreated those resources.
 
 The deployment workflow builds the web artifact and publishes the widget to the
 embed CDN. To dispatch a development deployment from the release branch, use:
