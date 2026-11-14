@@ -6,12 +6,12 @@ hands the conversation to the team when it cannot answer confidently, and gives 
 dashboard to run it. This repository is the browser-facing half of the product: the marketing
 site, sign-up and the owner dashboard (one Next.js app), the chat widget that businesses embed
 on their own websites, and the typed API client, UI kit and design tokens those apps share. The
-API, the AI runtime and the AWS infrastructure live in a separate backend repository.
+API, the AI runtime and the AWS infrastructure live in the companion Luciel-Backend repository.
 
 ## Highlights
 
 - **Two API planes, kept apart down to the shipped bundle.** The dashboard calls the
-  control-plane API through `@luciel/api-client` with an httpOnly session cookie; the widget
+  control-plane (admin) API through `@luciel/api-client` with an httpOnly session cookie; the widget
   calls the public data-plane API through `@luciel/api-client/widget` with an embed key and no
   cookies. A [scan of the built bundle](apps/widget/scripts/check-bundle.mjs) fails the widget
   build if admin-API symbols or paths turn up in it, and a
@@ -20,39 +20,39 @@ API, the AI runtime and the AWS infrastructure live in a separate backend reposi
 - **One typed client, two adapters.** Components depend only on the `LucielApiClient` interface,
   whose response shapes come from Zod schemas. One flag picks the HTTP adapter or a stateful mock
   with account states, injected failures and slow calls, so the dashboard runs and is tested end
-  to end without a backend. ESLint keeps UI code away from the adapters, and production builds
-  default to HTTP ([`lib/api.ts`](apps/web/src/lib/api.ts)).
+  to end without a backend. ESLint keeps UI code away from the adapters, and a production build
+  with the flag unset uses HTTP ([`lib/api.ts`](apps/web/src/lib/api.ts)).
 - **Honest states as a tested contract.** A connection reads Connected, Action needed, Reconnect
-  needed or Not available yet, never a false Connected
-  ([`chips.ts`](packages/api-client/src/chips.ts)). Answer evidence has three attribution states.
-  Mutations show pending, success and error, a failed confirmation keeps its dialog open with the
-  error ([`Modal.tsx`](packages/ui/src/Modal.tsx)), and lists keep loading, empty and error apart.
-- **Long-running knowledge syncs without hung requests.** When a sync such as a website crawl
-  outlives the server's inline wait, the API answers 202 and the client polls the job every 2 s
-  for up to 10 minutes ([`sync-job.ts`](packages/api-client/src/adapters/sync-job.ts)), matching
-  its own job by start time and telling "still running" apart from "failed". The dashboard frees
-  the button at the 202 and refreshes the list while the source syncs.
+  needed or Not available yet ([`chips.ts`](packages/api-client/src/chips.ts)), never a false
+  Connected. Answer evidence tells four cases apart: sources used, none found, search unavailable,
+  attribution not recorded. A failed confirmation keeps its dialog open with the error
+  ([`Modal.test.tsx`](packages/ui/src/Modal.test.tsx)); lists keep loading, empty and error apart.
+- **Long-running knowledge syncs without hung requests.** A website crawl can outlast the load
+  balancer's 60 s idle timeout, so the API answers 202 once a sync runs past 20 s, and the client
+  polls the job ([`sync-job.ts`](packages/api-client/src/adapters/sync-job.ts)) every 2 s for up to
+  10 minutes, matching its own job by start time and telling "still running" apart from "failed".
+  The dashboard frees the button at the 202 and refreshes the list while the source syncs.
 - **A widget that behaves on someone else's page.** One self-initialising script in plain
-  TypeScript and DOM. It mounts in a Shadow DOM, pins its position with inline styles on the host
-  element, refuses plain-HTTP pages (except localhost), renders nothing while the assistant is
-  paused or the channel is off, keeps one conversation across page navigations, and gets team
-  replies by polling, never presented as instant. Assistant markdown goes through an escape-first
-  renderer with a tag allowlist ([`markdown.ts`](packages/ui/src/markdown.ts)); visitor text
-  stays a text node.
-- **Strict browser security.** A per-request, nonce-based Content Security Policy with
-  `frame-ancestors 'none'` ([`middleware.ts`](apps/web/src/middleware.ts)), HSTS and related
-  headers, and a session token held in an httpOnly cookie that browser code never reads.
-- **Supply-chain gates that fail closed and expire.** The [audit gate](scripts/audit-gate.mjs)
-  and the [image CVE gate](scripts/image-scan-gate.mjs) block HIGH and CRITICAL findings, fail
-  when their input is missing or unreadable, and fail once a waiver expires while its finding
-  remains. Waivers live in [`.security/`](.security) with a reason and an expiry, and tests pin
-  the deploy order: gate the image, then promote it.
-- **Tests that walk the product like a customer.** Playwright with axe-core checks WCAG 2.1 AA on
-  all 23 routes and fails when a new page has no entry; seven projects replay account states and
-  re-read every write after a reload; a scripted walk covers the whole dashboard. The same walk
-  runs against a deployed environment from a dispatch-only workflow, writing only to a dedicated
-  test account and skipping, with reasons, steps that need a real card, phone number, mailbox or
-  third-party sign-in.
+  TypeScript and DOM ([`mount.ts`](apps/widget/src/mount.ts)). It mounts in a Shadow DOM, pins its
+  position with inline styles on the host element, refuses plain-HTTP pages (except localhost),
+  renders nothing while the business has paused Luciel or switched website chat off, keeps one
+  conversation across page navigations, and picks up staff replies by polling. Assistant markdown
+  goes through an escape-first renderer with a tag allowlist
+  ([`markdown.ts`](packages/ui/src/markdown.ts)); visitor text stays a text node.
+- **Strict browser security.** A nonce-based [Content Security Policy](apps/web/src/middleware.ts)
+  with `frame-ancestors 'none'`, [HSTS and related headers](apps/web/next.config.mjs), and a session
+  token held in an httpOnly cookie that browser code never reads.
+- **Fail-closed supply-chain gates with expiring waivers.** The [audit gate](scripts/audit-gate.mjs)
+  and the [image CVE gate](scripts/image-scan-gate.mjs) block HIGH and CRITICAL findings, fail when
+  their input is missing or unreadable, and fail once a waiver expires while its finding remains.
+  [Workflow tests](scripts/workflow-gates.test.mjs) pin the deploy order: gate the image, then
+  promote it. Waivers live in [`.security/`](.security) with a reason and an expiry.
+- **Tests that walk the product like a customer.** Playwright runs axe-core's WCAG 2.1 AA rules
+  ([`a11y.spec.ts`](apps/web/tests/e2e/a11y.spec.ts)) on all 23 routes and fails when a new page
+  has no entry; seven suites, one per account state, re-read every write after a reload; a
+  [scripted walk](apps/web/tests/e2e/walk/customer-walk.spec.ts) covers every dashboard page. The
+  same walk runs against a deployed environment from a manually dispatched workflow, writing only
+  to a dedicated test account and skipping, with reasons, steps that need real third-party services.
 
 ## Architecture
 
@@ -132,13 +132,13 @@ flowchart LR
 
 ## Local development
 
-Requirements: Node.js 22 or later (CI and the production image both use Node 22) and pnpm
-9.7.0, pinned in `package.json` and provided by Corepack.
+Requirements: Node.js 22 or later (CI and the production image both use Node 22) and pnpm 9.7.0,
+pinned in `package.json` and provided by Corepack (on Node.js 25+, run `npm install -g corepack`).
 
 ```bash
 corepack enable && corepack prepare pnpm@9.7.0 --activate
 pnpm install --frozen-lockfile
-pnpm dev    # dashboard on http://localhost:3000; widget's Vite dev server on http://localhost:5173
+pnpm dev    # web app on http://localhost:3000; widget's Vite dev server on http://localhost:5173
 ```
 
 With no configuration, both apps run against the mock adapters, so no backend is needed. Sign in
@@ -247,9 +247,9 @@ a real card, phone number, mailbox or third-party sign-in skipped and reported.
 
 ## Further reading
 
-The `CLAUDE.md` files are each module's working guide: invariants, key files, tests, pitfalls.
-Comments throughout the code cite internal design documents (`Arch §`, `Space Instructions §`) and
-audit ids (`F0xx`, `round N WP-x`) that are kept outside the repository.
+The `CLAUDE.md` files are each module's working guide for contributors and coding agents. Comments
+cite design documents (`Arch §`, `Space Instructions §`), audit and work-package ids (`F0xx`,
+`Pn-x`, `round N WP-x`, `Harmony wave N`) and owner decisions (`Dn`) kept outside the repository.
 
 | Guide                                                                  | Covers                                                                                  |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
