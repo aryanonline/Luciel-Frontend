@@ -1,3 +1,5 @@
+// First: turns zod's JIT off before any schema is built (the production CSP has no eval).
+import './zod-setup';
 import { z } from 'zod';
 import { ISO_INSTANT } from './rules';
 

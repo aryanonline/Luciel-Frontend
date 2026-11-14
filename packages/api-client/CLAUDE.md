@@ -72,6 +72,12 @@ rules. Test adapters through their public client behavior where possible.
   reaches loads classic zod, and the bundle is 37.0 kB (luciel.js, minified). Do not import
   `zod` or the schemas index from a module on that path; `widget-bundle-imports.test.ts`
   follows the imports from `src/widget.ts` and fails if one does.
+- zod's JIT is off (`schemas/zod-setup.ts`, `z.config({ jitless: true })`, 2026-11-14). Building a
+  classic `z.object()` otherwise test-runs `new Function("")`, which the dashboard's production CSP
+  (no 'unsafe-eval') reported as a securitypolicyviolation on every page load. zod reads the flag
+  when it builds a schema, so `common.ts` and `contact.ts` import the setup first: a new classic
+  schema module imports `common.ts` or the setup before it builds anything.
+  `zod-jitless.test.ts` pins both entry paths. zod/mini never compiles, so the widget needs nothing.
 - `providerAvailable` is stronger than a connection's stale `status`. It avoids
   offering an impossible owner action or showing a false Connected chip.
 - The widget bundle gate checks emitted output, not just TypeScript exports.

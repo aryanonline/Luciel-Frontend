@@ -1,3 +1,5 @@
+// First: this module does not import common.ts, so it turns zod's JIT off itself.
+import './zod-setup';
 import { z } from 'zod';
 
 /**

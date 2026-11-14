@@ -162,9 +162,9 @@ pnpm -r build
 `next build` never compiles them, and `typecheck:tests` checks them instead. CI runs both in
 its typecheck step.
 
-The current suite is approximately 711 tests (api-client 163, ui 20, widget 41, web 487;
-counted 2026-11-14, after the zod 4 migration added the schema-rule, form-message and
-widget-import tests).
+The current suite is approximately 714 tests (api-client 166, ui 20, widget 41, web 487;
+counted 2026-11-14, after the zod 4 migration added the schema-rule, form-message,
+widget-import and zod-JIT tests).
 Treat an unexpected test-count change as a signal to review, not as a substitute for
 the command exit status. `pnpm --filter @luciel/web test:e2e` runs the Playwright
 a11y gate plus the mock-adapter customer journey (`tests/e2e/journey.spec.ts`) against
@@ -187,7 +187,9 @@ installed Playwright, point `E2E_CHROMIUM_EXECUTABLE` at an installed Chromium.
 
 The web app runs on Next 15 / React 19 (migrated 2026-09-07). The strict CSP admits
 `'unsafe-eval'` for development builds only, because `next dev` cannot hydrate without
-it; production policy is unchanged. Dependencies are kept current by Dependabot on the
+it; production policy is unchanged. zod runs with its JIT off
+(`packages/api-client/src/schemas/zod-setup.ts`): zod 4 otherwise probes for eval when it
+builds a schema, and the production policy reported that probe on every page. Dependencies are kept current by Dependabot on the
 release branch with auto-merge of green minor/patch updates; a major bump is labelled
 `major-update` for a person, and the `dependency-review` workflow files a monthly issue
 (cron 02:00 UTC on the 1st, because GitHub fires schedules hours late and the steward reads
