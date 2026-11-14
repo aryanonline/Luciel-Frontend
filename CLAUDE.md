@@ -197,6 +197,9 @@ gh workflow run deploy.yml --ref main -f environment=dev
 
 Always pass `--ref main`: the workflow's `guard` job refuses any other ref before the
 first AWS call, there is no push trigger, and a prod dispatch no longer rolls dev first.
+The AWS account id is the repository variable `AWS_ACCOUNT_ID`, never a literal in a workflow:
+`guard`, and the first step of `image-rebuild`, refuse a run without a 12-digit value
+(`scripts/workflow-gates.test.mjs` pins both).
 
 A green deploy means the web service finished rolling: each deploy job's last step is
 `aws ecs wait services-stable`, which gives up after 10 minutes and fails the job

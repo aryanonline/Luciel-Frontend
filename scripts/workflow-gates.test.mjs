@@ -165,3 +165,97 @@ for (const name of ['deploy-dev', 'deploy-prod']) {
     assert.doesNotMatch(before.slice(before.lastIndexOf('put-image')), /\|\| true/, 'a failed promotion must fail the job');
   });
 }
+
+// 2026-11-14: the AWS account id was a literal in both AWS workflows of this public
+// repository. It is the repository variable AWS_ACCOUNT_ID now, and a run without a
+// 12-digit value stops with a readable error before the first AWS call, instead of
+// failing inside the OIDC step on a role ARN with no account in it.
+const AWS_WORKFLOWS = [
+  ['.github/workflows/deploy.yml', 'guard'],
+  ['.github/workflows/image-rebuild.yml', 'rebuild'],
+];
+const ACCOUNT_CHECK = /name: Refuse a run without the AWS account id/;
+
+/** The names of a workflow's jobs (2-space keys under `jobs:`). */
+function jobNames(workflow) {
+  const jobs = workflow.slice(workflow.indexOf('\njobs:\n'));
+  return [...jobs.matchAll(/^ {2}([A-Za-z0-9_-]+):$/gm)].map((m) => m[1]);
+}
+
+/** A step's `run: |` script, dedented. */
+function runScript(step) {
+  const lines = step.split('\n');
+  const at = lines.findIndex((l) => /^ {8}run: \|$/.test(l));
+  assert.notEqual(at, -1, 'no run block');
+  const body = [];
+  for (const l of lines.slice(at + 1)) {
+    if (l.trim() !== '' && !l.startsWith(' '.repeat(10))) break;
+    body.push(l.slice(10));
+  }
+  return body.join('\n');
+}
+
+for (const [path] of AWS_WORKFLOWS) {
+  test(`${path} takes the AWS account id from vars.AWS_ACCOUNT_ID, never a literal`, () => {
+    const wf = read(path);
+    assert.match(wf, /^ {2}ACCOUNT: \$\{\{ vars\.AWS_ACCOUNT_ID \}\}$/m);
+    assert.doesNotMatch(wf, /ACCOUNT: '?\d/);
+    assert.doesNotMatch(
+      wf,
+      /arn:aws:[a-z0-9-]+:[a-z0-9-]*:\d{12}:/,
+      'a literal account id in an ARN',
+    );
+  });
+}
+
+test('deploy.yml checks the account id in guard, and every job that assumes an AWS role needs guard', () => {
+  const wf = read('.github/workflows/deploy.yml');
+  assert.ok(
+    steps(job(wf, 'guard')).some((s) => ACCOUNT_CHECK.test(s)),
+    'guard has no account check',
+  );
+  const awsJobs = jobNames(wf).filter((name) => /configure-aws-credentials/.test(job(wf, name)));
+  assert.ok(awsJobs.length > 0, 'no job assumes an AWS role');
+  for (const name of awsJobs) {
+    assert.match(
+      job(wf, name),
+      /^ {4}needs: (guard|\[[^\]]*\bguard\b[^\]]*\])$/m,
+      `${name} must need guard`,
+    );
+  }
+});
+
+test('image-rebuild.yml checks the account id before its first AWS step', () => {
+  const all = steps(job(read('.github/workflows/image-rebuild.yml'), 'rebuild'));
+  const check = all.findIndex((s) => ACCOUNT_CHECK.test(s));
+  const firstAws = all.findIndex((s) => /aws-actions\/|\baws [a-z]/.test(s));
+  assert.notEqual(check, -1, 'no account check step');
+  assert.ok(firstAws !== -1 && check < firstAws, 'the check must run before any AWS step');
+});
+
+const hasBash = spawnSync('bash', ['-c', 'true'], { encoding: 'utf8' }).status === 0;
+
+for (const [path, jobName] of AWS_WORKFLOWS) {
+  test(
+    `${path} refuses an unset or malformed AWS_ACCOUNT_ID with a readable error`,
+    { skip: hasBash ? false : 'needs bash' },
+    () => {
+      const step = steps(job(read(path), jobName)).find((s) => ACCOUNT_CHECK.test(s));
+      assert.ok(step, 'no account check step');
+      const script = runScript(step);
+      assert.doesNotMatch(script, /\$\{\{/, 'the check must run as written, with no expressions');
+      const run = (ACCOUNT) =>
+        spawnSync('bash', ['-c', `set -eo pipefail\n${script}`], {
+          encoding: 'utf8',
+          env: { ...process.env, ACCOUNT },
+        });
+      for (const bad of ['', '12345', '1234567890123', '12345678901a', ' 123456789012']) {
+        const r = run(bad);
+        assert.equal(r.status, 1, `accepted ${JSON.stringify(bad)}`);
+        assert.match(r.stdout, /^::error::the repository variable AWS_ACCOUNT_ID /m);
+      }
+      const ok = run('000000000000');
+      assert.equal(ok.status, 0, ok.stderr);
+    },
+  );
+}

@@ -213,7 +213,8 @@ Deploys run only when a person dispatches [`deploy.yml`](.github/workflows/deplo
 gh workflow run deploy.yml --ref main -f environment=dev
 ```
 
-1. **Guard.** Refuses any ref other than `main` before the first AWS call.
+1. **Guard.** Refuses any ref other than `main`, and a run without the `AWS_ACCOUNT_ID`
+   repository variable, before the first AWS call.
 2. **Build.** Assumes the environment's deploy role through GitHub OIDC (no stored AWS keys),
    builds the widget and the web image, and pushes the image under its commit SHA.
 3. **CVE gate.** Waits for ECR's scan-on-push result and runs the image gate on it; an incomplete
