@@ -61,7 +61,7 @@ jobs:
             *) echo "::error::base_url must be an https:// origin"; exit 1 ;;
           esac
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 
