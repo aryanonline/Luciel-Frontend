@@ -47,7 +47,9 @@ bundle.
 - `tests/e2e/journey.spec.ts` — the mock-adapter customer walk (overview → configure →
   embed → conversations → leads → billing); `tests/e2e/live-smoke.spec.ts` — the opt-in,
   read-only walk of a deployed environment (there is none while the hosted dev environment is
-  paused, since 2026-11-14; see the root CLAUDE.md); `tests/e2e/mock-session.ts` — the planted
+  paused, since 2026-11-14; see the root CLAUDE.md). Like live-walk it types the credentials with
+  `fillSecret` and runs once, with no trace or video: live-smoke.yml uploads the report, pass or
+  fail, from this public repository. `tests/e2e/mock-session.ts` — the planted
   session-presence cookie the middleware requires before any dashboard page renders.
 - `tests/e2e/scenarios/*.spec.ts` (round 7 WP-12) — one Playwright project per mock
   scenario (`scenario-fresh`, `-at-cap`, `-payg`, `-paused`, `-grace`, `-closed`,

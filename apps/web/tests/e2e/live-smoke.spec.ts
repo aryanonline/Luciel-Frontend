@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { clearSecrets, fillSecret } from './walk/walk-kit';
 
 /**
  * Read-only smoke against a DEPLOYED environment (round 6 WP-J, audit F171).
@@ -9,6 +10,10 @@ import { test, expect } from '@playwright/test';
  * server — only when E2E_LIVE=1, so the routine CI run never touches a live site.
  * The walk signs in, reads the overview, the embed snippet and the billing card,
  * and changes nothing.
+ *
+ * The credentials go in through the DOM (`fillSecret`), never a titled `fill`: a fill
+ * step is titled with its value, and live-smoke.yml uploads the report, pass or fail,
+ * as an artifact that anyone signed in to GitHub can download from this public repo.
  */
 const LIVE = process.env.E2E_LIVE === '1';
 const EMAIL = process.env.E2E_EMAIL ?? '';
@@ -22,10 +27,16 @@ test.describe('live smoke (read-only)', () => {
 
   test('signs in and reads the overview, embed snippet and billing card', async ({ page }) => {
     await page.goto('/login');
-    await page.fill('#email', EMAIL);
-    await page.fill('#password', PASSWORD);
-    await page.getByRole('button', { name: /sign in|log in/i }).click();
-    await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
+    await fillSecret(page.locator('#email'), EMAIL);
+    await fillSecret(page.locator('#password'), PASSWORD);
+    try {
+      await page.getByRole('button', { name: /sign in|log in/i }).click();
+      await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
+    } catch (err) {
+      // The failure screenshot must not show what was typed.
+      await clearSecrets(page);
+      throw err;
+    }
 
     // The overview names the employee and its capacity in conversations.
     await expect(page.getByText(/conversation/i).first()).toBeVisible({ timeout: 30_000 });

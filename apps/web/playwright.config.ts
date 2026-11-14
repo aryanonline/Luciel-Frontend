@@ -21,7 +21,7 @@ import type { MockOptions, ScenarioName } from './tests/e2e/support/fixtures';
  *    Leads → Analytics → Audit → Billing → Pause/Delete/Close. Timings land in the
  *    report as annotations.
  *  - `live-smoke` — ONLY when E2E_LIVE=1: a read-only walk of a deployed environment
- *    at E2E_BASE_URL with E2E_EMAIL / E2E_PASSWORD.
+ *    at E2E_BASE_URL with E2E_EMAIL / E2E_PASSWORD. One pass, no trace, no video.
  *  - `live-walk` — ONLY when E2E_LIVE=1 AND E2E_LIVE_WRITE=1: the SAME walk spec
  *    against E2E_BASE_URL with the walk account (dispatch-only: live-walk.yml). It
  *    writes only to that tenant and skips, with the reason, every step that needs an
@@ -77,7 +77,11 @@ const liveProjects: PlaywrightTestProject<MockOptions>[] = [
   {
     name: 'live-smoke',
     testMatch: /live-smoke\.spec\.ts/,
-    use: chromium,
+    // As live-walk: one pass, and no trace or video. A retry's trace keeps what the smoke
+    // typed, and live-smoke.yml uploads the report as an artifact that anyone signed in to
+    // GitHub can download from this public repository.
+    retries: 0,
+    use: { ...chromium, trace: 'off', video: 'off', screenshot: 'only-on-failure' },
   },
   ...(liveWrite
     ? [
