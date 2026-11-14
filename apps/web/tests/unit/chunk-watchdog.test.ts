@@ -19,19 +19,22 @@ const dialog = () => document.querySelector('dialog');
 
 describe('the script behind a file that fails during a page load', () => {
   const originalLocation = window.location;
+  // Bound once, before any spy exists: a test that installs twice spies on a method that is
+  // already a spy, and vi.spyOn then hands back that same spy (Vitest 4), so binding the
+  // current method inside install() would make the spy call itself.
+  const realAddEventListener = window.addEventListener.bind(window);
   const reload = vi.fn();
   let added: [string, EventListenerOrEventListenerObject, unknown][];
 
   const install = () => {
     // Each run stands for its own page load, so its listeners go with it.
-    const real = window.addEventListener.bind(window);
     vi.spyOn(window, 'addEventListener').mockImplementation(((
       type: string,
       listener: EventListenerOrEventListenerObject,
       options?: boolean,
     ) => {
       added.push([type, listener, options]);
-      real(type, listener, options);
+      realAddEventListener(type, listener, options);
     }) as typeof window.addEventListener);
     new Function(CHUNK_WATCHDOG_SCRIPT)();
   };
