@@ -9,19 +9,26 @@ expiring within 35 days.
 
 ## Current waivers
 
-| Advisory            | Package                        | Why it is waived                                                                                                                                                                                                                                                                              | Expires    | Exit                                                                                                                         |
-| ------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| GHSA-mrhx-c7xc-m3w5 | zod <4.6.6 (3.25.76 installed) | Memory exhaustion validating oversized constrained collections; patched only in zod 4.6.6, no 3.x fix. zod here parses Luciel's own backend responses (control plane, widget data plane) and one owner-typed confirm-code form; no attacker-sized collection reaches a schema in the browser. | 2026-12-31 | The zod 4 migration (apps/web + packages/api-client, 25 modules, no schema introspection), a major for the steward's triage. |
+None. The last one, GHSA-mrhx-c7xc-m3w5 (zod), was retired on 2026-11-14 by the zod 4
+migration (see Retired waivers).
 
 Round 7 (2026-11-01): both `tinypool` waivers retired two days before they expired, without the vitest major: a `pnpm.overrides` entry `"tinypool": "^2.2.0"` runs vitest 3.2.x on tinypool 2.2.0. The whole workspace suite stays green on it, and `scripts/audit-gate.mjs` reported both advisories as no longer reported. Drop the override when vitest 4 arrives.
 
-Round 7 (2026-10-25): the nightly audit went red on 2026-10-24 for four advisories. Three had in-range fixes and were taken: `next` 15.5.27 → 15.5.28 (GHSA-2464-fhr4-w9xw, an unauthenticated RCE in the Image Optimization API with SVG input, and GHSA-p3m5-59mp-jv5r), `vite` 6.4.3 → 6.4.4+ (GHSA-587h-7wmj-h5pm, launch-editor). `zod` has no 3.x fix and is waived above. The `braces` waiver was retired the same day: the advisory is no longer reported.
+Round 7 (2026-10-25): the nightly audit went red on 2026-10-24 for four advisories. Three had in-range fixes and were taken: `next` 15.5.27 → 15.5.28 (GHSA-2464-fhr4-w9xw, an unauthenticated RCE in the Image Optimization API with SVG input, and GHSA-p3m5-59mp-jv5r), `vite` 6.4.3 → 6.4.4+ (GHSA-587h-7wmj-h5pm, launch-editor). `zod` had no 3.x fix and was waived (retired 2026-11-14, below). The `braces` waiver was retired the same day: the advisory is no longer reported.
 
 Round 7 (2026-10-11): the nightly audit went red on 2026-10-06 for four advisories. Three had in-range fixes and were taken, not waived: `next` 15.5.25 → 15.5.27 (two moderates), `sharp` 0.35.5 (GHSA-wq5f-xc86-pv6w) and `source-map-js` 1.2.2 (GHSA-68fv-2mgg-jv7q) by refreshing the lockfile. The two `tinypool` criticals have no fix inside vitest 3 and were waived (retired 2026-11-01, above).
 
 Round 7 (2026-10-04): the nightly audit went red on 2026-09-30 for two `brace-expansion` advisories (GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p). Those had fixes and were closed by raising the `pnpm.overrides` (1.x → ^1.1.20, 5.x → ^5.0.11), not waived.
 
 ## Retired waivers
+
+| Advisory            | Package    | Why it was waived                                                                                                                                                                                                           | Waived                         | Fixed by                                                     |
+| ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------ |
+| GHSA-mrhx-c7xc-m3w5 | zod <4.6.6 | Memory exhaustion validating oversized constrained collections, fixed only in zod 4.6.6. zod parsed Luciel's own backend responses and one owner-typed confirm-code form, so no attacker-sized collection reached a schema. | 2026-10-25, renewed 2026-11-13 | zod 4.6.7 and @hookform/resolvers 7.0.6 (retired 2026-11-14) |
+
+The zod 4 migration kept zod 3's rules where zod 4 changed its own (ids, ISO instants, URLs and
+the first-run messages; `packages/api-client/src/__tests__/schema-rules.test.ts` pins them), and
+`scripts/audit-gate.mjs` passes with the waiver removed.
 
 The eight Next 14.2.x advisories below were waived on 2026-09-06 for one release cycle and
 retired on 2026-09-07 by the Next 14 → 15 migration (round 6 WP-B: `next` 15.5.x, React 19,
@@ -46,4 +53,4 @@ and the test runner was moved to vitest 3.2.6+ (GHSA-5xrq-8626-4rwp). Minor and 
 updates now arrive weekly through Dependabot and merge themselves once CI is green
 (`.github/dependabot.yml`, `dependabot-auto-merge.yml`); a major is labelled for a person.
 
-Re-review 2026-11-13: GHSA-mrhx-c7xc-m3w5 (zod) renewed from 2026-11-24 to 2026-12-31. No 3.x release carries the fix; zod here still parses only Luciel's own backend responses and one short owner-typed form, so no attacker-sized collection reaches a schema. The exit is still the zod 4 migration (apps/web and packages/api-client), owed as its own change.
+Re-review 2026-11-13: GHSA-mrhx-c7xc-m3w5 (zod) renewed from 2026-11-24 to 2026-12-31. No 3.x release carries the fix; zod here still parses only Luciel's own backend responses and one short owner-typed form, so no attacker-sized collection reaches a schema. The exit is still the zod 4 migration (apps/web and packages/api-client), owed as its own change. That migration landed on 2026-11-14 and retired the waiver.
