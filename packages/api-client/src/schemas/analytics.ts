@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uuid, isoTimestamp } from './common';
 import { sessionChannelId } from './luciel';
 import { escalationEventSignal } from './conversations';
 
@@ -86,7 +87,7 @@ export type AnalyticsOverview = z.infer<typeof analyticsOverview>;
 export const auditEvent = z.object({
   eventId: z.string(),
   eventType: z.string(),
-  at: z.string().datetime({ offset: true }),
+  at: isoTimestamp,
   /**
    * The owner-readable one-liner the backend renders from code-shaped payload values
    * (round 7 WP-5 item 6; admin/usage.py `audit_detail`): `active → paused (owner)`,
@@ -95,6 +96,6 @@ export const auditEvent = z.object({
    */
   detail: z.string().nullable().optional(),
   /** Present for owner-initiated actions (e.g. live takeover actor); null otherwise. */
-  actorUserId: z.string().uuid().nullable().optional(),
+  actorUserId: uuid.nullable().optional(),
 });
 export type AuditEvent = z.infer<typeof auditEvent>;

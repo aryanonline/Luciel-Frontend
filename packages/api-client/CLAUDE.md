@@ -56,6 +56,14 @@ rules. Test adapters through their public client behavior where possible.
 
 ## Gotchas from this cycle
 
+- zod 4 (2026-11-14, from 3.25.76): where zod 4 changed a rule, the schemas keep zod 3's,
+  and `src/__tests__/schema-rules.test.ts` pins each one. `uuid` is `z.guid()` (any
+  8-4-4-4-12 hex id; `z.uuid()` adds RFC version and variant checks); `isoTimestamp` is zod
+  3's datetime pattern (seconds optional, `+0530` offsets; `z.iso.datetime()` is RFC 3339
+  only); `absoluteUrl` parses the string as sent (`z.url()` trims and rewrites it); and
+  `createLucielRequest` spells out zod 3's default wording, which the first-run form shows.
+  `z.email()` accepts exactly the addresses zod 3 did. Swapping in a zod 4 built-in is a rule
+  change: make it on purpose, with the test.
 - `providerAvailable` is stronger than a connection's stale `status`. It avoids
   offering an impossible owner action or showing a false Connected chip.
 - The widget bundle gate checks emitted output, not just TypeScript exports.

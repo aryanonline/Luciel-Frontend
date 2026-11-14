@@ -37,7 +37,7 @@ import { api } from '@/lib/api';
  */
 const schema = z.object({
   name: z.string().min(1, 'Please tell us your name.'),
-  email: z.string().email('Enter a valid email so we can reply.'),
+  email: z.email('Enter a valid email so we can reply.'),
   message: z.string().min(10, 'A little more detail helps us help you.'),
   // Honeypot — must stay empty. Not shown to humans.
   company: z.string().max(0).optional(),

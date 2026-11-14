@@ -14,7 +14,7 @@ import { api } from '@/lib/api';
  * account exists, we've sent a link," never revealing whether the email is
  * registered.
  */
-const schema = z.object({ email: z.string().email('Enter a valid email.') });
+const schema = z.object({ email: z.email('Enter a valid email.') });
 type FormValues = z.infer<typeof schema>;
 
 export default function ForgotPage() {

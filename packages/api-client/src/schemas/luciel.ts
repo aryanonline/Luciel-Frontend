@@ -235,7 +235,7 @@ export const knowledgeSyncConnection = z.object({
   provider: knowledgeSyncProvider,
   status: connectionStatus,
   /** Carries `authorize_url` (real provider consent URL) while a connect is pending. */
-  nonSecretConfig: z.record(z.unknown()).optional(),
+  nonSecretConfig: z.record(z.string(), z.unknown()).optional(),
   /** A detail beginning "Action needed:" means do not redirect — show it instead. */
   statusDetail: z.string().nullable().optional(),
   /** The last sync job (see `knowledgeSyncJob`); null = none on record. */
@@ -305,9 +305,9 @@ export const notificationChannel = z.enum(['email', 'sms']);
 export type NotificationChannel = z.infer<typeof notificationChannel>;
 
 export const escalationContact = z.object({
-  primaryEmail: z.string().email().optional(),
+  primaryEmail: z.email().optional(),
   primarySms: z.string().optional(),
-  secondaryEmail: z.string().email().optional(),
+  secondaryEmail: z.email().optional(),
   secondarySms: z.string().optional(),
   preferredChannel: notificationChannel.optional(),
   /** Per-signal routing: only who/how is editable, never the trigger (Vision §3.4). */
@@ -553,10 +553,18 @@ export const confirmSmsContactResult = z.object({
 });
 export type ConfirmSmsContactResult = z.infer<typeof confirmSmsContactResult>;
 
+/**
+ * The first-run form shows these messages under its fields. They are zod 3's default
+ * wording, written out when zod 4 (which words its defaults differently) arrived, so
+ * the form still says exactly what it said.
+ */
+const FIRST_RUN_EMPTY = 'String must contain at least 1 character(s)';
+const FIRST_RUN_TOO_LONG = 'String must contain at most 280 character(s)';
+
 export const createLucielRequest = z.object({
-  name: z.string().min(1),
-  websiteUrl: z.string().min(1),
+  name: z.string().min(1, FIRST_RUN_EMPTY),
+  websiteUrl: z.string().min(1, FIRST_RUN_EMPTY),
   /** "In one sentence, what is your business?" (Customer Journey Phase 3). */
-  businessOneLiner: z.string().min(1).max(280),
+  businessOneLiner: z.string().min(1, FIRST_RUN_EMPTY).max(280, FIRST_RUN_TOO_LONG),
 });
 export type CreateLucielRequest = z.infer<typeof createLucielRequest>;

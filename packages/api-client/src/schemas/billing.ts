@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isoTimestamp } from './common';
+import { isoTimestamp, absoluteUrl } from './common';
 
 /**
  * Billing & conversation budget. Single plan: free 50 conversations/month, then
@@ -87,7 +87,7 @@ export type BillingInfo = z.infer<typeof billingInfo>;
 /** Adding a card = Stripe Checkout, no charge at save (Customer Journey §6). */
 export const checkoutSession = z.object({
   /** Hosted Stripe Checkout URL the UI redirects to. */
-  url: z.string().url(),
+  url: absoluteUrl,
 });
 export type CheckoutSession = z.infer<typeof checkoutSession>;
 
@@ -100,6 +100,6 @@ export type CheckoutSession = z.infer<typeof checkoutSession>;
  * no card on file to update — adding a first card is Checkout's job.
  */
 export const portalSession = z.object({
-  url: z.string().url(),
+  url: absoluteUrl,
 });
 export type PortalSession = z.infer<typeof portalSession>;

@@ -6,8 +6,36 @@ import { z } from 'zod';
  * reusable as React Hook Form validators.
  */
 
-export const uuid = z.string().uuid();
-export const isoTimestamp = z.string().datetime({ offset: true });
+/**
+ * Any 8-4-4-4-12 hex id. `z.guid()` is the rule zod 3's `.uuid()` applied; zod 4's
+ * `z.uuid()` also demands RFC 9562 version and variant bits, which an id the backend
+ * serves need not carry.
+ */
+export const uuid = z.guid();
+
+/**
+ * An ISO 8601 instant: a date, `T`, a time whose seconds are optional, then `Z` or a
+ * numeric offset (`+05:30` or `+0530`). This is the pattern zod 3 built for
+ * `.datetime({ offset: true })`, kept as it was: zod 4's `z.iso.datetime()` accepts
+ * RFC 3339 only (seconds required, a colon in the offset), and the widget parses the
+ * `at` of every reply it renders with this schema.
+ */
+const ISO_INSTANT =
+  /^((\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\d|3[01])|(0[469]|11)-(0[1-9]|[12]\d|30)|(02)-(0[1-9]|1\d|2[0-8])))T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?(Z|([+-]\d{2}:?\d{2}))$/;
+export const isoTimestamp = z.string().regex(ISO_INSTANT);
+
+/**
+ * A string the URL parser accepts as it stands, with any scheme: zod 3's `.url()`
+ * rule. zod 4's `z.url()` trims the string before parsing and returns it trimmed.
+ */
+export const absoluteUrl = z.string().refine((value) => {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+});
 
 /**
  * The uniform connection-state chip vocabulary the UI must surface (Space
@@ -94,7 +122,7 @@ export const apiError = z.object({
    * Code-shaped values that ride a typed refusal (instants, counts, state names) —
    * e.g. `{ closedAt, reopenUntil }` on `account_closed`. Never display copy.
    */
-  detail: z.record(z.unknown()).optional(),
+  detail: z.record(z.string(), z.unknown()).optional(),
 });
 export type ApiError = z.infer<typeof apiError>;
 

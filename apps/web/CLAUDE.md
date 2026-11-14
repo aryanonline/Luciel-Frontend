@@ -118,6 +118,10 @@ Lint is the ESLint 9 CLI over the whole app (`eslint .`, migrated from the depre
 15's `next/core-web-vitals` through FlatCompat and adds the adapter-import ban; `next build`
 lints `src/` with the same config. eslint-config-next 15.5 does not support ESLint 10.
 
+Forms validate with zod 4 through `@hookform/resolvers` 7 (both moved on 2026-11-14).
+`tests/unit/form-validation-messages.test.tsx` pins every message a form schema shows, word
+for word; a field error renders as `#<field>-error` under its input.
+
 Run the whole workspace checks before handoff. Add a focused unit test alongside
 any fix to a dashboard state, connection label, count, modal, or evidence rule.
 

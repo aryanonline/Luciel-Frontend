@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuid, isoTimestamp } from './common';
+import { uuid, isoTimestamp, absoluteUrl } from './common';
 
 /**
  * Auth & account-lifecycle shapes. Source: Arch §3.7.1a (account state machine,
@@ -27,7 +27,7 @@ export type AccountState = z.infer<typeof accountState>;
 export const account = z.object({
   adminId: uuid,
   userId: uuid,
-  email: z.string().email(),
+  email: z.email(),
   state: accountState,
   createdAt: isoTimestamp,
   /** True once email-verification has completed (gate to dashboard, §3.7.1a). */
@@ -50,7 +50,7 @@ export type Account = z.infer<typeof account>;
  */
 export const accountExportResult = z.object({
   ok: z.boolean().default(true),
-  downloadUrl: z.string().url().optional(),
+  downloadUrl: absoluteUrl.optional(),
   ttlDays: z.number().int().positive().optional(),
   /**
    * What happened to the email carrying the same link (round 7 WP-5, item 4 —
@@ -182,7 +182,7 @@ export type Session = z.infer<typeof session>;
 // --- Request shapes (also reusable as RHF + Zod validators) -------------------
 
 export const signupRequest = z.object({
-  email: z.string().email(),
+  email: z.email(),
   password: z.string().min(1),
   /** Invisible captcha token (Customer Journey Phase 2). */
   captchaToken: z.string().min(1),
@@ -190,12 +190,12 @@ export const signupRequest = z.object({
 export type SignupRequest = z.infer<typeof signupRequest>;
 
 export const loginRequest = z.object({
-  email: z.string().email(),
+  email: z.email(),
   password: z.string().min(1),
 });
 export type LoginRequest = z.infer<typeof loginRequest>;
 
-export const forgotPasswordRequest = z.object({ email: z.string().email() });
+export const forgotPasswordRequest = z.object({ email: z.email() });
 export type ForgotPasswordRequest = z.infer<typeof forgotPasswordRequest>;
 
 export const resetPasswordRequest = z.object({

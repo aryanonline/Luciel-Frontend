@@ -22,7 +22,7 @@ import { HCaptcha } from '@/components/marketing/hcaptcha';
  * Submit is blocked until a token is present.
  */
 const schema = z.object({
-  email: z.string().email('Enter a valid email.'),
+  email: z.email('Enter a valid email.'),
   password: z.string().min(8, 'Use at least 8 characters.'),
 });
 type FormValues = z.infer<typeof schema>;

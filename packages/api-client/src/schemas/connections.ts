@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuid, isoTimestamp, connectionStatus } from './common';
+import { uuid, isoTimestamp, absoluteUrl, connectionStatus } from './common';
 
 /**
  * The one connection model for everything external (Arch §3.8). Surfaced inline
@@ -42,41 +42,35 @@ export type ConnectionType = z.infer<typeof connectionType>;
 export const knowledgeSyncJobState = z.enum(['syncing', 'synced', 'failed', 'shrink_pending']);
 export type KnowledgeSyncJobState = z.infer<typeof knowledgeSyncJobState>;
 
-export const knowledgeSyncJobResult = z
-  .object({
-    added: z.array(z.string()).optional(),
-    updated: z.array(z.string()).optional(),
-    removed: z.array(z.string()).optional(),
-    failed: z.array(z.string()).optional(),
-    unreached: z.array(z.string()).optional(),
-    graphDeferred: z.array(z.string()).optional(),
-    refused: z.array(z.string()).optional(),
-    halted: z.unknown().optional(),
-  })
-  .passthrough();
+export const knowledgeSyncJobResult = z.looseObject({
+  added: z.array(z.string()).optional(),
+  updated: z.array(z.string()).optional(),
+  removed: z.array(z.string()).optional(),
+  failed: z.array(z.string()).optional(),
+  unreached: z.array(z.string()).optional(),
+  graphDeferred: z.array(z.string()).optional(),
+  refused: z.array(z.string()).optional(),
+  halted: z.unknown().optional(),
+});
 export type KnowledgeSyncJobResult = z.infer<typeof knowledgeSyncJobResult>;
 
-export const knowledgeSyncJob = z
-  .object({
-    state: knowledgeSyncJobState,
-    startedAt: isoTimestamp,
-    finishedAt: isoTimestamp.nullable().optional(),
-    result: knowledgeSyncJobResult.nullable().optional(),
-    error: z.string().nullable().optional(),
-    shrink: z.object({ remote: z.number(), existing: z.number() }).nullable().optional(),
-    trigger: z.enum(['manual', 'scheduled']).optional(),
-  })
-  .passthrough();
+export const knowledgeSyncJob = z.looseObject({
+  state: knowledgeSyncJobState,
+  startedAt: isoTimestamp,
+  finishedAt: isoTimestamp.nullable().optional(),
+  result: knowledgeSyncJobResult.nullable().optional(),
+  error: z.string().nullable().optional(),
+  shrink: z.object({ remote: z.number(), existing: z.number() }).nullable().optional(),
+  trigger: z.enum(['manual', 'scheduled']).optional(),
+});
 export type KnowledgeSyncJob = z.infer<typeof knowledgeSyncJob>;
 
 /** The 202 body of POST /knowledge/sync-connections/{id}/sync: still running. */
-export const knowledgeSyncStarted = z
-  .object({
-    connectionId: uuid,
-    state: z.literal('syncing'),
-    startedAt: isoTimestamp,
-  })
-  .passthrough();
+export const knowledgeSyncStarted = z.looseObject({
+  connectionId: uuid,
+  state: z.literal('syncing'),
+  startedAt: isoTimestamp,
+});
 export type KnowledgeSyncStarted = z.infer<typeof knowledgeSyncStarted>;
 
 export const connection = z.object({
@@ -107,7 +101,7 @@ export const connection = z.object({
    */
   displayName: z.string().optional(),
   /** Provider-specific NON-secret config only (calendar id, field mappings, etc.). */
-  nonSecretConfig: z.record(z.unknown()).optional(),
+  nonSecretConfig: z.record(z.string(), z.unknown()).optional(),
   /** Human-readable detail for error/expired states (never a secret). */
   statusDetail: z.string().nullable().optional(),
   lastHealthCheckAt: isoTimestamp.nullable().optional(),
@@ -141,7 +135,7 @@ export type StartConnectionRequest = z.infer<typeof startConnectionRequest>;
  * "Action needed:", which means DO NOT REDIRECT, show the message.
  */
 export const startConnectionResult = z.object({
-  authorizeUrl: z.string().url().nullable().optional(),
+  authorizeUrl: absoluteUrl.nullable().optional(),
   /** For non-OAuth (CSV upload, webhook URL) the UI collects fields client-side. */
   requiresClientForm: z.boolean().nullable().optional(),
   statusDetail: z.string().nullable().optional(),
@@ -247,7 +241,7 @@ export type BindDestinationRequest = z.infer<typeof bindDestinationRequest>;
  * echoed back; the rest land in `nonSecretConfig`.
  */
 export const submitCredentialsRequest = z.object({
-  fields: z.record(z.string()),
+  fields: z.record(z.string(), z.string()),
 });
 export type SubmitCredentialsRequest = z.infer<typeof submitCredentialsRequest>;
 
