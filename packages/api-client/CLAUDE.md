@@ -40,7 +40,7 @@ client, with mock and HTTP adapters behind stable interfaces.
   unavailable resolves to `not_available`, regardless of a stale raw status.
 - Human labels come from served `displayName` fields; raw enums are wire values,
   not display copy.
-- Model evidence attribution as three states, not an empty/non-empty boolean;
+- Model evidence attribution as its four states, not an empty/non-empty boolean;
   preserve the legacy unscored condition.
 
 ## Tests and commands

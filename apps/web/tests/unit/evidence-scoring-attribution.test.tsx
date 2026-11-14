@@ -12,7 +12,8 @@ import type { AnswerEvidence, ConversationSummary, Message } from '@luciel/api-c
  *    `groundingScore: null`, never the old 0.50 floor. Must render "Not
  *    scored (before scoring existed)", never a number, never "Grounded 0.50".
  *  - `attributionStatus: 'has_sources' | 'no_sources_retrieved' |
- *    'attribution_unavailable'` — a 3-state enum. `no_sources_retrieved` is
+ *    'attribution_unavailable'` (a fourth, `retrieval_unavailable`, was added
+ *    later). `no_sources_retrieved` is
  *    the ONLY state where "No knowledge source backed this answer" is a true
  *    claim; `attribution_unavailable` carries an equally empty
  *    `sourceChunks` but must render "Source attribution isn't available
