@@ -101,8 +101,8 @@ describe('email addresses', () => {
   it('accepts ordinary addresses', () => {
     for (const v of [
       'owner@example.com',
-      "o'brien+tag@mail.example.co",
-      'UPPER.case-1@Sub-Domain.Example.IO',
+      "o'brien+tag@mail.example.org",
+      'UPPER.case-1@Sub-Domain.Example.COM',
     ]) {
       expect(email(v), v).toBe(true);
     }
