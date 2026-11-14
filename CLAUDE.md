@@ -207,9 +207,8 @@ pushes to `luciel-dev-web`, an ECR repository deleted with the environment.
 The hosted dev environment was paused on 2026-11-14 to stop AWS charges. Most of it was deleted,
 including the `luciel-dev-web` ECR repository, the web service and the widget CDN that this
 workflow deploys to, and the public hostnames serve nothing until it is restored. The restore
-runbook is `docs/operations/teardown-and-restore.md` in
-[Luciel-Backend](https://github.com/aryanonline/Luciel-Backend): dispatch this workflow only at
-its frontend step, after the backend deploy has recreated those resources.
+runbook is `docs/operations/teardown-and-restore.md` in the Luciel-Backend repository: dispatch
+this workflow only at its frontend step, after the backend deploy has recreated those resources.
 
 The deployment workflow builds the web artifact and publishes the widget to the
 embed CDN. To dispatch a development deployment from the release branch, use:
