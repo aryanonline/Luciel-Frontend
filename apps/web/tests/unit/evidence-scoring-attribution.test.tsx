@@ -193,6 +193,10 @@ describe('Harmony wave 2, item 6b: attributionStatus', () => {
       evidence({ attributionStatus: 'attribution_unavailable', sourceChunks: [] }),
     );
     await openConversation();
+    // openConversation returns once the evidence read has been called, not once its answer
+    // has rendered, so whether the check below saw that answer or a panel with nothing in it
+    // yet came down to timing. It now waits for the answer's own copy first.
+    expect(await screen.findByText(/Source attribution isn't available yet/)).toBeInTheDocument();
     // Regression guard for the live bug: a KB-backed, scored-0.36 reply with
     // attribution_unavailable must never show the honest-empty-retrieval copy.
     expect(screen.queryByText(/No knowledge source backed this answer/)).not.toBeInTheDocument();
