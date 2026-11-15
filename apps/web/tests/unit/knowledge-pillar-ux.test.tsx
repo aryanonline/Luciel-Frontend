@@ -101,7 +101,9 @@ describe('paste keeps its content when the save fails (F169)', () => {
       await screen.findByText(/Added “Cancellation policy” to your knowledge base\./),
     ).toBeInTheDocument();
     expect(pasteText).toHaveBeenCalledTimes(2);
-    // The list is read again, so the note shows without a reload.
+    // Only the success closes the dialog, and the list is read again, so the note shows
+    // without a reload.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(await screen.findByText('Cancellation policy')).toBeInTheDocument();
   });
 });
