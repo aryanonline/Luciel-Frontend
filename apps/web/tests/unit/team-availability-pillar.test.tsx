@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { TeamAvailabilityPillar } from '@/components/config/team-availability-pillar';
@@ -54,7 +54,16 @@ describe('Team availability card', () => {
   beforeEach(() => {
     served.calls = [];
     served.refuse = null;
+    // The card lists every zone the engine knows (418 in this Node), and every edit below
+    // re-renders that whole select: on a busy machine the save test came within a second
+    // of Vitest's 5 s budget. With no list from the engine the card offers its own short
+    // one, the path an older engine takes, and the zones these tests use are on it.
+    vi.spyOn(
+      Intl as unknown as { supportedValuesOf: (key: string) => string[] },
+      'supportedValuesOf',
+    ).mockReturnValue([]);
   });
+  afterEach(() => vi.restoreAllMocks());
 
   it('is off by default and says Luciel keeps answering around the clock', () => {
     renderWithQuery(<TeamAvailabilityPillar luciel={base} />);
