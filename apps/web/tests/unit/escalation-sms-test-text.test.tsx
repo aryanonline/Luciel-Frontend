@@ -1,8 +1,9 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
-import { renderWithQuery } from './test-utils';
-import ConfigurePage from '@/app/(app)/dashboard/configure/page';
+import { act, screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithQuery, seededQueryClient } from './test-utils';
+import { EscalationPillar } from '@/components/config/escalation-pillar';
 import { api } from '@/lib/api';
+import { qk, useLuciel } from '@/lib/hooks';
 
 /**
  * 2026-09-05 audit F084: an SMS escalation contact had no confirmation loop at all —
@@ -12,19 +13,37 @@ import { api } from '@/lib/api';
  * send (the mock runs with the SMS channel OFF, so the test text is refused with
  * the "no SMS number connected" truth rather than a pretend green).
  */
+
+/** The pillar as Configure mounts it: on the served Luciel, re-read after every save. */
+function ServedEscalationPillar() {
+  const { data: luciel } = useLuciel();
+  return luciel ? <EscalationPillar luciel={luciel} /> : null;
+}
+
+/**
+ * The card alone, with the served Luciel already in the cache, so the first render is
+ * the card and only the writes under test are waited for. (Rendering all of Configure
+ * and waiting for its reads ran past the 5 s test budget on a loaded machine.)
+ */
+async function renderPillar() {
+  const luciel = await api.luciel.get();
+  renderWithQuery(<ServedEscalationPillar />, seededQueryClient([[qk.luciel, luciel]]));
+}
+
 describe('escalation SMS contacts: E.164 hint, save-time validation, test text', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('hints the international format on both SMS fields', async () => {
-    renderWithQuery(<ConfigurePage />);
-    await screen.findByLabelText('Primary SMS (optional)');
+    await renderPillar();
+    expect(screen.getByLabelText('Primary SMS (optional)')).toBeInTheDocument();
     expect(screen.getAllByText('International format, e.g. +16045551234')).toHaveLength(2);
   });
 
   it('refuses a number that is not in international format', async () => {
-    renderWithQuery(<ConfigurePage />);
-    const sms = await screen.findByLabelText('Primary SMS (optional)');
-    fireEvent.change(sms, { target: { value: '604-555-1234' } });
+    await renderPillar();
+    fireEvent.change(screen.getByLabelText('Primary SMS (optional)'), {
+      target: { value: '604-555-1234' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Save escalation settings' }));
     expect(await screen.findByText(/Enter the number in international format/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Send a test text' })).not.toBeInTheDocument();
@@ -32,21 +51,24 @@ describe('escalation SMS contacts: E.164 hint, save-time validation, test text',
 
   it('offers a test text for a saved number and reports honestly when it cannot send', async () => {
     const write = vi.spyOn(api.luciel, 'updateEscalation');
-    renderWithQuery(<ConfigurePage />);
-    const sms = await screen.findByLabelText('Primary SMS (optional)');
-    fireEvent.change(sms, { target: { value: '+1 (604) 555-1234' } });
+    await renderPillar();
+    fireEvent.change(screen.getByLabelText('Primary SMS (optional)'), {
+      target: { value: '+1 (604) 555-1234' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Save escalation settings' }));
-    // A save is the write, then a re-read of the Luciel that renders this whole page
-    // again, and only then the notice. One wait for all three ran out on a loaded
-    // machine, so the write is awaited on its own and the wait covers the re-read.
+    // A save is the write, then a re-read of the Luciel, and only then the notice. The
+    // write is awaited on its own (inside act: the card re-renders while it answers),
+    // so the wait below covers the re-read alone.
     await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
-    await write.mock.results[0]?.value;
-    await screen.findByText(/Saved\. New conversations escalate to these contacts/);
+    await act(async () => {
+      await write.mock.results[0]!.value;
+    });
+    expect(
+      await screen.findByText(/Saved\. New conversations escalate to these contacts/),
+    ).toBeInTheDocument();
 
     // The saved (normalised) number shows with its test affordance.
-    await waitFor(() =>
-      expect(screen.getByText(/\+16045551234 — primary SMS/)).toBeInTheDocument(),
-    );
+    expect(await screen.findByText(/\+16045551234 — primary SMS/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Send a test text' }));
     expect(
       await screen.findByText(/no SMS number connected yet — add one under Channels/),

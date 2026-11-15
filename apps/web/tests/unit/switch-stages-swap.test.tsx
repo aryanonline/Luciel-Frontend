@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
-import { renderWithQuery } from './test-utils';
+import { renderWithQuery, seededQueryClient } from './test-utils';
 import { ConnectionControl } from '@/components/config/connection-control';
+import { qk } from '@/lib/hooks';
 import type { Connection, ConnectionProviders } from '@luciel/api-client';
 
 /**
@@ -22,7 +23,6 @@ vi.mock('@/lib/oauth-connect', async (importOriginal) => {
   return { ...actual, authorizeOrExplain: (start: unknown) => authorizeOrExplain(start) };
 });
 
-const listProviders = vi.fn<() => Promise<ConnectionProviders[]>>();
 const swap = vi.fn();
 const switchAccount = vi.fn();
 
@@ -34,7 +34,6 @@ vi.mock('@/lib/api', async (importOriginal) => {
       ...actual.api,
       connections: {
         ...actual.api.connections,
-        listProviders: () => listProviders(),
         swap: (...args: unknown[]) => swap(...args),
         switchAccount: (...args: unknown[]) => switchAccount(...args),
       },
@@ -81,30 +80,34 @@ const crmProviders: ConnectionProviders[] = [
 beforeEach(() => {
   authorizeOrExplain.mockClear();
   authorizeOrExplain.mockReturnValue(null);
-  listProviders.mockReset().mockResolvedValue(crmProviders);
   swap.mockReset();
   switchAccount.mockReset();
 });
 
 /**
- * The button names the provider choice once the served registry has landed. That wait
- * is a cheap text query, and the button is then used by role: polled from the first
- * render, the role query paid its one-time setup inside the 1 s wait, and on a loaded
- * machine the wait could run out before the registry's answer had rendered.
+ * The control with the CRM registry already served. The button names the provider
+ * choice only once the registry is in, and the test used to wait for that read: on a
+ * loaded machine the wait ran out with the button still reading "Switch account"
+ * (2026-11-14), for a reason nobody reproduced. With the registry seeded the first
+ * render names the choice, so no wait is left to run out.
  */
-async function openSwitch() {
-  await screen.findByText('Switch account or provider');
-  fireEvent.click(screen.getByRole('button', { name: /Switch account or provider/i }));
+function renderControl() {
+  renderWithQuery(
+    <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
+    seededQueryClient([[qk.connectionProviders('crm'), crmProviders]]),
+  );
+}
+
+function openSwitch() {
+  fireEvent.click(screen.getByRole('button', { name: 'Switch account or provider' }));
 }
 
 describe('#4: "Switch account or provider" stages a swap, never disconnect-first', () => {
   it('states the current connection stays live before any provider is chosen', async () => {
-    renderWithQuery(
-      <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
-    );
-    await openSwitch();
+    renderControl();
+    openSwitch();
     expect(
-      await screen.findByText(
+      screen.getByText(
         /Your current connection stays live until the new one is verified — backing out of the sign-in changes nothing\./i,
       ),
     ).toBeInTheDocument();
@@ -114,11 +117,9 @@ describe('#4: "Switch account or provider" stages a swap, never disconnect-first
     swap.mockResolvedValue({
       authorizeUrl: 'https://login.salesforce.com/oauth/authorize?state=abc',
     });
-    renderWithQuery(
-      <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
-    );
-    await openSwitch();
-    fireEvent.click(await screen.findByRole('button', { name: /Switch to Salesforce/i }));
+    renderControl();
+    openSwitch();
+    fireEvent.click(screen.getByRole('button', { name: /Switch to Salesforce/i }));
 
     await waitFor(() => expect(swap).toHaveBeenCalledTimes(1));
     expect(swap).toHaveBeenCalledWith(CONNECTION_ID, 'salesforce');
@@ -134,14 +135,16 @@ describe('#4: "Switch account or provider" stages a swap, never disconnect-first
         callbackKind: 'connection',
       }),
     );
+    // The swap has settled: the live row offers its actions again.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Switch account or provider' })).toBeEnabled(),
+    );
   });
 
   it('"Keep the current one" backs out without touching any endpoint', async () => {
-    renderWithQuery(
-      <ConnectionControl connectionType="crm" label="your CRM" connection={connectedWebhook} />,
-    );
-    await openSwitch();
-    fireEvent.click(await screen.findByRole('button', { name: /Keep the current one/i }));
+    renderControl();
+    openSwitch();
+    fireEvent.click(screen.getByRole('button', { name: /Keep the current one/i }));
     expect(
       screen.queryByText(/Your current connection stays live until the new one is verified/i),
     ).not.toBeInTheDocument();

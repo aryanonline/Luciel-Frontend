@@ -143,6 +143,14 @@ for word; a field error renders as `#<field>-error` under its input.
 Run the whole workspace checks before handoff. Add a focused unit test alongside
 any fix to a dashboard state, connection label, count, modal, or evidence rule.
 
+Unit tests run beside three other Vitest suites under `pnpm -r test`, so a busy machine slows
+them several times over (2026-11-14). Render the component under test, not the whole page,
+and hand `renderWithQuery` a `seededQueryClient` holding the served answers for any read the
+test is not about, so the first render is the settled screen. Wait for the end state a flow
+produces (`findBy*`, or the write's own promise inside `act`), never a fixed sleep: a check
+that something is absent proves nothing until the read behind it has landed. Keep `*ByRole`
+queries to a small container: over a whole card they cost about as much as rendering it.
+
 ## Gotchas from this cycle
 
 - Treat a still-loading registry as unknown, not unavailable; otherwise the UI

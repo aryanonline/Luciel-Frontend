@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { screen } from '@testing-library/react';
-import { renderWithQuery } from './test-utils';
-import ConfigurePage from '@/app/(app)/dashboard/configure/page';
+import { renderWithQuery, seededQueryClient } from './test-utils';
+import { ToolsPillar } from '@/components/config/tools-pillar';
 import { toolMeta } from '@/components/config/labels';
 import { api } from '@/lib/api';
+import { qk } from '@/lib/hooks';
 
 /**
  * Two different things must not arrive under Tools wearing the same name.
@@ -29,22 +30,33 @@ describe('Tools pillar: no two entries share a name', () => {
   });
 
   it('names the own-endpoint tool as its own thing, leaving one Custom webhook', async () => {
-    renderWithQuery(<ConfigurePage />);
-    // Each served read is awaited with a cheap text query; the role queries then run once,
-    // on the settled rows. Re-run on every commit of this page, a role query costs tens of
-    // milliseconds a pass (several times that on a loaded machine) on the same thread as
-    // the renders it waits for, and the 1 s wait ran out before the Tools rows landed.
-    await screen.findByText('Tools your Luciel can use');
-    await screen.findByText('Post to my own endpoint');
+    // The served Luciel and every read the Tools card renders from (capabilities,
+    // connections, each provider registry) are in hand before the card renders, so its
+    // first render is the settled card: nothing here waits on a read, and nothing that
+    // has not landed yet can be missed. The card alone is rendered, not all of Configure.
+    const [luciel, capabilities, connections, registry] = await Promise.all([
+      api.luciel.get(),
+      api.luciel.capabilities(),
+      api.connections.list(),
+      api.connections.listProviders(),
+    ]);
+    renderWithQuery(
+      <ToolsPillar luciel={luciel!} />,
+      seededQueryClient([
+        [qk.capabilities, capabilities],
+        [qk.connections, connections],
+        ...registry.map(
+          (group) => [qk.connectionProviders(group.connectionType), [group]] as const,
+        ),
+      ]),
+    );
     expect(
       screen.getByRole('switch', { name: /Enable Post to my own endpoint/i }),
     ).toBeInTheDocument();
-    // The one left is the CRM destination — since the Phase-4 rework it renders
-    // as that provider's own named button inside the CRM control ("Switch to Custom
-    // webhook" on the seed's expired HubSpot row), once the control's own provider read
-    // has landed.
-    await screen.findAllByText('Switch to Custom webhook');
-    expect(screen.getAllByRole('button', { name: 'Switch to Custom webhook' })).toHaveLength(1);
+    // The one left is the CRM destination: since the Phase-4 rework it is that provider's
+    // own named button inside the CRM control ("Switch to Custom webhook" on the seed's
+    // expired HubSpot row).
+    expect(screen.getAllByRole('button', { name: /Custom webhook/ })).toHaveLength(1);
     expect(screen.queryAllByText('Custom webhook')).toHaveLength(0);
   });
 });
