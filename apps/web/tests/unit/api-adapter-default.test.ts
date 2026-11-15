@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+// Loaded with the file only so that the first case's own import below finds the API client
+// already transformed: the whole client used to load inside that case's 5 s budget. Each
+// case still imports a fresh instance, under its own env, after vi.resetModules().
+import '@/lib/api';
 
 // P2-15: the mock adapter is opt-in, never the production fallback. A Docker build
 // without the NEXT_PUBLIC_API_ADAPTER build argument passes an EMPTY string to
