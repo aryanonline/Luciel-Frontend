@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { WidgetPreview } from '@/components/widget-preview';
 
 /**
@@ -99,7 +99,11 @@ describe('the conversation container', () => {
   it('is a region named "Conversation" that holds the transcript', async () => {
     render(<WidgetPreview embedKey="vm_live_test123456" />);
     const region = await screen.findByRole('region', { name: 'Conversation' });
-    expect(region).toHaveTextContent("Hi! I'm an AI assistant. How can I help?");
+    // The region is there from the first render; the opening message lands in it when the
+    // bootstrap answers. Read at once, the region was still empty on a loaded machine.
+    expect(
+      await within(region).findByText("Hi! I'm an AI assistant. How can I help?"),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('log')).not.toBeInTheDocument();
   });
 });
