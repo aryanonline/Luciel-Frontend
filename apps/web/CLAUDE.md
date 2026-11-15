@@ -150,6 +150,8 @@ test is not about, so the first render is the settled screen. Wait for the end s
 produces (`findBy*`, or the write's own promise inside `act`), never a fixed sleep: a check
 that something is absent proves nothing until the read behind it has landed. Keep `*ByRole`
 queries to a small container: over a whole card they cost about as much as rendering it.
+`tests/setup.ts` lets the work React and TanStack Query queued before each unmount run while
+the jsdom window still exists.
 
 ## Gotchas from this cycle
 
