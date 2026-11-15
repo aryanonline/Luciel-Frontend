@@ -1,3 +1,6 @@
+/// <reference types="vitest/config" />
+// Types only: the reference adds Vitest's `test` options to Vite's config type. `typecheck`
+// checks this file through tsconfig.node.json, apart from the browser code in src/.
 import { defineConfig } from 'vite';
 
 /**

@@ -1,0 +1,10 @@
+{
+  // vite.config.ts runs in Node, so it is checked apart from src/, whose browser code must
+  // not see Node's globals (Vite's own types bring them in for the config). `typecheck` runs
+  // both configs.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": []
+  },
+  "include": ["vite.config.ts"]
+}

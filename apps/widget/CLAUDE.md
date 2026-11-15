@@ -64,6 +64,11 @@ The build runs `scripts/check-bundle.mjs`. Keep focused regressions in
 `src/mount.test.ts` whenever changing launch, disclosure, paused, session, or
 message-rendering behavior.
 
+`typecheck` checks `src/` with `tsconfig.json` and `vite.config.ts` with `tsconfig.node.json`
+(2026-11-14): the config runs in Node, and Node's types must not reach the browser code. The
+config's `/// <reference types="vitest/config" />` types its `test` block, so an option a Vitest
+release removes fails the check.
+
 ## Gotchas from this cycle
 
 - The widget must not be re-positionable by host-page CSS: apply fixed placement

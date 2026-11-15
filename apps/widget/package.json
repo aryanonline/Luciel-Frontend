@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/check-bundle.mjs",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "lint": "echo \"(not linted; CI lints apps/web only)\"",
     "test": "vitest run"
   },
