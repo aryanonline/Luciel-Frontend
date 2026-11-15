@@ -12,6 +12,8 @@ expiring within 35 days.
 None. The last one, GHSA-mrhx-c7xc-m3w5 (zod), was retired on 2026-11-14 by the zod 4
 migration (see Retired waivers).
 
+2026-11-15: the `brace-expansion` overrides were raised ahead of GHSA-6jwq-xf8q-xcwh (high: unbounded parsing and expansion work, a CPU denial of service). The brace-expansion repository published it on 2026-11-11, but the GitHub advisory database does not list it yet, so neither Dependabot nor `pnpm audit` reports it; once listed, it would fail the audit gate on every PR and on the daily run. It covers every version below 1.1.22 and from 4.0.0 below 5.0.13, which took in the tree's 1.1.21 (under minimatch 3.1.5) and 5.0.12 (under minimatch 11.0.8). `brace-expansion@1` → `^1.1.22`, `brace-expansion@2` → `^2.1.8` and `brace-expansion@>=3 <6` → `^5.0.13`: the lockfile moves 1.1.21 → 1.1.22 and 5.0.12 → 5.0.13, and no 2.x, 3.x or 4.x is in the tree. The `^5.0.13` floor also stops the override from lowering minimatch 11.0.8's own `^5.0.12`. The fixed releases (2026-11-11) have no npm provenance, like those before them, so their code was checked against the source: 1.1.22's `index.js` is identical to the repository at its gitHead, 5.0.13's `dist/commonjs` rebuilds byte for byte from `src/index.ts` at its gitHead with TypeScript 5.9.3, and neither has install scripts. Both add three work bounds (`maxDepth`, `maxRewrites`, `maxSteps`), past which the rest of a pattern comes back literally; ordinary patterns need a few hundred of the default 20 million steps. The `>=3 <6` entry would also move a later brace-expansion 3 or 4 consumer to 5 (4.x has no fix; 3.x has 3.0.10); none is in the tree.
+
 Round 7 (2026-11-01): both `tinypool` waivers retired two days before they expired, without the vitest major: a `pnpm.overrides` entry `"tinypool": "^2.2.0"` runs vitest 3.2.x on tinypool 2.2.0. The whole workspace suite stays green on it, and `scripts/audit-gate.mjs` reported both advisories as no longer reported. The override was dropped on 2026-11-14 by the vitest 4 migration (4.1.12): Vitest 4 runs its own worker pool, so nothing in the tree depends on tinypool any more. The same move cleared three moderate vitest advisories (GHSA-82fw-gwwq-j7x9 on `vitest` and `@vitest/mocker`, GHSA-qxg6-89mg-rqv8 on `@vitest/mocker`, fixed in 4.1.11 and 4.1.12).
 
 Round 7 (2026-10-25): the nightly audit went red on 2026-10-24 for four advisories. Three had in-range fixes and were taken: `next` 15.5.27 → 15.5.28 (GHSA-2464-fhr4-w9xw, an unauthenticated RCE in the Image Optimization API with SVG input, and GHSA-p3m5-59mp-jv5r), `vite` 6.4.3 → 6.4.4+ (GHSA-587h-7wmj-h5pm, launch-editor). `zod` had no 3.x fix and was waived (retired 2026-11-14, below). The `braces` waiver was retired the same day: the advisory is no longer reported.
@@ -42,10 +44,10 @@ and its latest stable release, 8.72.2, still requires `^10.2.2`.
   to 11 without a word, and green minor and patch updates merge themselves. glob 13 handles only
   string, `**` and `RegExp` pattern parts, and minimatch 11 hands it a `Matcher`, so its wildcard
   walks would find nothing. A parent without a child range always applies, so it would keep
-  forcing `^11.0.8` onto typescript-estree after typescript-estree moves on, even down from a later
-  minimatch 12. With both, a new minimatch 10 consumer keeps 10 and gets its own Dependabot alert,
-  and the entry matches nothing once typescript-estree requires 11.0.1 or later. eslint and its
-  plugins keep minimatch 3.1.5, which the advisory does not cover.
+  forcing `^11.0.8` onto typescript-estree after typescript-estree moves on, and would pull a later
+  minimatch 12 back down to 11. With both, a new minimatch 10 consumer keeps 10 and gets its own
+  Dependabot alert, and the entry matches nothing once typescript-estree requires 11.0.1 or later.
+  eslint and its plugins keep minimatch 3.1.5, which the advisory does not cover.
   `scripts/pnpm-overrides.test.mjs` fails if a minimatch override loses its parent or its child
   range or is missing from this file, and if typescript-estree resolves a minimatch the advisory
   names.
@@ -97,19 +99,30 @@ and its latest stable release, 8.72.2, still requires `^10.2.2`.
   only in cases the 11.0 changelog lists as intended (a path ending in `/` against `?(x)` or
   `*(x)`, `**/a/b/c/**/d/**`, and a Windows pattern whose `..` climbs past its drive letter). The
   matcher was rewritten, though, and random inputs find more: `?` and `[!a]` now match one code
-  point outside the Basic Multilingual Plane rather than one UTF-16 unit, a POSIX class next to an
-  escaped `!` or `[` (`[[:alpha:]]\![ab]`) threw in 10.2.6 and matches in 11.0.8, and
+  point outside the Basic Multilingual Plane rather than one UTF-16 unit, a POSIX class followed by
+  an escaped `!` (`[[:alpha:]]\![ab]`) threw in 10.2.6 and matches in 11.0.8, and
   `?(a)!(a)!(a)` now matches `aab`, as in Bash. None of these comes up with relative file paths
   and `allowDefaultProject`-style globs.
-- Checked on 2026-11-15, on Node 24.16.0: with the scoped key, the audit gate, the script tests,
-  both typechecks, lint and format pass, the lockfile resolves exactly as with the first key, and
-  `pnpm why -r minimatch` lists 11.0.8 (through typescript-estree only) and 3.1.5. `pnpm audit`
-  lists nothing, which means nothing the GitHub advisory database lists as of that day. The first
-  key's run also passed the 726 unit tests, the build and the widget bundle check, and its
-  Playwright and axe run passed locally only with retries (3 flaky tests passed on the second
-  attempt), against an installed Chrome. `pnpm dev`, which serves the e2e, does not lint, so the
-  e2e never loads minimatch. CI runs the a11y gate, and its build job runs lint and the build on
-  Node 22, which this machine does not have: a green CI build is the Node 22 check.
+- Checked on 2026-11-15, on Node 24.16.0, with the scoped key and brace-expansion 5.0.13 and
+  1.1.22 (see the 2026-11-15 note under Current waivers): `pnpm install --frozen-lockfile`, the
+  audit gate, the 53 script tests, both typechecks, the 726 unit tests (api-client 166, ui 20,
+  widget 41, web 499), lint, format, the build and the widget bundle check pass.
+  `pnpm why -r minimatch` lists 11.0.8 (through typescript-estree only) and 3.1.5, and
+  `pnpm audit` lists no advisory at any severity, which means none that the GitHub advisory
+  database lists as of that day. Lint, and the lint step of `next build`, load minimatch 11.0.8,
+  the new package and brace-expansion 5.0.13 through typescript-estree. To make typescript-estree
+  call minimatch, the web config was run in scratch with `projectService.allowDefaultProject`
+  over the 84 `src` files, the config files, test files and a pattern that matches nothing: its
+  398 calls, on Windows relative paths and including a brace pattern, gave the same answers and
+  the same ESLint output under 11.0.8 and under 10.2.6 forced in.
+- The Playwright and axe run passed locally (38 passed and 3 flaky, which failed at the 30-second
+  limit while the dev server compiled and passed on a retry), against an installed Chrome 157
+  (`E2E_CHROMIUM_EXECUTABLE`), not the Chromium build CI installs. It cannot show anything
+  about this change: a load trace over its 19 Node processes, the dev server's included, found
+  no minimatch, brace-expansion or `@isaacs/nonrecursive-glob-match`, because `pnpm dev` does
+  not lint. CI runs the a11y gate, and its build job runs lint and the build on Node 22, which
+  this machine does not have: a green CI build is the Node 22 check. minimatch's own CI passed
+  its Node 22 jobs on Linux and macOS at the v11.0.8 commit.
 - Remove it once the lockfile's `@typescript-eslint/typescript-estree` requires `minimatch` 11.0.1
   or later. The entry then matches nothing. typescript-eslint comes in through
   eslint-config-next, so Dependabot's weekly updates do not move it; it moves when the lockfile is
