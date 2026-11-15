@@ -113,7 +113,7 @@ flowchart LR
 
 | Area                   | Choices                                                                                                   |
 | ---------------------- | --------------------------------------------------------------------------------------------------------- |
-| Language and workspace | TypeScript (strict), pnpm 9 workspaces, Node.js 22+                                                       |
+| Language and workspace | TypeScript (strict), pnpm 9 workspaces, Node.js 22.13+ or 24+                                             |
 | Web app                | Next.js 15 (App Router), React 19, TanStack Query, React Hook Form with Zod 4, Radix UI, Tailwind CSS 3   |
 | Widget                 | Vite 6 library build (IIFE and ES module), plain DOM, Shadow DOM                                          |
 | API boundary           | Zod 4 schemas (zod/mini for the widget), a `fetch` transport with typed errors, HTTP and mock adapters    |
@@ -141,7 +141,8 @@ flowchart LR
 
 ## Local development
 
-Requirements: Node.js 22 or later (CI and the production image both use Node 22) and pnpm 9.7.0,
+Requirements: Node.js 22.13+ or 24+, the `engines` range in `package.json` (Vitest 4 and the lint
+toolchain do not support Node 23; CI and the production image both use Node 22), and pnpm 9.7.0,
 pinned in `package.json` and provided by Corepack (on Node.js 25+, run `npm install -g corepack`).
 
 ```bash
