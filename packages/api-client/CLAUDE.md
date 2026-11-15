@@ -56,6 +56,12 @@ pnpm --filter @luciel/api-client build
 Add tests under `src/__tests__/` for boundary, transport, or plane-separation
 rules. Test adapters through their public client behavior where possible.
 
+`typecheck` runs two configs (2026-11-14, with Vitest 4). `tsconfig.json` checks the package's
+own code with no Node or Vitest globals, because that code runs in the browser and reads no
+`process.env`. `tsconfig.test.json` checks the tests with Node's and Vitest's types:
+`widget-bundle-imports.test.ts` reads the sources through `node:fs`, and Vitest 4's types no
+longer bring Node's along.
+
 ## Gotchas from this cycle
 
 - zod 4 (2026-11-14, from 3.25.76): where zod 4 changed a rule, the schemas keep zod 3's,

@@ -1,0 +1,13 @@
+{
+  // The tests, which tsconfig.json leaves out so that the package's own code is checked
+  // without Node's types. `typecheck` runs both configs. Node's types are for
+  // widget-bundle-imports.test.ts, which reads the sources through node:fs, node:path and
+  // node:url; Vitest 4's own types no longer bring them along.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": []
+}

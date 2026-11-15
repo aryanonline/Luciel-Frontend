@@ -3,9 +3,11 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    // Node's types are for widget-bundle-imports.test.ts, which reads the sources through
-    // node:fs, node:path and node:url. Vitest 4's own types no longer bring them along.
-    "types": ["node", "vitest/globals"]
+    // The package's own code gets no Node or Vitest globals: it runs in the browser (the
+    // widget bundle and the dashboard) and reads no process.env (see factory.ts). The tests
+    // are checked by tsconfig.test.json, and `typecheck` runs both.
+    "types": []
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/__tests__", "src/**/*.test.ts"]
 }
