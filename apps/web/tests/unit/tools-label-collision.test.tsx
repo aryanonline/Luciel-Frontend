@@ -40,10 +40,11 @@ describe('Tools pillar: no two entries share a name', () => {
       screen.getByRole('switch', { name: /Enable Post to my own endpoint/i }),
     ).toBeInTheDocument();
     // The one left is the CRM destination — since the Phase-4 rework it renders
-    // as that provider's own named connect button inside the CRM control, once the
-    // control's own provider read has landed.
-    await screen.findAllByText('Connect Custom webhook');
-    expect(screen.getAllByRole('button', { name: 'Connect Custom webhook' })).toHaveLength(1);
+    // as that provider's own named button inside the CRM control ("Switch to Custom
+    // webhook" on the seed's expired HubSpot row), once the control's own provider read
+    // has landed.
+    await screen.findAllByText('Switch to Custom webhook');
+    expect(screen.getAllByRole('button', { name: 'Switch to Custom webhook' })).toHaveLength(1);
     expect(screen.queryAllByText('Custom webhook')).toHaveLength(0);
   });
 });

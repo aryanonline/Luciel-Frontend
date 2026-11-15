@@ -104,6 +104,10 @@ bundle.
   (off rows carry a "Manage connection" disclosure); the channel→send-tool cascade is the
   SERVER's (F163) — never issue a second PUT for it; `chipKind(status, available)`; the
   designate toast phrases the served status (`numberOutcomePhrase`, F159).
+- A saved row that is expired or erroring reconnects only its OWN provider ("Reconnect
+  HubSpot"); with more than one provider on offer, every other one is "Switch to …" through
+  the staged swap. `reconnect` re-runs the saved provider's flow whatever the button named, so
+  a "Connect Salesforce" there opened HubSpot's consent screen (fixed 2026-11-14).
 - The Today card never derives a state locally: capabilities, needs and counts come from
   `GET /admin/luciel/status`. A test that mocks `@/lib/hooks` wholesale must stub
   `useEmployeeStatus` and `useLucielMutations` or the Overview page cannot render.

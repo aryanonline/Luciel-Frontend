@@ -162,9 +162,9 @@ pnpm -r build
 `next build` never compiles them, and `typecheck:tests` checks them instead. CI runs both in
 its typecheck step.
 
-The current suite is approximately 714 tests (api-client 166, ui 20, widget 41, web 487;
+The current suite is approximately 719 tests (api-client 166, ui 20, widget 41, web 492;
 counted 2026-11-14, after the zod 4 migration added the schema-rule, form-message,
-widget-import and zod-JIT tests).
+widget-import and zod-JIT tests, and the expired-row reconnect/switch routing added five).
 Treat an unexpected test-count change as a signal to review, not as a substitute for
 the command exit status. `pnpm --filter @luciel/web test:e2e` runs the Playwright
 a11y gate plus the mock-adapter customer journey (`tests/e2e/journey.spec.ts`) against

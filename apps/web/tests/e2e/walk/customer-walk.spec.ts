@@ -520,7 +520,9 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
           .filter({ hasText: 'Push leads to my CRM' })
           .first();
         await expect(crm.getByText('Reconnect needed')).toBeVisible();
-        await crm.getByRole('button', { name: 'Connect HubSpot' }).click();
+        // The saved provider is reconnected; another CRM would be a staged switch.
+        await expect(crm.getByRole('button', { name: 'Switch to Salesforce' })).toBeVisible();
+        await crm.getByRole('button', { name: 'Reconnect HubSpot' }).click();
         await page.waitForURL(/accounts\.example\.com/);
         await page.getByRole('link', { name: 'Decline' }).click();
         await page.waitForURL(/\/dashboard\/configure/);
@@ -531,7 +533,7 @@ test('a customer walks the whole dashboard', async ({ page, baseURL }, info) => 
         await page.reload();
         await expect(crm.getByText('Reconnect needed')).toBeVisible();
 
-        await crm.getByRole('button', { name: 'Connect HubSpot' }).click();
+        await crm.getByRole('button', { name: 'Reconnect HubSpot' }).click();
         await page.waitForURL(/accounts\.example\.com/);
         await page.getByRole('link', { name: 'Allow' }).click();
         await page.waitForURL(/\/dashboard\/configure/);

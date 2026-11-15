@@ -341,6 +341,15 @@ export function ConnectionControl({
   // connect buttons; the generic action row survives only for a chosen
   // credential form.
   const multiConnect = !pinned && connectable.length > 1;
+  // A saved row whose sign-in needs renewing (expired, or erroring). Only its OWN
+  // provider is reconnected in place: `reconnect` re-runs the saved provider's flow
+  // whatever the click named, so "Connect Salesforce" on an expired HubSpot row used
+  // to send the owner to HubSpot's consent screen under Salesforce's name. Any other
+  // provider is a change of provider, staged by the same swap as "Switch account or
+  // provider" — the row is re-pointed only once the new sign-in verifies.
+  const needsReconnect = Boolean(connection) && (status === 'expired' || status === 'error');
+  const changesProvider = (target: string | undefined) =>
+    needsReconnect && target !== connection?.provider;
 
   const metaChannels = destinationField?.channels ?? [];
   const unboundChannels = metaChannels.filter((c) => !boundDestination(connection, [c]));
@@ -421,7 +430,7 @@ export function ConnectionControl({
     // An existing row is re-credentialed in place: SWAP when the account or
     // provider is changing (staged alongside the live one; cutover only after
     // the replacement verifies), reconnect when it is the same one expiring.
-    if (connection && (boundElsewhere || switching)) {
+    if (connection && (boundElsewhere || switching || changesProvider(targetProvider))) {
       const held = connection.connectionId;
       void runFlow(
         swap
@@ -434,7 +443,7 @@ export function ConnectionControl({
       setSwitching(false);
       return;
     }
-    if (connection && (status === 'expired' || status === 'error')) {
+    if (connection && needsReconnect) {
       void runFlow(
         reconnect.mutateAsync({ connectionId: connection.connectionId }),
         targetProvider,
@@ -526,8 +535,14 @@ export function ConnectionControl({
     // WhatsApp"), not the vendor behind it ("Connect Meta") — the surface copy
     // below already explains that one Meta sign-in powers its sibling channel.
     // In the multi-provider credential sub-flow the button submits the CHOSEN
-    // provider's details, so it names that provider (Phase 4).
-    if (status === 'expired' || status === 'error') return `Reconnect ${label}`;
+    // provider's details, so it names that provider (Phase 4) — and, on a row that
+    // needs a reconnect, says whether it reconnects that row or changes its provider.
+    if (needsReconnect) {
+      if (!multiConnect) return `Reconnect ${label}`;
+      return changesProvider(selectedProvider)
+        ? `Switch to ${providerName}`
+        : `Reconnect ${providerName}`;
+    }
     return multiConnect ? `Connect ${providerName}` : `Connect ${label}`;
   };
 
@@ -723,9 +738,11 @@ export function ConnectionControl({
                   >
                     {busy
                       ? 'Working…'
-                      : boundElsewhere || switching
+                      : boundElsewhere || switching || changesProvider(option.provider)
                         ? `Switch to ${option.displayName}`
-                        : `Connect ${option.displayName}`}
+                        : needsReconnect
+                          ? `Reconnect ${option.displayName}`
+                          : `Connect ${option.displayName}`}
                   </Button>
                   <span className="text-vm-0 text-vm-text-muted">{option.helpText}</span>
                 </div>
