@@ -189,16 +189,39 @@ describe('Harmony wave 2, item 6b: attributionStatus', () => {
   });
 
   it('does not decide the copy from sourceChunks.length alone: attribution_unavailable and no_sources_retrieved both carry an empty array but render different copy', async () => {
-    getAnswerEvidence.mockResolvedValue(
-      evidence({ attributionStatus: 'attribution_unavailable', sourceChunks: [] }),
+    // One transcript, two answers whose evidence differs ONLY in attributionStatus: both
+    // carry an empty sourceChunks array. Each answer's evidence renders under it.
+    const OTHER_ID = '33333333-3333-4333-8333-333333333333';
+    const unattributed = 'Our starter engagement is $899.';
+    const unsourced = 'We open at nine on weekdays.';
+    getMessages.mockResolvedValue([
+      { ...lucielMessage, text: unattributed },
+      { ...lucielMessage, messageId: OTHER_ID, text: unsourced, at: '2026-08-01T10:06:00Z' },
+    ]);
+    getAnswerEvidence.mockImplementation(async (_sessionId, messageId) =>
+      messageId === OTHER_ID
+        ? evidence({ messageId, attributionStatus: 'no_sources_retrieved', sourceChunks: [] })
+        : evidence({ attributionStatus: 'attribution_unavailable', sourceChunks: [] }),
     );
     await openConversation();
-    // openConversation returns once the evidence read has been called, not once its answer
-    // has rendered, so whether the check below saw that answer or a panel with nothing in it
-    // yet came down to timing. It now waits for the answer's own copy first.
-    expect(await screen.findByText(/Source attribution isn't available yet/)).toBeInTheDocument();
-    // Regression guard for the live bug: a KB-backed, scored-0.36 reply with
-    // attribution_unavailable must never show the honest-empty-retrieval copy.
-    expect(screen.queryByText(/No knowledge source backed this answer/)).not.toBeInTheDocument();
+    const unavailableCopy = await screen.findByText(/Source attribution isn't available yet/);
+    const noSourceCopy = await screen.findByText(/No knowledge source backed this answer/);
+
+    // Each copy once — the same empty array did not decide both — and each under its own
+    // answer: the attribution_unavailable reply (the live bug was a KB-backed, scored-0.36
+    // reply like it) never shows the honest-empty-retrieval copy.
+    expect(screen.getAllByText(/Source attribution isn't available yet/)).toHaveLength(1);
+    expect(screen.getAllByText(/No knowledge source backed this answer/)).toHaveLength(1);
+    const inOrder = [
+      screen.getByText(unattributed),
+      unavailableCopy,
+      screen.getByText(unsourced),
+      noSourceCopy,
+    ];
+    for (let i = 1; i < inOrder.length; i++) {
+      expect(
+        inOrder[i - 1]!.compareDocumentPosition(inOrder[i]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
   });
 });
