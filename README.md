@@ -191,7 +191,7 @@ pnpm -r test                               # Vitest unit tests, every package
 pnpm -r build                              # production builds; the widget build runs the bundle check
 pnpm --filter @luciel/web lint             # ESLint
 pnpm format                                # Prettier check (CI runs it; pnpm format:write fixes)
-pnpm test:scripts                          # Node tests: image CVE gate, Dependabot classifier, workflow rules
+pnpm test:scripts                          # Node tests: image CVE gate, Dependabot classifier, workflow rules, override scope
 pnpm test:e2e                              # Playwright against the mock adapter (starts the dev server)
 ```
 

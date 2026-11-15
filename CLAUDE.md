@@ -144,7 +144,9 @@ pnpm --filter @luciel/ui build
 
 `pnpm test:scripts` runs the repo-script tests (`scripts/*.test.mjs`): the image CVE gate,
 the Dependabot auto-merge classifier, the deploy and maintenance workflow gates, the
-dispatch-only pins on the live workflows, and the walk report summary.
+dispatch-only pins on the live workflows, the walk report summary, and the scope of the
+minimatch override (`scripts/pnpm-overrides.test.mjs`; `.security/audit-allowlist.md`,
+"Overrides across a major").
 The web image CVE gate is `scripts/image-scan-gate.mjs` with the dated allowlist in
 `.security/cve-allowlist.json` (round 7 WP-0): it fails closed, blocks HIGH + CRITICAL,
 and an expired waiver blocks the deploy. The base image is `node:22.x-trixie-slim`.

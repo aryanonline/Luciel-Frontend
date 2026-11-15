@@ -26,50 +26,97 @@ Most `pnpm.overrides` entries lift a transitive package to a fixed release insid
 consumers already accept (listed at the end of this file). One entry moves a package to its next
 major, because the fix exists only there.
 
-`"minimatch@>=10.0.0 <11.0.1": "^11.0.8"` (2026-11-15) clears the Dependabot alert for
-GHSA-g3hv-75wg-m249 (moderate): with `optimizationLevel` 2 or higher, an attacker-supplied glob
-can make minimatch's pattern preprocessing use excessive CPU and memory. The vulnerable range is
-`>=7.0.0 <11.0.1`, and minimatch published no 10.x fix. The only copy in range was 10.2.6, which
-`@typescript-eslint/typescript-estree` 8.71.1 requires as `^10.2.2`. It is lint tooling, reached
-through eslint-config-next and `@typescript-eslint/parser`, and its latest stable release, 8.72.2,
-still requires `^10.2.2`.
+`"@typescript-eslint/typescript-estree>minimatch@>=10.0.0 <11.0.1": "^11.0.8"` (2026-11-15)
+clears the Dependabot alert for GHSA-g3hv-75wg-m249 (moderate): with `optimizationLevel` 2 or
+higher, an attacker-supplied glob can make minimatch's pattern preprocessing use excessive CPU and
+memory. The vulnerable range is `>=7.0.0 <11.0.1`, and minimatch published no 10.x fix. The only
+copy in range was 10.2.6, which `@typescript-eslint/typescript-estree` 8.71.1 requires as
+`^10.2.2`. It is lint tooling, reached through eslint-config-next and `@typescript-eslint/parser`,
+and its latest stable release, 8.72.2, still requires `^10.2.2`.
 
-- Scope: pnpm applies a `name@range` override to each declared dependency whose range intersects
-  the selector's range. Here that is only typescript-estree's `^10.2.2`. The `^3.1.2` and `^3.1.5`
-  ranges of eslint, `@eslint/config-array`, `@eslint/eslintrc` and three eslint plugins do not
-  intersect it, so their 3.1.5, which is outside the advisory, stays. `pnpm why -r minimatch`
-  lists 11.0.8 (through typescript-estree only) and 3.1.5.
+- Scope: the key names its consumer and the vulnerable range. pnpm 9.7 applies an override
+  without a parent (`minimatch@<range>`) to every package whose declared minimatch range
+  intersects the selector, in dependencies, optional, dev and peer dependencies alike. The first
+  version of this entry had no parent, so a later minimatch 10 consumer (glob 11 to 13,
+  test-exclude 8, typedoc 0.28, and jest-config 30 and rimraf 6 through glob 13) would have moved
+  to 11 without a word, and green minor and patch updates merge themselves. glob 13 handles only
+  string, `**` and `RegExp` pattern parts, and minimatch 11 hands it a `Matcher`, so its wildcard
+  walks would find nothing. A parent without a child range always applies, so it would keep
+  forcing `^11.0.8` onto typescript-estree after typescript-estree moves on, even down from a later
+  minimatch 12. With both, a new minimatch 10 consumer keeps 10 and gets its own Dependabot alert,
+  and the entry matches nothing once typescript-estree requires 11.0.1 or later. eslint and its
+  plugins keep minimatch 3.1.5, which the advisory does not cover.
+  `scripts/pnpm-overrides.test.mjs` fails if a minimatch override loses its parent or its child
+  range or is missing from this file, and if typescript-estree resolves a minimatch the advisory
+  names.
+- Checked in scratch with `pnpm install --lockfile-only`, each run on its own clean metadata
+  cache: with this key the lockfile is the same as with the generic key apart from the key itself,
+  and with a probe package that adds glob 13.0.7 and the typescript-estree canary, the generic key
+  moves glob to minimatch 11.0.8 while this key leaves it on 10.2.6. pnpm 9.7.0 can write an
+  override-mutated manifest back into its shared metadata cache (it serialises the cached object
+  after the read-package hook has changed it), so give override experiments their own
+  `--config.cache-dir`.
 - What typescript-estree uses: one call, `minimatch(path, pattern, { dot: true })` in
   `dist/useProgramFromProjectService.js`, made only when `parserOptions.projectService` has an
-  `allowDefaultProject` list. The web lint config sets neither, so lint loads minimatch (a
-  top-level `require`) and never calls it. minimatch 11 removed `makeRe()`, `Minimatch#regexp`, the
-  `AST` class, three internal methods and the `debug` and `maxExtglobRecursion` options.
-  typescript-estree uses none of them, and the CommonJS build, the named `minimatch` export, its
-  signature and `dot` are unchanged. typescript-estree also leaves `optimizationLevel` at its
-  default of 1, so the vulnerable code was never reached here: the override clears the alert, not
-  a reachable path.
+  `allowDefaultProject` list. The web lint is not typed: eslint-config-next's TypeScript block
+  sets only `sourceType`, and the web config adds no `project` or `projectService`, so lint loads
+  minimatch (a top-level `require`) and never calls it. A deliberately broken TypeScript file
+  therefore shows only that the parser runs, not that minimatch works. minimatch 11 removed
+  `makeRe()`, `Minimatch#regexp`, the `AST` class, three internal methods and the `debug` and
+  `maxExtglobRecursion` options. typescript-estree uses none of them, and the CommonJS build, the
+  named `minimatch` export, its signature and `dot` are unchanged. typescript-estree also leaves
+  `optimizationLevel` at its default of 1, so the vulnerable code was never reached here: the
+  override clears the alert, not a reachable path.
 - Why 11.0.8: every earlier 11.x is named in another advisory that the minimatch repository has
   published but the GitHub advisory database (which Dependabot and `pnpm audit` read) does not list
   yet: GHSA-cf2h-pxjq-68xw (quadratic compile time, a regression in 11.0.0, up to 11.0.6),
   GHSA-hqmv-qgp3-jx75 (pattern cache memory growth, 11.0.3 to 11.0.7) and GHSA-c859-jr93-m5j4
   (`escape()` output, 7.4.0 to 11.0.7, so 10.2.6 too). 11.0.8 (2026-11-11) is the first release
-  with none. Its npm provenance shows it was built by the isaacs/minimatch release workflow from
-  tag v11.0.8 (commit 35c928b). It adds one dependency, `@isaacs/nonrecursive-glob-match` 1.1.0,
-  by the same author, with no dependencies or install scripts of its own.
-- Checked on 2026-11-15: the audit gate, the script tests, both typechecks, the 726 unit tests,
-  lint, format, the build, the widget bundle check and the Playwright and axe run pass, and
-  `pnpm audit` reports nothing at any severity. Lint on a deliberately broken TypeScript file
-  reports the same parse error with 10.2.6 and 11.0.8. Run directly, typescript-estree's
-  `allowDefaultProject` check accepts and refuses the same files with both. Across 18,150 path,
-  glob and platform combinations, the two versions differ only in three cases that the 11.0
-  changelog lists as intended: a path ending in `/` against `?(x)` or `*(x)`,
-  `**/a/b/c/**/d/**`, and a Windows pattern whose `..` climbs past its drive letter.
+  with none. npm trusted publishing released it, and its provenance shows the isaacs/minimatch
+  release workflow building tag v11.0.8 (commit 35c928b).
+- Against it:
+  - 11.x is a rewrite and very new: nine releases from 2026-10-27 to 2026-11-11, and two of the
+    three advisories above are regressions that 11.x introduced. Upstream CI at the v11.0.8 commit
+    failed in its two Windows Node 26 jobs (6 of 50 cases in `test/escape-literal.js`); commit
+    82b84b4 changed only that test after the release, and CI has been green since.
+  - It adds `@isaacs/nonrecursive-glob-match` 1.1.0, which now does the matching, and which has no
+    npm provenance: the maintainer's account published it, its manifest has no repository field,
+    the package dates from 2026-10-26 and 1.1.0 from 2026-11-05. Its `src` is identical to tag
+    v1.1.0 (commit 0ac7bea) of github.com/isaacs/nonrecursive-glob-match, its `dist/commonjs`,
+    which minimatch loads, rebuilds byte for byte from that source with TypeScript 5.9.3 and the
+    tag's compiler options, and it requires only its own files, with no dependencies or install
+    scripts. 10.2.6 had no provenance either: one unattested package gives way to one attested and
+    one unattested.
+  - The web Dockerfile copies the build stage's whole `node_modules` into the runtime image, so
+    minimatch 11.0.8 and the new package ship in the image, as 10.2.6 did, where nothing loads
+    them.
+  - The alternative is to wait: the first typescript-eslint stable release with upstream commit
+    837401e92d (`^11.0.1`, already in the 8.72.3-alpha.8 canary) would resolve the same 11.0.8
+    without an override.
+- Matching: in a sample of 18,150 path, glob and platform combinations, 10.2.6 and 11.0.8 differ
+  only in cases the 11.0 changelog lists as intended (a path ending in `/` against `?(x)` or
+  `*(x)`, `**/a/b/c/**/d/**`, and a Windows pattern whose `..` climbs past its drive letter). The
+  matcher was rewritten, though, and random inputs find more: `?` and `[!a]` now match one code
+  point outside the Basic Multilingual Plane rather than one UTF-16 unit, a POSIX class next to an
+  escaped `!` or `[` (`[[:alpha:]]\![ab]`) threw in 10.2.6 and matches in 11.0.8, and
+  `?(a)!(a)!(a)` now matches `aab`, as in Bash. None of these comes up with relative file paths
+  and `allowDefaultProject`-style globs.
+- Checked on 2026-11-15, on Node 24.16.0: with the scoped key, the audit gate, the script tests,
+  both typechecks, lint and format pass, the lockfile resolves exactly as with the first key, and
+  `pnpm why -r minimatch` lists 11.0.8 (through typescript-estree only) and 3.1.5. `pnpm audit`
+  lists nothing, which means nothing the GitHub advisory database lists as of that day. The first
+  key's run also passed the 726 unit tests, the build and the widget bundle check, and its
+  Playwright and axe run passed locally only with retries (3 flaky tests passed on the second
+  attempt), against an installed Chrome. `pnpm dev`, which serves the e2e, does not lint, so the
+  e2e never loads minimatch. CI runs the a11y gate, and its build job runs lint and the build on
+  Node 22, which this machine does not have: a green CI build is the Node 22 check.
 - Remove it once the lockfile's `@typescript-eslint/typescript-estree` requires `minimatch` 11.0.1
-  or later (the 8.72.3 canary already requires `^11.0.1`). The selector then matches nothing:
-  delete the entry, run `pnpm install`, then check that `pnpm why -r minimatch` shows no version
-  from 7.0.0 to 11.0.0 and that `pnpm audit` lists no minimatch advisory (the audit gate blocks
-  only high and critical, and this advisory is moderate). Until then, look at any new consumer of
-  minimatch 10 that a lockfile change brings in: the override moves it to 11 too.
+  or later. The entry then matches nothing. typescript-eslint comes in through
+  eslint-config-next, so Dependabot's weekly updates do not move it; it moves when the lockfile is
+  refreshed. Then delete the entry, run `pnpm install`, and check that `pnpm why -r minimatch`
+  shows no version from 7.0.0 to 11.0.0, that `pnpm audit` lists no minimatch advisory (the audit
+  gate blocks only high and critical, and this advisory is moderate) and that
+  `pnpm test:scripts` passes.
 
 ## Retired waivers
 
