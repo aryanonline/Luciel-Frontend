@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
+// Loaded with the file only so that the first case's own import finds the package already
+// transformed: loading all of it inside that case's 5 s budget timed out on a loaded
+// machine. Every case still imports fresh modules, with the flag cleared, after the reset.
+import '../index';
 
 /**
  * zod's JIT stays off (`schemas/zod-setup.ts`). With it on, the first classic `z.object()`
