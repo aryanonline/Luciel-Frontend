@@ -149,7 +149,9 @@ and hand `renderWithQuery` a `seededQueryClient` holding the served answers for 
 test is not about, so the first render is the settled screen. Wait for the end state a flow
 produces (`findBy*`, or the write's own promise inside `act`), never a fixed sleep: a check
 that something is absent proves nothing until the read behind it has landed. Keep `*ByRole`
-queries to a small container: over a whole card they cost about as much as rendering it.
+queries to a small container: over a whole card they cost about as much as rendering it. A
+test that is not about pending states can mock `@/lib/api` with the same mock client at
+`latencyMs: 0` (escalation-sms-test-text does), so chained calls do not add up 150 ms each.
 `tests/setup.ts` lets the work React and TanStack Query queued before each unmount run while
 the jsdom window still exists.
 

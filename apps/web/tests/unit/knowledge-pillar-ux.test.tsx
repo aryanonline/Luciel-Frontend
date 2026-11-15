@@ -89,11 +89,20 @@ describe('paste keeps its content when the save fails (F169)', () => {
     expect(screen.getByLabelText('Name this')).toHaveValue('Cancellation policy');
 
     // Fixing whatever was wrong and trying again works from the same dialog.
+    const pasted = source({
+      sourceId: '22222222-2222-4222-8222-222222222222',
+      name: 'Cancellation policy',
+      origin: 'paste',
+      sizeBytes: 17,
+    });
+    listSources.mockResolvedValue([source(), pasted]);
     fireEvent.click(screen.getByRole('button', { name: 'Add to knowledge' }));
     expect(
       await screen.findByText(/Added “Cancellation policy” to your knowledge base\./),
     ).toBeInTheDocument();
     expect(pasteText).toHaveBeenCalledTimes(2);
+    // The list is read again, so the note shows without a reload.
+    expect(await screen.findByText('Cancellation policy')).toBeInTheDocument();
   });
 });
 

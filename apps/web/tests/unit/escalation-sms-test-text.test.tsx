@@ -5,6 +5,15 @@ import { EscalationPillar } from '@/components/config/escalation-pillar';
 import { api } from '@/lib/api';
 import { qk, useLuciel } from '@/lib/hooks';
 
+// The same mock API minus its artificial 150 ms a call. These tests are about what each
+// write leaves on screen, not about how long it pends, and a save is three calls in a
+// row (the write, the Luciel re-read, then the test text), so the delay only added up.
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+  const { createLucielClient } = await import('@luciel/api-client');
+  return { ...actual, api: createLucielClient({ adapter: 'mock', mock: { latencyMs: 0 } }) };
+});
+
 /**
  * 2026-09-05 audit F084: an SMS escalation contact had no confirmation loop at all —
  * the first real hot lead was the test. The pillar now hints the only deliverable
