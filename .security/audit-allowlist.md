@@ -20,6 +20,57 @@ Round 7 (2026-10-11): the nightly audit went red on 2026-10-06 for four advisori
 
 Round 7 (2026-10-04): the nightly audit went red on 2026-09-30 for two `brace-expansion` advisories (GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p). Those had fixes and were closed by raising the `pnpm.overrides` (1.x → ^1.1.20, 5.x → ^5.0.11), not waived.
 
+## Overrides across a major
+
+Most `pnpm.overrides` entries lift a transitive package to a fixed release inside the range its
+consumers already accept (listed at the end of this file). One entry moves a package to its next
+major, because the fix exists only there.
+
+`"minimatch@>=10.0.0 <11.0.1": "^11.0.8"` (2026-11-15) clears the Dependabot alert for
+GHSA-g3hv-75wg-m249 (moderate): with `optimizationLevel` 2 or higher, an attacker-supplied glob
+can make minimatch's pattern preprocessing use excessive CPU and memory. The vulnerable range is
+`>=7.0.0 <11.0.1`, and minimatch published no 10.x fix. The only copy in range was 10.2.6, which
+`@typescript-eslint/typescript-estree` 8.71.1 requires as `^10.2.2`. It is lint tooling, reached
+through eslint-config-next and `@typescript-eslint/parser`, and its latest stable release, 8.72.2,
+still requires `^10.2.2`.
+
+- Scope: pnpm applies a `name@range` override to each declared dependency whose range intersects
+  the selector's range. Here that is only typescript-estree's `^10.2.2`. The `^3.1.2` and `^3.1.5`
+  ranges of eslint, `@eslint/config-array`, `@eslint/eslintrc` and three eslint plugins do not
+  intersect it, so their 3.1.5, which is outside the advisory, stays. `pnpm why -r minimatch`
+  lists 11.0.8 (through typescript-estree only) and 3.1.5.
+- What typescript-estree uses: one call, `minimatch(path, pattern, { dot: true })` in
+  `dist/useProgramFromProjectService.js`, made only when `parserOptions.projectService` has an
+  `allowDefaultProject` list. The web lint config sets neither, so lint loads minimatch (a
+  top-level `require`) and never calls it. minimatch 11 removed `makeRe()`, `Minimatch#regexp`, the
+  `AST` class, three internal methods and the `debug` and `maxExtglobRecursion` options.
+  typescript-estree uses none of them, and the CommonJS build, the named `minimatch` export, its
+  signature and `dot` are unchanged. typescript-estree also leaves `optimizationLevel` at its
+  default of 1, so the vulnerable code was never reached here: the override clears the alert, not
+  a reachable path.
+- Why 11.0.8: every earlier 11.x is named in another advisory that the minimatch repository has
+  published but the GitHub advisory database (which Dependabot and `pnpm audit` read) does not list
+  yet: GHSA-cf2h-pxjq-68xw (quadratic compile time, a regression in 11.0.0, up to 11.0.6),
+  GHSA-hqmv-qgp3-jx75 (pattern cache memory growth, 11.0.3 to 11.0.7) and GHSA-c859-jr93-m5j4
+  (`escape()` output, 7.4.0 to 11.0.7, so 10.2.6 too). 11.0.8 (2026-11-11) is the first release
+  with none. Its npm provenance shows it was built by the isaacs/minimatch release workflow from
+  tag v11.0.8 (commit 35c928b). It adds one dependency, `@isaacs/nonrecursive-glob-match` 1.1.0,
+  by the same author, with no dependencies or install scripts of its own.
+- Checked on 2026-11-15: the audit gate, the script tests, both typechecks, the 726 unit tests,
+  lint, format, the build, the widget bundle check and the Playwright and axe run pass, and
+  `pnpm audit` reports nothing at any severity. Lint on a deliberately broken TypeScript file
+  reports the same parse error with 10.2.6 and 11.0.8. Run directly, typescript-estree's
+  `allowDefaultProject` check accepts and refuses the same files with both. Across 18,150 path,
+  glob and platform combinations, the two versions differ only in three cases that the 11.0
+  changelog lists as intended: a path ending in `/` against `?(x)` or `*(x)`,
+  `**/a/b/c/**/d/**`, and a Windows pattern whose `..` climbs past its drive letter.
+- Remove it once the lockfile's `@typescript-eslint/typescript-estree` requires `minimatch` 11.0.1
+  or later (the 8.72.3 canary already requires `^11.0.1`). The selector then matches nothing:
+  delete the entry, run `pnpm install`, then check that `pnpm why -r minimatch` shows no version
+  from 7.0.0 to 11.0.0 and that `pnpm audit` lists no minimatch advisory (the audit gate blocks
+  only high and critical, and this advisory is moderate). Until then, look at any new consumer of
+  minimatch 10 that a lockfile change brings in: the override moves it to 11 too.
+
 ## Retired waivers
 
 | Advisory            | Package    | Why it was waived                                                                                                                                                                                                           | Waived                         | Fixed by                                                     |
@@ -48,7 +99,8 @@ and the widget bundle gate). Kept as the record of what was accepted and why.
 | GHSA-q4gf-8mx6-v5v3 | next 14.2.x | DoS with Server Components — same posture.                                                  | Next 15.5.15+ |
 
 Transitive libraries with in-range fixes are NOT waived — they are pinned up through
-`pnpm.overrides` (brace-expansion, browserslist, glob, js-yaml, nanoid, postcss, vite)
+`pnpm.overrides` (brace-expansion, browserslist, glob, js-yaml, nanoid, postcss, vite;
+minimatch crosses a major, see Overrides across a major)
 and the test runner was moved to vitest 3.2.6+ (GHSA-5xrq-8626-4rwp). Minor and patch
 updates now arrive weekly through Dependabot and merge themselves once CI is green
 (`.github/dependabot.yml`, `dependabot-auto-merge.yml`); a major is labelled for a person.
