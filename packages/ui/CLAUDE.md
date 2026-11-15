@@ -54,3 +54,6 @@ inputs when changing their corresponding primitive.
   is escape-first and intentionally limited.
 - Keep long modal bodies scrollable while the title and action row remain
   reachable on small screens.
+- `Logo`'s V mark is also the web app's site icon: `apps/web/src/app/icon.svg` copies it, and
+  `favicon.ico` and `apple-icon.png` there are renders of that file (see `apps/web/CLAUDE.md`).
+  A change to the mark changes all three.

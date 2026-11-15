@@ -9,7 +9,7 @@ import type { MockOptions, ScenarioName } from './tests/e2e/support/fixtures';
  *
  * Projects (round 6 WP-J; round 7 WP-12):
  *  - `chromium` — the routine run: the a11y gate over every route + the mock-adapter
- *    journey.
+ *    journey + the site icon as the server answers it (site-icon.spec.ts).
  *  - `scenario-<name>` — one per mock scenario (fresh, at-cap, payg, paused, grace,
  *    closed, expired-session). The scenario is a RUNTIME choice: the project plants
  *    the `luciel_mock_scenario` cookie the mock adapter reads, so one dev server
@@ -57,7 +57,7 @@ const slug = (s: string) => s.replace(/_/g, '-');
 const mockProjects: PlaywrightTestProject<MockOptions>[] = [
   {
     name: 'chromium',
-    testMatch: /(a11y|journey)\.spec\.ts/,
+    testMatch: /(a11y|journey|site-icon)\.spec\.ts/,
     use: chromium,
   },
   ...SCENARIOS.map((scenario): PlaywrightTestProject<MockOptions> => ({

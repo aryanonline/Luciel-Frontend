@@ -6,6 +6,11 @@ import { cn } from './cn';
  * accent square with a "V" cut, kept minimal. If a brand SVG arrives later it
  * slots in here without touching consumers.
  *
+ * The site icon copies this mark: apps/web/src/app/icon.svg, and favicon.ico and
+ * apple-icon.png rendered from it by apps/web/scripts/render-site-icons.mjs. Change
+ * them with it; apps/web/tests/unit/site-icon.test.tsx compares icon.svg with this
+ * mark and fails until the renders match the current icon.svg.
+ *
  * The V is DRAWN, not typed. As a text node it was part of the logo's visible text
  * ("V VantageMind") even under aria-hidden, so every link wrapping the logo with
  * aria-label="VantageMind ..." failed WCAG 2.5.3 Label in Name (axe 4.14's

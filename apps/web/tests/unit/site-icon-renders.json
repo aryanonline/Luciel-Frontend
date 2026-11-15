@@ -1,0 +1,9 @@
+{
+  "note": "Written by scripts/render-site-icons.mjs, which renders favicon.ico and apple-icon.png from icon.svg (src/app). tests/unit/site-icon.test.tsx compares these digests with the files.",
+  "renderer": "msedge 157.0.4341.60",
+  "sha256": {
+    "icon.svg": "f9e8c98bcf1ed4ee111863b280e715d6a1e7d28536f52d63ead7de742a7a1838",
+    "favicon.ico": "03cef675e0ed4086b136d97c762d016779fedcc48e9055dcab511bee24693fa0",
+    "apple-icon.png": "cd40de4c182c6a44862e449200f727dd0c1bbba5b477b493c949d3a213d4067d"
+  }
+}

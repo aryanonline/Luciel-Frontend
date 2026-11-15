@@ -40,9 +40,21 @@ bundle.
   (2026-11-14: the app had none, so browsers fetched `/favicon.ico` on their own and logged a
   404). Next serves them from the ROOT segment by its metadata file convention and adds the
   `<link>` tags to every page; there is no `public/` folder. The ICO (16/32/48 px) and the
-  touch icon (180 px, full-bleed because iOS rounds it) are renders of icon.svg: re-render
-  them when the mark changes. `tests/unit/site-icon.test.tsx` pins them, and that every
-  root-relative file named in `src/` exists where Next serves it.
+  touch icon (180 px, full-bleed because iOS rounds it) are renders of icon.svg by
+  `scripts/render-site-icons.mjs`. When the mark changes (in `packages/ui/src/Logo.tsx` and
+  icon.svg), run `pnpm --filter @luciel/web exec node scripts/render-site-icons.mjs`; it uses
+  Playwright's Chromium, or an installed browser with `--channel msedge` or `--channel chrome`.
+  It rewrites both files and records their sha256, and icon.svg's, in
+  `tests/unit/site-icon-renders.json`. `tests/unit/site-icon.test.tsx` checks the ICO's three
+  sizes, the touch icon's size, icon.svg's viewBox, path and stroke width against the Logo's
+  mark on the brand accent, and the recorded digests: an icon.svg changed without a re-render,
+  or a raster replaced by hand, fails. It also reads every string in the shipped code (`src/`,
+  `packages/ui/src`, `packages/design-tokens/src`, `next.config.mjs` and `tailwind.config.ts`;
+  not comments or unit tests) and fails on any root-relative static file Next would not serve,
+  either from `public/` or as a metadata file at the top of `src/app`. A path built at runtime
+  is not checked. `tests/e2e/site-icon.spec.ts` (`chromium` project) checks the server's answers: the
+  three files answer 200 with their image type to a visitor with no session, and `/` and
+  `/dashboard` link all three.
 - `src/lib/api.ts` and `src/lib/hooks.ts` — typed control-plane client and queries.
 - `tests/unit/` — focused UI behavior and regression tests.
 - `tests/e2e/a11y.spec.ts` — the WCAG 2.1 AA gate over EVERY route (round 7 WP-12: 23 today).

@@ -162,14 +162,15 @@ pnpm -r build
 `next build` never compiles them, and `typecheck:tests` checks them instead. CI runs both in
 its typecheck step.
 
-The current suite is approximately 723 tests (api-client 166, ui 20, widget 41, web 496;
+The current suite is approximately 726 tests (api-client 166, ui 20, widget 41, web 499;
 counted 2026-11-14, after the zod 4 migration added the schema-rule, form-message,
 widget-import and zod-JIT tests, the expired-row reconnect/switch routing added five, and
 the site-icon fix added `site-icon.test.tsx`).
 Treat an unexpected test-count change as a signal to review, not as a substitute for
 the command exit status. `pnpm --filter @luciel/web test:e2e` runs the Playwright
-a11y gate plus the mock-adapter customer journey (`tests/e2e/journey.spec.ts`) against
-the dev server; the dashboard pages need the planted session cookie from
+a11y gate, the mock-adapter customer journey (`tests/e2e/journey.spec.ts`) and the
+site-icon check (`tests/e2e/site-icon.spec.ts`) against the dev server; the dashboard
+pages need the planted session cookie from
 `tests/e2e/mock-session.ts` or the middleware bounces them to /login. `E2E_LIVE=1`
 with `E2E_BASE_URL`, `E2E_EMAIL`, `E2E_PASSWORD` selects the read-only live-smoke
 project instead (the `live-smoke` workflow is its dispatch-only home). Round 7 WP-12 adds

@@ -199,12 +199,12 @@ To run one project: `pnpm --filter @luciel/web exec playwright test --project=wa
 
 | Suite                                                  | Tests (counted 2026-11-14) | What it covers                                                                                                                          |
 | ------------------------------------------------------ | -------------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Web app unit (`apps/web/tests/unit/`)                  |                        496 | Pages and components: states, counts, labels, modals, copy rules, form messages and the site icon                                       |
+| Web app unit (`apps/web/tests/unit/`)                  |                        499 | Pages and components: states, counts, labels, modals, copy rules, form messages, the site icon and its renders                          |
 | API client unit (`packages/api-client/src/__tests__/`) |                        166 | Transport, adapters and the mock runtime, plane separation, the sync-job poll, the schemas' validation rules, zod with its JIT off      |
 | Widget unit (`apps/widget/src/mount.test.ts`)          |                         41 | Mounting, disclosure, sessions, polling, ending a chat, safe rendering                                                                  |
 | UI kit unit (`packages/ui/src/`)                       |                         20 | `Modal`, `StatusChip`, `Logo` and the markdown renderer                                                                                 |
 | Gate and workflow tests (`scripts/*.test.mjs`)         |                         50 | The CVE gate, the Dependabot classifier, workflow triggers and step order                                                               |
-| Playwright `chromium` project                          |                         30 | WCAG 2.1 AA on all 23 routes, crash-page recovery, route coverage, the journey from overview to billing                                 |
+| Playwright `chromium` project                          |                         33 | WCAG 2.1 AA on all 23 routes, crash-page recovery, route coverage, the journey from overview to billing, the site icon as served        |
 | Playwright `scenario-*` projects                       |                          7 | One account state each: new, at its conversation cap, pay-as-you-go, paused, deleted within its restore window, closed, expired session |
 | Playwright `walk` project                              |                          1 | The customer-style walk through every dashboard area, with timings in the report                                                        |
 
@@ -212,7 +212,7 @@ To run one project: `pnpm --filter @luciel/web exec playwright test --project=wa
 `E2E_LIVE_WRITE=1`, against a deployed environment. CI ([`ci.yml`](.github/workflows/ci.yml))
 runs on every pull request, every push to `main` and daily: the audit gate, script tests,
 typecheck (the web tests included), unit tests, lint, formatting and every build (the widget's
-build includes the bundle check), then the 38 Playwright tests above, plus a gitleaks secret scan.
+build includes the bundle check), then the 41 Playwright tests above, plus a gitleaks secret scan.
 
 ## Deployment and operations
 
