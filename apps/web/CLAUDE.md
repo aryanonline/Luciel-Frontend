@@ -185,6 +185,14 @@ the jsdom window still exists.
 - Browser automation copy feedback can vary around the exact text. Assert the
   meaningful **“Copied”** substring, then reproduce questionable interactions in
   plain Chromium before changing application code.
+- Vitest 4 (2026-11-14, from 3.2.7) changed two mock rules the unit tests lean on.
+  `vi.restoreAllMocks()`, which many files call in `afterEach`, now only puts back methods that
+  `vi.spyOn` replaced: it no longer clears the calls or resets the implementation of a `vi.fn()`.
+  A `vi.fn()` shared between tests needs its own `mockReset()`, in a hook or at the top of each
+  test, as every one has today. And `vi.spyOn` on a method that is already a spy returns that
+  same spy (Vitest 3 wrapped it in a new one), so a helper that reads the current method and then
+  spies again makes the spy call itself: bind the real method once, before any spy, as
+  `chunk-watchdog.test.ts` does.
 - `apps/web` imports the control-plane client entrypoint only. Keep adapters and
   widget data-plane imports out of components and pages.
 - Voice/SMS chip split at `pending_carrier_registration` (2026-08-18): 10DLC gates

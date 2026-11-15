@@ -162,6 +162,12 @@ pnpm -r build
 `next build` never compiles them, and `typecheck:tests` checks them instead. CI runs both in
 its typecheck step.
 
+The four packages with unit tests run Vitest 4 (from 3.2.7 on 2026-11-14; `apps/web/CLAUDE.md`
+has the mock changes its tests depend on). Vitest 4.1 switches to a terse `agent` reporter when the
+environment names a coding agent (`AI_AGENT`, `CLAUDECODE`, `CLAUDE_CODE` and others). CI sets
+none of them, so run `env -u AI_AGENT -u CLAUDECODE -u CLAUDE_CODE pnpm -r test` to see the output
+CI sees.
+
 The current suite is approximately 726 tests (api-client 166, ui 20, widget 41, web 499;
 counted 2026-11-14, after the zod 4 migration added the schema-rule, form-message,
 widget-import and zod-JIT tests, the expired-row reconnect/switch routing added five, and
