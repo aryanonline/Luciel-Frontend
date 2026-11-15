@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent } from '@testing-library/react';
-import { renderWithQuery } from './test-utils';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithQuery, seededQueryClient } from './test-utils';
 import { ConnectionControl } from '@/components/config/connection-control';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
 import { ToolsPillar } from '@/components/config/tools-pillar';
 import DashboardPage from '@/app/(app)/dashboard/page';
+import { api } from '@/lib/api';
+import { qk } from '@/lib/hooks';
+import type { ConnectionReadState } from '@/components/config/connection-control';
 import type { Luciel } from '@luciel/api-client';
 
 /**
@@ -68,14 +71,33 @@ beforeEach(() => {
   listCalls.count = 0;
 });
 
+/**
+ * The control with the CRM registry already served, so everything it needs to offer a
+ * connect button is in hand from the first render: what it withholds below, it withholds
+ * because the row is unread. (A fixed wait for the registry could end before the read
+ * did, and then the checks proved nothing.)
+ */
+async function renderUnreadControl(
+  readState: Exclude<ConnectionReadState, 'ready'>,
+  onRetryRead?: () => void,
+) {
+  const registry = await api.connections.listProviders('crm');
+  renderWithQuery(
+    <ConnectionControl
+      connectionType="crm"
+      label="your CRM"
+      readState={readState}
+      onRetryRead={onRetryRead}
+    />,
+    seededQueryClient([[qk.connectionProviders('crm'), registry]]),
+  );
+}
+
 describe('ConnectionControl with an unsettled connections read', () => {
   it('pending: says it is checking, shows no chip and no connect button', async () => {
-    renderWithQuery(
-      <ConnectionControl connectionType="crm" label="your CRM" readState="pending" />,
-    );
-    expect(await screen.findByRole('status')).toHaveTextContent(/Checking the your CRM connection/);
-    // Registry read settles; still nothing is claimed or offered.
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await renderUnreadControl('pending');
+    expect(screen.getByRole('status')).toHaveTextContent(/Checking the your CRM connection/);
+    // The registry is in; still nothing is claimed or offered.
     expect(screen.queryByText(/Action needed/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Connected$/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /connect/i })).not.toBeInTheDocument();
@@ -83,20 +105,10 @@ describe('ConnectionControl with an unsettled connections read', () => {
 
   it('error: says the state could not be read, offers a retry, and is never Action needed', async () => {
     const retry = vi.fn();
-    renderWithQuery(
-      <ConnectionControl
-        connectionType="crm"
-        label="your CRM"
-        readState="error"
-        onRetryRead={retry}
-      />,
-    );
-    expect(
-      await screen.findByText(/We could not read this connection's state/i),
-    ).toBeInTheDocument();
+    await renderUnreadControl('error', retry);
+    expect(screen.getByText(/We could not read this connection's state/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(retry).toHaveBeenCalledTimes(1);
-    await new Promise((resolve) => setTimeout(resolve, 400));
     expect(screen.queryByText(/Action needed/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /connect/i })).not.toBeInTheDocument();
   });
@@ -124,8 +136,7 @@ describe('the pillars thread the read state through', () => {
     expect(screen.queryByText(/Action needed/i)).not.toBeInTheDocument();
     const before = listCalls.count;
     fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]!);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(listCalls.count).toBeGreaterThan(before);
+    await waitFor(() => expect(listCalls.count).toBeGreaterThan(before));
   });
 
   it('Tools: a pending list never says "Action needed: connect your CRM"', async () => {

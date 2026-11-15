@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithQuery } from './test-utils';
 import { api } from '@/lib/api';
 import LoginPage from '@/app/(auth)/login/page';
@@ -135,8 +135,11 @@ describe('contact', () => {
     const honeypot = document.getElementById('company')!;
     fireEvent.change(honeypot, { target: { value: 'Acme' } });
     submit('Send message');
-    // Give the resolver a turn to settle before asserting nothing happened.
-    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    // The button says "Sending…" until the submit has finished (the resolver, then any
+    // send), so once it reads "Send message" again nothing more can happen. A fixed 50 ms
+    // wait could end first and leave the checks below proving nothing.
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Send message' })).toBeEnabled();
     expect(send).not.toHaveBeenCalled();
     expect(screen.queryByText(/your message is on its way/i)).toBeNull();
 

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { screen } from '@testing-library/react';
-import { renderWithQuery } from './test-utils';
+import { renderWithQuery, seededQueryClient } from './test-utils';
 import { ConnectionControl } from '@/components/config/connection-control';
+import { api } from '@/lib/api';
+import { qk } from '@/lib/hooks';
 import type { Connection, ConnectionStatus } from '@luciel/api-client';
 
 /**
@@ -68,23 +70,26 @@ describe('round 5: served statusDetail renders as an honest note on not-live row
   });
 
   it('dormant renders the billing copy and offers no Connect button', async () => {
+    // Both cards get the CRM registry already served, so each renders settled at once.
+    const registry = await api.connections.listProviders('crm');
+    const served = () => seededQueryClient([[qk.connectionProviders('crm'), registry]]);
     // Counterfactual first: the same card with a reconnectable status DOES
-    // offer provider connect buttons once the registry read settles — proving
-    // the dormant branch below is withholding them on purpose.
+    // offer provider connect buttons with the registry in — proving the dormant
+    // branch below is withholding them on purpose.
     const reconnectable = renderWithQuery(
       <ConnectionControl connectionType="crm" label="your CRM" connection={row('not_connected')} />,
+      served(),
     );
-    expect(await screen.findByRole('button', { name: /Connect HubSpot/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Connect HubSpot/i })).toBeInTheDocument();
     reconnectable.unmount();
 
     renderWithQuery(
       <ConnectionControl connectionType="crm" label="your CRM" connection={row('dormant')} />,
+      served(),
     );
     expect(
-      await screen.findByText(/Action needed: paused until a payment method is added/i),
+      screen.getByText(/Action needed: paused until a payment method is added/i),
     ).toBeInTheDocument();
-    // Give the registry read the same settle time the counterfactual needed.
-    await new Promise((resolve) => setTimeout(resolve, 400));
     expect(screen.queryByRole('button', { name: /connect/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /switch/i })).not.toBeInTheDocument();
   });

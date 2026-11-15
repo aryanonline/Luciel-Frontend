@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, within } from '@testing-library/react';
-import { renderWithQuery } from './test-utils';
+import { screen, waitFor, within } from '@testing-library/react';
+import { renderWithQuery, seededQueryClient } from './test-utils';
 import { ChannelsPillar } from '@/components/config/channels-pillar';
+import { qk } from '@/lib/hooks';
 import type { Connection, Luciel } from '@luciel/api-client';
 
 /**
@@ -103,11 +104,15 @@ describe('off-row Meta note derives from the bound destination', () => {
   });
 
   it('no grant row at all: the raw channel status alone earns no note', async () => {
-    served.connections = [];
-    renderWithQuery(<ChannelsPillar luciel={allOff} />);
-    await screen.findByRole('switch', { name: /Enable WhatsApp/i });
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // The (empty) connections answer is in the cache before the card renders, and the
+    // note reads nothing else, so the first render is the settled note. A fixed 200 ms
+    // wait for that read could end before it did, and then the checks proved nothing.
+    const client = seededQueryClient([[qk.connections, []]]);
+    renderWithQuery(<ChannelsPillar luciel={allOff} />, client);
+    expect(screen.getByRole('switch', { name: /Enable WhatsApp/i })).toBeInTheDocument();
     expect(screen.queryByText(/nothing to set up again/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/still needs its/i)).not.toBeInTheDocument();
+    // The card's other reads (none of which feeds the note) are not left in flight.
+    await waitFor(() => expect(client.isFetching()).toBe(0));
   });
 });
