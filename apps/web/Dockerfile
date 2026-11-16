@@ -12,7 +12,7 @@
 # ship base-layer CVEs that already have a fix. ECR scans every pushed image, and the
 # deploy's CVE gate (scripts/image-scan-gate.mjs) blocks any HIGH or CRITICAL finding
 # that is not waived, with a reason and an expiry, in .security/cve-allowlist.json.
-FROM node:22.23.4-trixie-slim AS base
+FROM node:22.23.5-trixie-slim AS base
 RUN apt-get update \
   && apt-get upgrade -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
