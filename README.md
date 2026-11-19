@@ -11,6 +11,8 @@ API, the AI runtime and the AWS infrastructure live in the companion
 
 Luciel is open source under the [GNU AGPL-3.0](LICENSE).
 
+![A local install: the demo clinic's website, where Luciel answers a visitor from the clinic's own documents](docs/images/local-demo-site.png)
+
 ## Run Luciel on your computer
 
 The whole product runs locally with Docker and your own OpenAI or Anthropic API key: this
