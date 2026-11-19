@@ -67,21 +67,21 @@ export function SiteFooter() {
             © {new Date().getFullYear()} VantageMind. Open source (
             <a
               href="https://github.com/aryanonline/Luciel-Frontend/blob/main/LICENSE"
-              className="text-vm-text hover:text-vm-accent"
+              className="text-vm-text underline hover:text-vm-accent"
             >
               AGPL-3.0
             </a>
             ):{' '}
             <a
               href="https://github.com/aryanonline/Luciel-Frontend"
-              className="text-vm-text hover:text-vm-accent"
+              className="text-vm-text underline hover:text-vm-accent"
             >
               frontend
             </a>
             ,{' '}
             <a
               href="https://github.com/aryanonline/Luciel-Backend"
-              className="text-vm-text hover:text-vm-accent"
+              className="text-vm-text underline hover:text-vm-accent"
             >
               backend
             </a>
