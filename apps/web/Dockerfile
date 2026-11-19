@@ -45,9 +45,17 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_API_BASE_URL
 ARG NEXT_PUBLIC_API_ADAPTER
 ARG NEXT_PUBLIC_HCAPTCHA_SITE_KEY
+# Optional; the local Docker stack (Luciel-Backend's docker-compose.yml) sets both. Unset,
+# the embed snippet keeps the production embed host and no demo-site link is shown
+# (src/lib/embed-config.ts reads them with `||`, so the empty value an unpassed ARG
+# leaves behind counts as unset).
+ARG NEXT_PUBLIC_WIDGET_SCRIPT_URL
+ARG NEXT_PUBLIC_DEMO_SITE_URL
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_API_ADAPTER=$NEXT_PUBLIC_API_ADAPTER
 ENV NEXT_PUBLIC_HCAPTCHA_SITE_KEY=$NEXT_PUBLIC_HCAPTCHA_SITE_KEY
+ENV NEXT_PUBLIC_WIDGET_SCRIPT_URL=$NEXT_PUBLIC_WIDGET_SCRIPT_URL
+ENV NEXT_PUBLIC_DEMO_SITE_URL=$NEXT_PUBLIC_DEMO_SITE_URL
 RUN pnpm --filter @luciel/web build
 
 # ---- Runtime ----------------------------------------------------------------

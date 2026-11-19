@@ -43,6 +43,13 @@ const HCAPTCHA = 'https://hcaptcha.com https://*.hcaptcha.com';
 // the auth gate bounced every logged-in user from /dashboard & /first-run back to /login.
 const SESSION_COOKIE = 'luciel_session';
 
+/**
+ * `upgrade-insecure-requests` stays for every https (or default) API origin. A build whose
+ * API is plain http — only the local Docker stack, `http://localhost:8000` — leaves it out:
+ * Safari applies the directive to localhost too and would rewrite every API call to https.
+ */
+const UPGRADE_INSECURE = !API_ORIGIN.startsWith('http://');
+
 /** Development-only CSP relaxation for Next.js dev tooling; empty in production. */
 const DEV_EVAL = process.env.NODE_ENV === 'production' ? '' : " 'unsafe-eval'";
 
@@ -82,7 +89,7 @@ export function middleware(request: NextRequest) {
     `base-uri 'self'`,
     `form-action 'self'`,
     `frame-ancestors 'none'`,
-    `upgrade-insecure-requests`,
+    ...(UPGRADE_INSECURE ? [`upgrade-insecure-requests`] : []),
   ].join('; ');
 
   // ── Auth gate: (app) routes require the session cookie ─────────────────────

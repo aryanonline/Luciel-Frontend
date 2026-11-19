@@ -9,6 +9,7 @@ import { LucielApiError } from '@luciel/api-client';
 import { api } from '@/lib/api';
 import { WidgetPreview } from '@/components/widget-preview';
 import { WIDGET_OFF_COPY, widgetChannelOff } from '@/lib/widget-channel';
+import { demoSiteUrlFor, snippetFor } from '@/lib/embed-config';
 
 /**
  * Embed + launch (Customer Journey §5). One-line embed script with the embed
@@ -162,9 +163,6 @@ function AllowedOriginsCard({
   );
 }
 
-const snippetFor = (embedKey: string) =>
-  `<script src="https://embed.vantagemind.ai/v1/luciel.js" data-key="${embedKey}"></script>`;
-
 /**
  * Legacy execCommand fallback for browsers/environments where
  * `navigator.clipboard` is absent entirely (locked-down machines, some
@@ -240,6 +238,8 @@ export default function EmbedPage() {
   // (P1-19).
   const embedKey = luciel?.embedKeyPublicId ?? null;
   const snippet = embedKey ? snippetFor(embedKey) : null;
+  // Only the local Docker stack names a demo website; production builds never do.
+  const demoSiteUrl = embedKey ? demoSiteUrlFor(embedKey) : null;
   // D9 (round 7): with Website chat off the widget renders nothing on the site, so
   // the page must not present the snippet (or a test) as if it were live.
   const widgetOff = widgetChannelOff(luciel);
@@ -422,6 +422,13 @@ export default function EmbedPage() {
                 {!widgetOff && (
                   <Button variant="ghost" onClick={() => setTesting((t) => !t)}>
                     {testing ? 'Close test' : 'Test it here'}
+                  </Button>
+                )}
+                {!widgetOff && demoSiteUrl && (
+                  <Button asChild variant="ghost">
+                    <a href={demoSiteUrl} target="_blank" rel="noopener noreferrer">
+                      Try it on the demo website
+                    </a>
                   </Button>
                 )}
               </div>

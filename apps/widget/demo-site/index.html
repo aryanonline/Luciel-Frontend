@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Maple Lane Dental — Luciel demo website</title>
+    <meta
+      name="description"
+      content="A fictional dental clinic's website, served on your computer to show the Luciel chat widget."
+    />
+    <link rel="stylesheet" href="demo.css" />
+  </head>
+  <body>
+    <div class="demo-bar" role="region" aria-label="About this demo">
+      <div class="wrap demo-bar__inner">
+        <p>
+          <strong>Demo website, running on your computer.</strong>
+          <span id="demo-status">Looking for your Luciel…</span>
+        </p>
+        <button
+          type="button"
+          class="demo-bar__toggle"
+          aria-expanded="false"
+          aria-controls="key-panel"
+        >
+          Use another embed key
+        </button>
+      </div>
+      <div id="key-panel" class="wrap key-panel" hidden>
+        <form id="key-form" class="key-form">
+          <label for="key-input">Embed key</label>
+          <input
+            id="key-input"
+            name="key"
+            type="text"
+            inputmode="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="vm_live_…"
+            required
+          />
+          <button type="submit">Load Luciel</button>
+        </form>
+        <p class="key-help">
+          Find it in the dashboard under <strong>Embed &amp; launch</strong>, or open this page from
+          that screen with <strong>Try it on the demo website</strong>.
+        </p>
+      </div>
+    </div>
+
+    <header class="site-header">
+      <div class="wrap site-header__inner">
+        <a class="brand" href="#top" aria-label="Maple Lane Dental, home">
+          <span class="brand__mark" aria-hidden="true">ML</span>
+          <span>Maple Lane Dental</span>
+        </a>
+        <nav aria-label="Main">
+          <a href="#services">Services</a>
+          <a href="#hours">Hours</a>
+          <a href="#visit">Visit us</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="wrap">
+          <p class="eyebrow">Family dentistry in Toronto</p>
+          <h1>Gentle care for the whole family.</h1>
+          <p class="lede">
+            Cleanings, check-ups, whitening and same-week emergency visits. New patients welcome.
+          </p>
+          <p class="hint" id="chat-hint">
+            Questions? Ask our assistant in the bottom-right corner, for example
+            <em>“Are you open on Saturdays?”</em> or <em>“How much is a cleaning?”</em>
+          </p>
+        </div>
+      </section>
+
+      <section id="services" class="wrap section">
+        <h2>Services</h2>
+        <ul class="cards">
+          <li class="card">
+            <h3>Check-ups &amp; cleanings</h3>
+            <p>Exam, cleaning and x-rays when needed, for adults and kids.</p>
+          </li>
+          <li class="card">
+            <h3>Teeth whitening</h3>
+            <p>In-office whitening in a single visit, or take-home trays.</p>
+          </li>
+          <li class="card">
+            <h3>Fillings &amp; crowns</h3>
+            <p>Tooth-coloured fillings and same-day crown consultations.</p>
+          </li>
+          <li class="card">
+            <h3>Emergency visits</h3>
+            <p>Toothache or a broken tooth? We keep time every weekday for emergencies.</p>
+          </li>
+        </ul>
+      </section>
+
+      <section id="hours" class="wrap section split">
+        <div>
+          <h2>Hours</h2>
+          <dl class="hours">
+            <dt>Monday – Thursday</dt>
+            <dd>8:00 am – 6:00 pm</dd>
+            <dt>Friday</dt>
+            <dd>8:00 am – 4:00 pm</dd>
+            <dt>Saturday</dt>
+            <dd>9:00 am – 2:00 pm</dd>
+            <dt>Sunday</dt>
+            <dd>Closed</dd>
+          </dl>
+        </div>
+        <div id="visit">
+          <h2>Visit us</h2>
+          <address>
+            88 Maple Lane, Suite 200<br />
+            Toronto, ON<br />
+            (416) 555-0142
+          </address>
+          <p>Free parking behind the building.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <p>
+          Maple Lane Dental is a fictional business made up for this demo. Its website and its
+          documents exist only to show what Luciel does.
+        </p>
+      </div>
+    </footer>
+
+    <script src="demo.js"></script>
+  </body>
+</html>

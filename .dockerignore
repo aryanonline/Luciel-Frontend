@@ -1,0 +1,17 @@
+# Keep a local checkout's installs, builds and env files out of image builds
+# (apps/web/Dockerfile, apps/widget/Dockerfile; both use the repository root as context).
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/playwright-report
+**/test-results
+**/.turbo
+**/.cache
+**/*.tsbuildinfo
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.claude
