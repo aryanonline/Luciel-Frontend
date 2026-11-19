@@ -2,6 +2,7 @@
   "name": "@luciel/design-tokens",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "The single source of truth for Luciel design tokens. Consumed by every artifact; no artifact invents per-screen palettes.",
   "type": "module",
   "main": "./src/index.ts",

@@ -63,7 +63,30 @@ export function SiteFooter() {
           </nav>
         </div>
         <div className="mt-vm-6 flex flex-wrap items-center justify-between gap-vm-2 border-t border-vm-border pt-vm-4 text-vm-0 text-vm-text-muted">
-          <span>© {new Date().getFullYear()} VantageMind. All rights reserved.</span>
+          <span>
+            © {new Date().getFullYear()} VantageMind. Open source (
+            <a
+              href="https://github.com/aryanonline/Luciel-Frontend/blob/main/LICENSE"
+              className="text-vm-text hover:text-vm-accent"
+            >
+              AGPL-3.0
+            </a>
+            ):{' '}
+            <a
+              href="https://github.com/aryanonline/Luciel-Frontend"
+              className="text-vm-text hover:text-vm-accent"
+            >
+              frontend
+            </a>
+            ,{' '}
+            <a
+              href="https://github.com/aryanonline/Luciel-Backend"
+              className="text-vm-text hover:text-vm-accent"
+            >
+              backend
+            </a>
+            .
+          </span>
           <span>Powered by VantageMind</span>
         </div>
       </Container>

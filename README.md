@@ -9,6 +9,30 @@ on their own websites, and the typed API client, UI kit and design tokens those 
 API, the AI runtime and the AWS infrastructure live in the companion
 [Luciel-Backend](https://github.com/aryanonline/Luciel-Backend) repository.
 
+Luciel is open source under the [GNU AGPL-3.0](LICENSE).
+
+## Run Luciel on your computer
+
+The whole product runs locally with Docker and your own OpenAI or Anthropic API key: this
+dashboard and the chat widget, the backend API with real AI answers, a demo website, a sample
+business with its documents, and an email inbox that catches the product's emails. The stack is
+defined in the backend repository and builds this repository for you:
+
+```bash
+git clone https://github.com/aryanonline/Luciel-Backend
+cd Luciel-Backend
+cp .env.example .env     # Windows: copy .env.example .env
+# open .env and paste OPENAI_API_KEY and/or ANTHROPIC_API_KEY
+docker compose up
+```
+
+The first build takes about ten minutes. Then open the dashboard at `http://localhost:3000` and
+sign in as `demo@example.com` with the password `luciel-demo`; the
+[backend README](https://github.com/aryanonline/Luciel-Backend#run-luciel-on-your-computer) has
+the five-minute walk-through. To build the stack from your own checkout of this repository,
+clone both repositories side by side and add `LUCIEL_FRONTEND_SOURCE=../Luciel-Frontend` to the
+backend's `.env`.
+
 ## Highlights
 
 - **Two API planes, kept apart down to the shipped bundle.** The dashboard calls the
@@ -101,7 +125,9 @@ flowchart LR
   The embed host serves that script only while the hosted environment runs, and the environment
   has been paused since 2026-11-14 (see [Project status](#project-status)). Locally,
   `pnpm dev` serves a test page at `http://localhost:5173` that mounts the widget from source on
-  the mock adapter.
+  the mock adapter, and [`apps/widget/Dockerfile`](apps/widget/Dockerfile) builds the real bundle
+  for a local backend and serves it beside a demo website
+  ([`apps/widget/demo-site/`](apps/widget/demo-site)), as the backend's Docker stack does.
 
 - **Backend (separate repository).** The API runs in ca-central-1 as two ECS services behind one
   load balancer per environment: a control plane for the dashboard and account API (including
@@ -162,12 +188,17 @@ over; the dashboard's mock keeps its data in `sessionStorage`, so writes survive
 | `NEXT_PUBLIC_API_BASE_URL`      | `apps/web`   | API origin for the `http` adapter, also allowed in the CSP's `connect-src`           |
 | `NEXT_PUBLIC_MOCK_SCENARIO`     | `apps/web`   | The build's default mock scenario (`verified` when unset)                            |
 | `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` | `apps/web`   | Public hCaptcha site key for the contact form; hCaptcha's test key when unset        |
+| `NEXT_PUBLIC_WIDGET_SCRIPT_URL` | `apps/web`   | Script URL in the embed snippet; the production embed host when unset                |
+| `NEXT_PUBLIC_DEMO_SITE_URL`     | `apps/web`   | Local demo website; when set, the Embed page links to it with the embed key          |
 | `VITE_WIDGET_ADAPTER`           | widget build | `mock` (the default) or `http`                                                       |
 | `VITE_WIDGET_API_BASE_URL`      | widget build | Data-plane API origin compiled into the bundle                                       |
 
 Next.js reads its variables from `apps/web/.env.local`; the widget build reads its two from the
-shell environment. [`.env.example`](.env.example) is a template for all six (the mock scenario
+shell environment. [`.env.example`](.env.example) is a template for all eight (the optional ones
 commented out). Every one of them is compiled into a public bundle, so none may hold a secret.
+
+To run the dashboard against the real backend instead of the mock, use the Docker stack described
+in [Run Luciel on your computer](#run-luciel-on-your-computer); it sets these variables for you.
 
 To build the production web image locally, pass the adapter build arguments from the repository
 root, as the deploy workflow does:
@@ -264,7 +295,8 @@ provider keys, was kept. The backend's
 [restore runbook](https://github.com/aryanonline/Luciel-Backend/blob/main/docs/operations/teardown-and-restore.md)
 brings it back. Until then `vantagemind.ai`, the API and the embed host serve nothing, and the
 deploy and live-check workflows have nothing to run against. The code in this repository still
-builds, tests and runs locally on the mock adapters.
+builds, tests and runs locally, on the mock adapters or, with the backend's Docker stack, as the
+whole product (see [Run Luciel on your computer](#run-luciel-on-your-computer)).
 
 ## Further reading
 
@@ -284,5 +316,11 @@ cite design documents (`Arch §`, `Space Instructions §`), audit and work-packa
 
 ## License
 
-This code is proprietary and shared for portfolio review only. All rights reserved. See
-[`LICENSE`](LICENSE); to report a vulnerability, see [`SECURITY.md`](SECURITY.md).
+Copyright © 2026 VantageMind. Luciel is free software: you can redistribute it and modify it
+under the terms of the [GNU Affero General Public License, version 3](LICENSE). If you run a
+modified version as a network service, the licence requires you to offer its users the
+corresponding source code. Third-party files keep their own licences, for example the Inter font
+in `apps/web/src/app/fonts/` (SIL Open Font License 1.1, see `LICENSE-Inter.txt` there).
+
+Issues and questions are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md). To report a
+vulnerability, see [`SECURITY.md`](SECURITY.md).
