@@ -13,6 +13,13 @@ import { mountWidget } from './mount';
 function resolveOwnScript(): HTMLScriptElement | null {
   // document.currentScript works for classic script execution.
   if (document.currentScript instanceof HTMLScriptElement) return document.currentScript;
+  // `pnpm dev` only: the harness (index.html) loads src/index.ts as a module script, which
+  // has no currentScript and no "luciel.js" in its src, so it never mounted. Vite replaces
+  // import.meta.env.DEV with false in a build, so the published bundle never looks for it.
+  if (import.meta.env.DEV) {
+    const harness = document.querySelector('script[data-luciel-dev-harness]');
+    if (harness instanceof HTMLScriptElement) return harness;
+  }
   // Fallback: the last script referencing luciel.js.
   const scripts = Array.from(document.querySelectorAll('script[src*="luciel.js"]'));
   return (scripts[scripts.length - 1] as HTMLScriptElement) ?? null;

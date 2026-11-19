@@ -50,3 +50,18 @@ updates:
     ignore:
       - dependency-name: node
         update-types: ['version-update:semver-major', 'version-update:semver-minor']
+
+  # The local demo-site image (Node build stage + unprivileged nginx).
+  - package-ecosystem: docker
+    directory: /apps/widget
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Toronto
+    open-pull-requests-limit: 2
+    labels: [dependencies, docker]
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
