@@ -18,10 +18,12 @@ Luciel is open source under the [GNU AGPL-3.0](LICENSE).
 The whole product runs locally with Docker and your own OpenAI or Anthropic API key: this
 dashboard and the chat widget, the backend API with real AI answers, a demo website, a sample
 business with its documents, and an email inbox that catches the product's emails. The stack is
-defined in the backend repository and builds this repository for you:
+defined in the backend repository and builds this one from the folder beside it, so clone both
+into the same folder:
 
 ```bash
 git clone https://github.com/aryanonline/Luciel-Backend
+git clone https://github.com/aryanonline/Luciel-Frontend
 cd Luciel-Backend
 cp .env.example .env     # Windows: copy .env.example .env
 # open .env and paste OPENAI_API_KEY and/or ANTHROPIC_API_KEY
@@ -31,9 +33,8 @@ docker compose up
 The first build takes about ten minutes. Then open the dashboard at `http://localhost:3000` and
 sign in as `demo@example.com` with the password `luciel-demo`; the
 [backend README](https://github.com/aryanonline/Luciel-Backend#run-luciel-on-your-computer) has
-the five-minute walk-through. To build the stack from your own checkout of this repository,
-clone both repositories side by side and add `LUCIEL_FRONTEND_SOURCE=../Luciel-Frontend` to the
-backend's `.env`.
+the five-minute walk-through. Changes you make in this checkout are built by
+`docker compose up --build`.
 
 ## Highlights
 
