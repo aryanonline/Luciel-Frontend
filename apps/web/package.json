@@ -2,6 +2,7 @@
   "name": "@luciel/web",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "Next.js App Router app — the marketing site (pre-auth, SEO) and the admin dashboard (gated), in (marketing) and (app) route groups. The plane separation, expressed structurally.",
   "type": "module",
   "scripts": {

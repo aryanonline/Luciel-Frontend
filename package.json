@@ -2,6 +2,7 @@
   "name": "luciel-frontend",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "VantageMind (Luciel) customer-facing frontend — three artifacts (marketing, admin dashboard, embeddable widget) sharing a design system, never an auth context.",
   "packageManager": "pnpm@9.7.0",
   "engines": {
